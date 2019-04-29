@@ -1,0 +1,60 @@
+/* 
+  Localizable.strings
+  ccViewer
+
+  Created by rei6 on 2019/03/19.
+  Copyright © 2019 lithium03. All rights reserved.
+*/
+"Require Authentication" = "認証が必要です";
+"Authentication failed" = "認証失敗しました";
+"Require password" = "パスワードが必要です";
+"Incorrect password" = "パスワードが違います";
+"Logout from %@ and remove item" = "%@ からログアウトしてアイテムを削除します";
+"Delete" = "削除";
+"Cancel" = "キャンセル";
+"Settings" = "設定";
+"Protect on Lanch" = "起動パスワード保護";
+"Tutorial" = "チュートリアル";
+"Viewer" = "ビューワ設定";
+"Run one more" = "もう一度見る";
+"Use Image viewer" = "画像で使用";
+"Use PDF viewer" = "PDFで使用";
+"Use Media viewer" = "メディアで使用";
+"Lock rotation in Media viewer" = "メディア:画面回転をロックする";
+"Software decode" = "ソフトウエア デコーダー";
+"Use FFmpeg Media viewer" = "FFmpegプレーヤーを使用する";
+"Prior Media viewer is FFmpeg" = "優先してFFmpegを使用する";
+"Online help URL" = "https://lithium03.info/ios/ccViewer.ja.html";
+"Privacy policy URL" = "https://lithium03.info/ios/ccViewer/privacy.html#ja";
+"Help" = "ヘルプ";
+"View online help" = "オンラインヘルプ";
+"View privacy policy" = "プライバシーポリシー";
+"Version" = "バージョン";
+"Save play position" = "再生位置の保存";
+"Save last play position" = "再生終了位置を記録する";
+"Resume play at last position" = "続きから再生";
+"Synchronize on devices" = "デバイス間で同期する";
+"PlayList" = "プレイリスト";
+
+"Export ..." = "他のアプリで開く";
+"Toggle Mark" = "再生済みマーク";
+"Raw viewer" = "生データを見る";
+"Media player" = "メディアプレーヤー";
+"Sofware player" = "ソフトウエア デコーダー";
+
+"Purchase" = "購入";
+"Restore purchases" = "購入を復元";
+"Failed to get product list" = "プロダクトを取得できませんでした。";
+"In app purchase is disabled" = "設定で購入が無効になっています。";
+"Purchase is processing" = "課金処理中です。";
+"Resotre is processing" = "リストア中です。";
+"%@ is interrupted in purchase process.\nYou can keep downloading free." = "%@ は購入処理が中断されていました。\nこのまま無料でダウンロードできます。";
+"Continue" = "続行";
+
+"Move" = "移動";
+"Select Folder" = "フォルダの選択";
+
+"scroll" = "連続表示";
+"twoUp" = "見開き表示";
+"rightToLeft" = "右綴じ";
+"frontCover" = "表紙あり";

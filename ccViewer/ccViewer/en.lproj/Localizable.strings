@@ -1,0 +1,9 @@
+/* 
+  Localizable.strings
+  ccViewer
+
+  Created by rei6 on 2019/03/19.
+  Copyright © 2019 lithium03. All rights reserved.
+*/
+"Online help URL" = "https://lithium03.info/ios/ccViewer.en.html";
+"Privacy policy URL" = "https://lithium03.info/ios/ccViewer/privacy.html#en";
