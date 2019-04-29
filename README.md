@@ -4,6 +4,7 @@
 if you did not set up, run these commands.
 
 ```bash
+brew install mercurial
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer/
 brew install nasm
 brew install yasm
