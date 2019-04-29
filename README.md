@@ -1,5 +1,8 @@
 # ccViewer
 
+## description
+This app is iOS cloud viewer with keeping encrypted.
+
 ## how to compile
 if you did not set up, run these commands.
 
