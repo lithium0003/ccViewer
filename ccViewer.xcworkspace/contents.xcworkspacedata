@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <Group
+      location = "container:"
+      name = "FFplayer">
+      <FileRef
+         location = "group:ffplayer/ffplayer.xcodeproj">
+      </FileRef>
+   </Group>
+   <Group
+      location = "container:"
+      name = "RemoteCloud">
+      <FileRef
+         location = "group:RemoteCloud/RemoteCloud.xcodeproj">
+      </FileRef>
+   </Group>
+   <Group
+      location = "container:"
+      name = "ccViewer">
+      <FileRef
+         location = "group:ccViewer/ccViewer.xcodeproj">
+      </FileRef>
+   </Group>
+</Workspace>
