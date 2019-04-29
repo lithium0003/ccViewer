@@ -15,7 +15,7 @@ brew install yasm
 ```bash
 cd work
 ./clone.sh
-./ffmpag_compile.sh
+./ffmpeg_compile.sh
 ```
 
 ### open with Xcode and compile
