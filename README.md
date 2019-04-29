@@ -20,3 +20,7 @@ cd work
 
 ### open with Xcode and compile
 1. open workspace "ccViewer.xcodeproj"
+2. select scheme "libSDL-iOS" and build
+3. select scheme "libSDL_image-iOS" and build
+4. select scheme "libSDL_ttf-iOS" and build
+5. select scheme "ccViewer" and build
