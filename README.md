@@ -24,3 +24,5 @@ cd work
 3. select scheme "libSDL_image-iOS" and build
 4. select scheme "libSDL_ttf-iOS" and build
 5. select scheme "ccViewer" and build
+
+If you want to use, fix a file "RemoteCloud/RemoteCloud/Secret.swift" for your own client_id and secret.
