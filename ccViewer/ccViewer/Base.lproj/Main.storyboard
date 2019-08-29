@@ -435,6 +435,7 @@
                                     <outletCollection property="gestureRecognizers" destination="U6F-t4-boc" appends="YES" id="DOA-Zq-mq6"/>
                                     <outletCollection property="gestureRecognizers" destination="L3y-6a-5I8" appends="YES" id="hiB-MN-poJ"/>
                                     <outletCollection property="gestureRecognizers" destination="KYa-0L-HVl" appends="YES" id="2cA-uu-n8u"/>
+                                    <outletCollection property="gestureRecognizers" destination="3Ub-Su-I8Y" appends="YES" id="5mC-09-8Vh"/>
                                 </connections>
                             </scrollView>
                         </subviews>
@@ -470,6 +471,11 @@
                         <action selector="singleTap:" destination="b60-o2-cRI" id="Ntb-dl-jK2"/>
                     </connections>
                 </tapGestureRecognizer>
+                <pongPressGestureRecognizer allowableMovement="10" minimumPressDuration="0.5" id="3Ub-Su-I8Y">
+                    <connections>
+                        <action selector="longTap:" destination="b60-o2-cRI" id="aFY-16-h7F"/>
+                    </connections>
+                </pongPressGestureRecognizer>
             </objects>
             <point key="canvasLocation" x="3590" y="851"/>
         </scene>

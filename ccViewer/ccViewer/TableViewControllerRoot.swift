@@ -15,6 +15,7 @@ class TableViewControllerRoot: UITableViewController {
 
     let activityIndicator = UIActivityIndicatorView()
     var storage: [String] = []
+    var storageShow: [String] = []
     let semaphore = DispatchSemaphore(value: 1)
 
     override func viewDidLoad() {
@@ -32,15 +33,37 @@ class TableViewControllerRoot: UITableViewController {
         
         navigationItem.rightBarButtonItems = [settingButton, addButton]
         
+        navigationItem.leftBarButtonItem = editButtonItem
+            
         activityIndicator.center = tableView.center
         activityIndicator.style = .whiteLarge
         activityIndicator.color = .black
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
         
-        storage = CloudFactory.shared.storages
+        let allStorages = CloudFactory.shared.storages
+        if let prev1 = UserDefaults.standard.array(forKey: "ShowingStorages"), let prevShowing = prev1 as? [String] {
+            storageShow = prevShowing
+        }
+        else {
+            storageShow = allStorages
+        }
+        if let prev0 = UserDefaults.standard.array(forKey: "AllStorages"), let prevAll = prev0 as? [String] {
+            storage = prevAll
+            let newStorage = allStorages.filter { !storage.contains($0) }
+            storage.append(contentsOf: newStorage)
+            storageShow = storage.filter { storageShow.contains($0) || newStorage.contains($0) }
+        }
+        else {
+            storage = allStorages
+        }
     }
 
+    func saveListItems() {
+        UserDefaults.standard.set(storage, forKey: "AllStorages")
+        UserDefaults.standard.set(storageShow, forKey: "ShowingStorages")
+    }
+    
     @objc func settingButtonDidTap(_ sender: UIBarButtonItem)
     {
         let next = storyboard!.instantiateViewController(withIdentifier: "Setting") as? TableViewControllerSetting
@@ -55,6 +78,12 @@ class TableViewControllerRoot: UITableViewController {
         self.navigationController?.pushViewController(next!, animated: true)
     }
     
+    override func setEditing(_ editing: Bool, animated: Bool) {
+        tableView.isEditing = editing
+        tableView.reloadData()
+        super.setEditing(editing, animated: animated)
+    }
+
     // MARK: - Table view data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -64,14 +93,14 @@ class TableViewControllerRoot: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         // #warning Incomplete implementation, return the number of rows
-        return storage.count
+        return tableView.isEditing ? storage.count : storageShow.count
     }
 
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Item", for: indexPath)
 
-        let name = storage[indexPath.row]
+        let name = tableView.isEditing ? storage[indexPath.row] : storageShow[indexPath.row]
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
         cell.textLabel?.text = name
@@ -91,7 +120,7 @@ class TableViewControllerRoot: UITableViewController {
         
         activityIndicator.startAnimating()
         let next = storyboard!.instantiateViewController(withIdentifier: "Main") as? TableViewControllerItems
-        let name = CloudFactory.shared.storages[indexPath.row]
+        let name = tableView.isEditing ? storage[indexPath.row] : storageShow[indexPath.row]
         CloudFactory.shared[name]?.list(fileId: "") {
             DispatchQueue.main.async {
                 self.activityIndicator.stopAnimating()
@@ -108,30 +137,85 @@ class TableViewControllerRoot: UITableViewController {
     override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
             // Delete the row from the data source
-            let name = CloudFactory.shared.storages[indexPath.row]
+            let name = tableView.isEditing ? storage[indexPath.row] : storageShow[indexPath.row]
             if name == "Local" {
                 return
             }
             
-            let alart = UIAlertController(title: "Logout", message: NSString(format: NSLocalizedString("Logout from %@ and remove item", comment: "") as NSString, name) as String, preferredStyle: .alert)
-            let delAction = UIAlertAction(title: NSLocalizedString("Delete", comment: ""), style: .destructive) { action in
-                CloudFactory.shared.delStorage(tagname: name)
-                
-                self.storage = CloudFactory.shared.storages
+            let alart0 = UIAlertController(title: "Remove Item", message: NSString(format: NSLocalizedString("Select 'Just hide on menu' / 'Log out'", comment: "") as NSString, name) as String, preferredStyle: .alert)
+
+            let hideAction = UIAlertAction(title: NSLocalizedString("Just hide on manu", comment: ""), style: .default) { action in
+                let hideItem = self.storage[indexPath.row]
+                if let hideIndex = self.storageShow.firstIndex(of: hideItem) {
+                    self.storageShow.remove(at: hideIndex)
+                }
+                self.saveListItems()
                 tableView.reloadData()
             }
-            let cancelAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel, handler: nil)
-            alart.addAction(delAction)
-            alart.addAction(cancelAction)
             
-            present(alart, animated: true, completion: nil)
+            let deleteAction = UIAlertAction(title: NSLocalizedString("Logout and Delete", comment: ""), style: .destructive) { action in
+                
+                let alart = UIAlertController(title: "Logout", message: NSString(format: NSLocalizedString("Logout from %@ and remove item", comment: "") as NSString, name) as String, preferredStyle: .alert)
+                let delAction = UIAlertAction(title: NSLocalizedString("Logout and Delete", comment: ""), style: .destructive) { action in
+                    CloudFactory.shared.delStorage(tagname: name)
+                    
+                    let allItems = CloudFactory.shared.storages
+                    self.storage = self.storage.filter(allItems.contains)
+                    self.storageShow = self.storageShow.filter(allItems.contains)
+                    self.saveListItems()
+                    tableView.reloadData()
+                }
+                let cancelAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel, handler: nil)
+                alart.addAction(delAction)
+                alart.addAction(cancelAction)
+                
+                self.present(alart, animated: true, completion: nil)
+            }
+
+            let cancelAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel, handler: nil)
+
+            alart0.addAction(hideAction)
+            alart0.addAction(deleteAction)
+            alart0.addAction(cancelAction)
+            
+            present(alart0, animated: true, completion: nil)
         }
+        else if editingStyle == .insert {
+            let insertItem = storage[indexPath.row]
+            storageShow = storage.filter { storageShow.contains($0) || $0 == insertItem }
+            saveListItems()
+            tableView.reloadData()
+        }
+    }
+    
+    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
+        if tableView.isEditing {
+            if storageShow.contains(storage[indexPath.row]) {
+                return .delete
+            }
+            else {
+                return .insert
+            }
+        }
+        return .none
+    }
+    
+    override func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
+        
+        let element = storage.remove(at: sourceIndexPath.row)
+        storage.insert(element, at: destinationIndexPath.row)
+        storageShow = storage.filter(storageShow.contains)
+        saveListItems()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.isToolbarHidden = true
-        storage = CloudFactory.shared.storages
+        let allstorage = CloudFactory.shared.storages
+        let newItem = allstorage.filter { !storage.contains($0) }
+        storage.append(contentsOf: newItem)
+        storageShow.append(contentsOf: newItem)
+        saveListItems()
         tableView.reloadData()
     }
 

@@ -7,17 +7,23 @@
 //
 
 import UIKit
+import RemoteCloud
 
-class ViewControllerImage: UIViewController, UIScrollViewDelegate {
+class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInteractionControllerDelegate {
 
     @IBOutlet weak var scrollView: UIScrollView!
 
     @IBOutlet weak var doubleTapGesture: UITapGestureRecognizer!
     @IBOutlet weak var singleTapGesture: UITapGestureRecognizer!
     
-    
+    let activityIndicator = UIActivityIndicatorView()
+    var documentInteractionController: UIDocumentInteractionController?
+    var sending: [URL] = []
+    var gone = true
+
     var imageView: UIImageView!
     var imagedata: UIImage!
+    var item: RemoteItem!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,6 +38,18 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate {
         imageView = UIImageView(image: imagedata)
         imageView.contentMode = .scaleAspectFit
         scrollView.addSubview(imageView)
+        
+        activityIndicator.center = view.center
+        activityIndicator.style = .whiteLarge
+        activityIndicator.hidesWhenStopped = true
+        view.addSubview(activityIndicator)
+    }
+    
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        if parent == nil {
+            gone = false
+        }
     }
     
     override func viewDidLayoutSubviews() {
@@ -71,6 +89,15 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate {
         }
     }
     
+    @IBAction func longTap(_ sender: UILongPressGestureRecognizer) {
+        if sender.state != UIGestureRecognizer.State.began {
+            return
+        }
+        
+        let location = sender.location(in: self.view)
+        exportItem(item: item, rect: CGRect(origin: location, size: CGSize(width: 0, height: 0)))
+    }
+    
     @IBAction func dissmiss(_ sender: Any) {
         let transition: CATransition = CATransition()
         transition.duration = 0.1
@@ -80,6 +107,98 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate {
         dismiss(animated: false, completion: nil)
     }
     
+    func writeTempfile(file: URL,stream: RemoteStream, pos: Int64, size: Int64, onFinish: @escaping ()->Void) {
+        var len = 1024*1024
+        guard gone else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        if pos + Int64(len) > size {
+            len = Int(size - pos)
+        }
+        if len > 0 {
+            stream.read(position: pos, length: len) { data in
+                if let data = data {
+                    let output = OutputStream(url: file, append: true)
+                    output?.open()
+                    let count = data.withUnsafeBytes() { bytes in
+                        output?.write(bytes.bindMemory(to: UInt8.self).baseAddress!, maxLength: data.count) ?? 0
+                    }
+                    if count > 0 {
+                        self.writeTempfile(file: file, stream: stream, pos: pos + Int64(count), size: size, onFinish: onFinish)
+                    }
+                    else {
+                        onFinish()
+                    }
+                }
+                else {
+                    onFinish()
+                }
+            }
+        }
+        else {
+            onFinish()
+        }
+    }
+    
+    func exportItem(item: RemoteItem, rect: CGRect) {
+        guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSTemporaryDirectory()) else {
+            return
+        }
+        let freesize = (attributes[FileAttributeKey.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+        if item.size >= freesize {
+            let alart = UIAlertController(title: "No storage", message: "item is too big", preferredStyle: .alert)
+            let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+            alart.addAction(okButton)
+            present(alart, animated: true, completion: nil)
+        }
+        guard let url = NSURL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(item.name) else {
+            return
+        }
+        activityIndicator.startAnimating()
+        
+        let stream = item.open()
+        writeTempfile(file: url, stream: stream, pos: 0, size: item.size) {
+            DispatchQueue.main.async {
+                self.activityIndicator.stopAnimating()
+                
+                self.documentInteractionController = UIDocumentInteractionController.init(url: url)
+                self.documentInteractionController?.delegate = self
+                if self.documentInteractionController?.presentOpenInMenu(from: rect, in: self.view, animated: true) ?? false {
+                }
+                else {
+                    let alart = UIAlertController(title: "No share app", message: "item cannot be handled", preferredStyle: .alert)
+                    let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+                    alart.addAction(okButton)
+                    self.present(alart, animated: true, completion: nil)
+                }
+            }
+        }
+    }
+
+    func documentInteractionControllerDidDismissOpenInMenu(_ controller: UIDocumentInteractionController) {
+        if let url = controller.url {
+            if !sending.contains(url) {
+                try? FileManager.default.removeItem(at: url)
+                sending.removeAll(where: { $0 == url } )
+            }
+        }
+    }
+    
+    func documentInteractionController(_ controller: UIDocumentInteractionController, willBeginSendingToApplication application: String?) {
+        if let url = controller.url {
+            sending += [url]
+        }
+    }
+    
+    func documentInteractionController(_ controller: UIDocumentInteractionController, didEndSendingToApplication application: String?) {
+        if let url = controller.url {
+            try? FileManager.default.removeItem(at: url)
+            sending.removeAll(where: { $0 == url } )
+        }
+    }
+    
+
     /*
     // MARK: - Navigation
 

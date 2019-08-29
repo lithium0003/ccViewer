@@ -10,7 +10,7 @@
 "Require password" = "パスワードが必要です";
 "Incorrect password" = "パスワードが違います";
 "Logout from %@ and remove item" = "%@ からログアウトしてアイテムを削除します";
-"Delete" = "削除";
+"Logout and Delete" = "ログアウトして削除";
 "Cancel" = "キャンセル";
 "Settings" = "設定";
 "Protect on Lanch" = "起動パスワード保護";
@@ -62,3 +62,6 @@
 "as Image" = "画像として開く";
 "as PDF" = "PDFとして開く";
 "as Raw binay" = "生データとして開く";
+
+"Select 'Just hide on menu' / 'Log out'" = "隠すのみ か ログアウト を選択";
+"Just hide on manu" = "隠すのみ";

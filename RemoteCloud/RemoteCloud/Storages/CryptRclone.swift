@@ -319,7 +319,8 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
         let alert = UIAlertController(title: "Load from rclone.conf", message: "select crypt item name", preferredStyle:  .alert)
         
         var alertItems = [UIAlertAction]()
-        for (confKey, confItems) in crypt_config {
+        for confKey in crypt_config.keys.sorted() {
+            let confItems = crypt_config[confKey]!
             let action = UIAlertAction(title: confKey, style: .default) { act in
                 self.textPassword.text = self.reveal(ciphertext: confItems["password"])
                 self.textSalt.text = self.reveal(ciphertext: confItems["password2"])

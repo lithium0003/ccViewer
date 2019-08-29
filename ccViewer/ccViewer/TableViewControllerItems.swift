@@ -842,6 +842,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 DispatchQueue.main.async {
                     let next = self.storyboard!.instantiateViewController(withIdentifier: "ImageView") as? ViewControllerImage
                     next?.imagedata = fixedImage
+                    next?.item = item
                     self.activityIndicator.stopAnimating()
                     self.semaphore.signal()
                     prevRoot?.present(next!, animated: true, completion: nil)
