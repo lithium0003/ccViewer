@@ -10,7 +10,7 @@
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>FFmpeg version 4.1.2</string>
+            <string>FFmpeg version 4.2</string>
             <key>FooterText</key>
             <string>
 GNU LESSER GENERAL PUBLIC LICENSE
@@ -26,7 +26,7 @@ of this license document, but changing it is not allowed.
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>SDL (12698:0cc2592ed0f4)</string>
+            <string>SDL (13027:69cc269eec53)</string>
             <key>FooterText</key>
             <string>
 Simple DirectMedia Layer
@@ -53,7 +53,7 @@ misrepresented as being the original software.
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>SDL_ttf (398:b357aefce885)</string>
+            <string>SDL_ttf (407:35cc24e43356)</string>
             <key>FooterText</key>
             <string>
 SDL_ttf:  A companion library to SDL for working with TrueType (tm) fonts
@@ -80,7 +80,7 @@ misrepresented as being the original software.
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>SDL_image (640:db8eb5e7247c)</string>
+            <string>SDL_image (692:245a91afa28b)</string>
             <key>FooterText</key>
             <string>
 SDL_image:  An example image loading library for use with SDL

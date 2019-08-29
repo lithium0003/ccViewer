@@ -9,15 +9,18 @@
 import Foundation
 import CommonCrypto
 
-class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
+class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate  {
     var textPassword: UITextField!
     var textSalt: UITextField!
     var textSuffix: UITextField!
     var stackView: UIStackView!
+    var switchObfuscation: UISwitch!
+    var switchHidename: UISwitch!
     var filenameEncryption: Bool = false
+    var filenameObfuscation: Bool = false
 
     var onCancel: (()->Void)!
-    var onFinish: ((String, String, String, Bool)->Void)!
+    var onFinish: ((String, String, String, Bool, Bool)->Void)!
     var done: Bool = false
     
     override func viewDidLoad() {
@@ -34,12 +37,24 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
         stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+
+        let stackView0 = UIStackView()
+        stackView0.axis = .horizontal
+        stackView0.alignment = .center
+        stackView0.spacing = 20
+        stackView.insertArrangedSubview(stackView0, at: 0)
+        
+        let button0 = UIButton(type: .system)
+        button0.setTitle("Load from rclone.conf", for: .normal)
+        button0.addTarget(self, action: #selector(buttonLoadEvent), for: .touchUpInside)
+        stackView0.insertArrangedSubview(button0, at: 0)
+
         
         let stackView1 = UIStackView()
         stackView1.axis = .horizontal
         stackView1.alignment = .center
         stackView1.spacing = 20
-        stackView.insertArrangedSubview(stackView1, at: 0)
+        stackView.insertArrangedSubview(stackView1, at: 1)
         
         let label = UILabel()
         label.text = "Password"
@@ -61,7 +76,7 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         stackView2.axis = .horizontal
         stackView2.alignment = .center
         stackView2.spacing = 20
-        stackView.insertArrangedSubview(stackView2, at: 1)
+        stackView.insertArrangedSubview(stackView2, at: 2)
         
         let label2 = UILabel()
         label2.text = "Salt"
@@ -83,22 +98,37 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         stackView3.axis = .horizontal
         stackView3.alignment = .center
         stackView3.spacing = 20
-        stackView.insertArrangedSubview(stackView3, at: 2)
+        stackView.insertArrangedSubview(stackView3, at: 3)
         
         let label3 = UILabel()
         label3.text = "Encrypt filename"
         stackView3.insertArrangedSubview(label3, at: 0)
         
-        let switchHidename = UISwitch()
+        switchHidename = UISwitch()
         switchHidename.addTarget(self, action: #selector(switchValueChanged), for: .valueChanged)
         filenameEncryption = switchHidename.isOn
         stackView3.insertArrangedSubview(switchHidename, at: 1)
+        
+        let stackView6 = UIStackView()
+        stackView6.axis = .horizontal
+        stackView6.alignment = .center
+        stackView6.spacing = 20
+        stackView.insertArrangedSubview(stackView6, at: 4)
+        
+        let label5 = UILabel()
+        label5.text = "Obfuscation mode"
+        stackView6.insertArrangedSubview(label5, at: 0)
+        
+        switchObfuscation = UISwitch()
+        switchObfuscation.addTarget(self, action: #selector(switchValueChanged2), for: .valueChanged)
+        filenameObfuscation = switchObfuscation.isOn
+        stackView6.insertArrangedSubview(switchObfuscation, at: 1)
         
         let stackView4 = UIStackView()
         stackView4.axis = .horizontal
         stackView4.alignment = .center
         stackView4.spacing = 20
-        stackView.insertArrangedSubview(stackView4, at: 3)
+        stackView.insertArrangedSubview(stackView4, at: 5)
         
         let label4 = UILabel()
         label4.text = "Suffix"
@@ -112,13 +142,14 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         textSuffix.placeholder = "bin"
         stackView4.insertArrangedSubview(textSuffix, at: 1)
 
-        (stackView.arrangedSubviews[3]).isHidden = switchHidename.isOn
+        (stackView.arrangedSubviews[4]).isHidden = !switchHidename.isOn
+        (stackView.arrangedSubviews[5]).isHidden = switchHidename.isOn
         
         let stackView5 = UIStackView()
         stackView5.axis = .horizontal
         stackView5.alignment = .center
         stackView5.spacing = 20
-        stackView.insertArrangedSubview(stackView5, at: 4)
+        stackView.insertArrangedSubview(stackView5, at: 6)
         
         let button1 = UIButton(type: .system)
         button1.setTitle("Done", for: .normal)
@@ -130,11 +161,229 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         button2.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
         stackView5.insertArrangedSubview(button2, at: 1)
     }
+
+    @objc func buttonLoadEvent(_ sender: UIButton) {
+        let picker = UIDocumentPickerViewController(documentTypes: ["info.lithium03.mtype.conf"], in: .open)
+        picker.delegate = self
+        present(picker, animated: true, completion: nil)
+    }
+    
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if let url = urls.first {
+            var conf = Data()
+            do {
+                guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
+                    return
+                }
+                defer {
+                    CFURLStopAccessingSecurityScopedResource(url as CFURL)
+                }
+                guard let input = InputStream(url: url) else {
+                    return
+                }
+                input.open()
+                do {
+                    defer {
+                        input.close()
+                    }
+                    var buffer = [UInt8](repeating: 0, count: 1024)
+                    while input.hasBytesAvailable {
+                        let read = input.read(&buffer, maxLength: buffer.count)
+                        if read < 0 {
+                            //Stream error occured
+                            print(input.streamError!)
+                            return
+                        } else if read == 0 {
+                            //EOF
+                            break
+                        }
+                        conf.append(buffer, count: read)
+                    }
+                }
+            }
+            guard let confstr = String(bytes: conf, encoding: .utf8) else {
+                return
+            }
+            let conflines = confstr.components(separatedBy: .newlines)
+            if conflines.contains("RCLONE_ENCRYPT_V0:") {
+                let base64 = conflines.last!
+                guard let box = Data(base64Encoded: base64) else {
+                    return
+                }
+                guard box.count >= 24+Secretbox.Overhead else {
+                    return
+                }
+                
+                let alert = UIAlertController(title: "Encrypt config file",
+                                              message: "enter password",
+                                              preferredStyle: .alert)
+                let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+                let defaultAction = UIAlertAction(title: "OK", style: .default) { action in
+                    if let password = alert.textFields?[0].text {
+                        let data = Array("[\(password)][rclone-config]".utf8)
+                        var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+                        CC_SHA256(data, CC_LONG(data.count), &configKey)
+
+                        let nonce = [UInt8](box.subdata(in: 0..<24))
+                        let key = Array(configKey[0..<32])
+                        guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
+                            return
+                        }
+                        guard let plain = String(bytes: out, encoding: .utf8) else {
+                            return
+                        }
+                        self.processConfigFile(conflines: plain.components(separatedBy: .newlines))
+                    }
+                }
+                
+                alert.addAction(cancelAction)
+                alert.addAction(defaultAction)
+                
+                alert.addTextField(configurationHandler: {(text:UITextField!) -> Void in
+                    text.placeholder = "password"
+                    let label = UILabel(frame: CGRect(x: 0, y: 0, width: 50, height: 30))
+                    label.text = "Pass"
+                    text.leftView = label
+                    text.leftViewMode = .always
+                    text.enablesReturnKeyAutomatically = true
+                    text.isSecureTextEntry = true
+                })
+                
+                present(alert, animated: true, completion: nil)
+                return
+            }
+            processConfigFile(conflines: conflines)
+        }
+    }
+    
+    func processConfigFile(conflines: [String]) {
+        var config = [String: Any]()
+        var aConfigName = ""
+        var aConfigs = [String: String]()
+        guard let regex1 = try? NSRegularExpression(pattern: #"\[(.+)\]"#, options: []) else {
+            return
+        }
+        guard let regex2 = try? NSRegularExpression(pattern: #"(\S+)\s*=\s*(.*)"#, options: []) else {
+            return
+        }
+        for line in conflines {
+            if line.hasPrefix(";") || line.hasPrefix("#") {
+                continue
+            }
+            let targetStringRange = NSRange(location: 0, length: line.count)
+            let results1 = regex1.matches(in: line, options: [], range: targetStringRange)
+            if results1.count > 0 {
+                if aConfigName != "" {
+                    // finish prev config
+                    config[aConfigName] = aConfigs
+                }
+                
+                let range = results1[0].range(at: 1)
+                aConfigName = (line as NSString).substring(with: range)
+                aConfigs.removeAll()
+                continue
+            }
+            let results2 = regex2.matches(in: line, options: [], range: targetStringRange)
+            if results2.count > 0 {
+                let range1 = results2[0].range(at: 1)
+                let range2 = results2[0].range(at: 2)
+                let name = (line as NSString).substring(with: range1)
+                let value = (line as NSString).substring(with: range2)
+                aConfigs[name] = value
+            }
+        }
+        if aConfigName != "" {
+            // finish prev config
+            config[aConfigName] = aConfigs
+        }
+        
+        var crypt_config = [String: [String: String]]()
+        for (confKey, confItems) in config {
+            guard let confItems = confItems as? [String: String] else {
+                continue
+            }
+            if let type = confItems["type"], type == "crypt" {
+                guard let password = confItems["password"] else {
+                    continue
+                }
+                guard let password2 = confItems["password2"] else {
+                    continue
+                }
+                guard let filename_encryption = confItems["filename_encryption"] else {
+                    continue
+                }
+                crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": filename_encryption]
+            }
+        }
+        
+        let alert = UIAlertController(title: "Load from rclone.conf", message: "select crypt item name", preferredStyle:  .alert)
+        
+        var alertItems = [UIAlertAction]()
+        for (confKey, confItems) in crypt_config {
+            let action = UIAlertAction(title: confKey, style: .default) { act in
+                self.textPassword.text = self.reveal(ciphertext: confItems["password"])
+                self.textSalt.text = self.reveal(ciphertext: confItems["password2"])
+                switch confItems["filename_encryption"] {
+                case "standard":
+                    self.filenameEncryption = true
+                    self.filenameObfuscation = false
+                case "obfuscate":
+                    self.filenameEncryption = true
+                    self.filenameObfuscation = true
+                case "off":
+                    self.filenameEncryption = false
+                    self.filenameObfuscation = false
+                default:
+                    break
+                }
+                self.switchObfuscation.isOn = self.filenameObfuscation
+                self.switchHidename.isOn = self.filenameEncryption
+                (self.stackView.arrangedSubviews[4]).isHidden = !self.switchHidename.isOn
+                (self.stackView.arrangedSubviews[5]).isHidden = self.switchHidename.isOn
+            }
+            alert.addAction(action)
+            alertItems.append(action)
+        }
+        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+        alert.addAction(cancelAction)
+        
+        present(alert, animated: true, completion: nil)
+    }
+    
+    func reveal(ciphertext: String?) -> String? {
+        guard let ciphertext = ciphertext else {
+            return nil
+        }
+        let key: [UInt8] = [ 0x9c, 0x93, 0x5b, 0x48, 0x73, 0x0a, 0x55, 0x4d,
+                             0x6b, 0xfd, 0x7c, 0x63, 0xc8, 0x86, 0xa9, 0x2b,
+                             0xd3, 0x90, 0x19, 0x8e, 0xb8, 0x12, 0x8a, 0xfb,
+                             0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95, 0xf6, 0x38,]
+        var ciphertext_stdbase64 = ciphertext.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        ciphertext_stdbase64.append(contentsOf: String(repeating: "=", count: 4 - ciphertext_stdbase64.count % 4))
+        print(ciphertext_stdbase64)
+        guard let cipher = Data(base64Encoded: ciphertext_stdbase64) else {
+            return nil
+        }
+        print(cipher)
+        guard cipher.count >= 16 else {
+            return ciphertext
+        }
+        let buffer = cipher.subdata(in: 16..<cipher.count)
+        let iv = cipher.subdata(in: 0..<16)
+        guard let aes = AES_CTR(key: key, nonce: [UInt8](iv)) else {
+            return nil
+        }
+        guard let plain = aes.encrypt(plaintext: [UInt8](buffer)) else {
+            return ciphertext
+        }
+        print(plain)
+        return String(bytes: plain, encoding: .utf8)
+    }
     
     @objc func buttonEvent(_ sender: UIButton) {
         if sender.currentTitle == "Done" {
             done = true
-            onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption)
+            onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption, filenameObfuscation)
         }
         else {
             navigationController?.popViewController(animated: true)
@@ -151,7 +400,7 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
         textField.resignFirstResponder()
         
         done = true
-        onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption)
+        onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption, filenameObfuscation)
         return true
     }
     
@@ -168,8 +417,13 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate  {
     }
     
     @objc func switchValueChanged(aSwitch: UISwitch) {
-        (stackView.arrangedSubviews[3]).isHidden = aSwitch.isOn
+        (stackView.arrangedSubviews[4]).isHidden = !aSwitch.isOn
+        (stackView.arrangedSubviews[5]).isHidden = aSwitch.isOn
         filenameEncryption = aSwitch.isOn
+    }
+
+    @objc func switchValueChanged2(aSwitch: UISwitch) {
+        filenameObfuscation = aSwitch.isOn
     }
 }
 
@@ -201,6 +455,7 @@ public class CryptRclone: ChildStorage {
     
     var name_aes: AES_EME?
     var name_crypt: Bool = true
+    var name_obfuscation: Bool = false
     var name_suffix: String = ""
     
     override public init(name: String) {
@@ -222,6 +477,12 @@ public class CryptRclone: ChildStorage {
         }
         else {
             name_crypt = false
+        }
+        if let b = getKeyChain(key: "\(self.storageName ?? "")_obfuscation"), b == "true" {
+            name_obfuscation = true
+        }
+        else {
+            name_obfuscation = false
         }
         if let s = getKeyChain(key: "\(self.storageName ?? "")_suffix"), s != "" {
             name_suffix = "."+s
@@ -247,14 +508,19 @@ public class CryptRclone: ChildStorage {
                         passwordView.onCancel = {
                             onFinish?(false)
                         }
-                        passwordView.onFinish = { pass, salt, suffix, cfname in
+                        passwordView.onFinish = { pass, salt, suffix, cfname, ofname in
                             let _ = self.setKeyChain(key: "\(self.storageName ?? "")_password", value: pass)
                             let _ = self.setKeyChain(key: "\(self.storageName ?? "")_salt", value: salt)
                             let _ = self.setKeyChain(key: "\(self.storageName ?? "")_suffix", value: suffix)
                             if cfname {
                                 let _ = self.setKeyChain(key: "\(self.storageName ?? "")_cryptname", value: "true")
                             }
+                            if ofname {
+                                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_obfuscation", value: "true")
+                            }
                             self.name_crypt = cfname
+                            self.name_obfuscation = ofname
+                            self.name_suffix = suffix != "" ? suffix : self.defaultSuffix
 
                             DispatchQueue.global().async {
                                 self.generateKey()
@@ -280,6 +546,7 @@ public class CryptRclone: ChildStorage {
             let _ = delKeyChain(key: "\(name)_salt")
             let _ = delKeyChain(key: "\(name)_suffix")
             let _ = delKeyChain(key: "\(name)_cryptname")
+            let _ = delKeyChain(key: "\(name)_obfuscation")
         }
         super.logout()
     }
@@ -296,7 +563,10 @@ public class CryptRclone: ChildStorage {
         
         let keysize = dataKey.count + nameKey.count + nameTweak.count
         DispatchQueue.global().async {
-            let key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .ascii)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
+            var key = [UInt8](repeating: 0, count: keysize)
+            if password != "" {
+                key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .ascii)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
+            }
             self.dataKey = Array(key[0..<32])
             self.nameKey = Array(key[32..<64])
             self.nameTweak = Array(key[64..<80])
@@ -434,7 +704,70 @@ public class CryptRclone: ChildStorage {
         if plain == "" {
             return ""
         }
-        if(name_crypt){
+        if name_obfuscation {
+            var dir: UInt32 = 0
+            for i in plain {
+                dir += i.unicodeScalars.first!.value
+            }
+            dir = dir % 256
+            
+            var crypted = "\(dir)."
+            for i in nameKey {
+                dir += UInt32(i)
+            }
+            
+            let obfuscQuoteRune:Character = "!"
+            for runeValue in plain {
+                switch runeValue {
+                case obfuscQuoteRune:
+                    crypted += String(obfuscQuoteRune)
+                    crypted += String(obfuscQuoteRune)
+                case "0"..."9":
+                    // Number
+                    let thisdir = (dir % 9) + 1
+                    let newRune = Unicode.Scalar("0").value + (runeValue.unicodeScalars.first!.value - Unicode.Scalar("0").value + thisdir) % 10
+                    crypted += String(Unicode.Scalar(newRune)!)
+                case "A"..."Z","a"..."z":
+                    // ASCII letter.  Try to avoid trivial A->a mappings
+                    let thisdir = dir % 25 + 1
+                    // Calculate the offset of this character in A-Za-z
+                    var pos = runeValue.unicodeScalars.first!.value - Unicode.Scalar("A").value
+                    if pos >= 26 {
+                        pos -= 6 // It's lower case
+                    }
+                    // Rotate the character to the new location
+                    pos = (pos + thisdir) % 52
+                    if pos >= 26 {
+                        pos += 6 // and handle lower case offset again
+                    }
+                    crypted += String(Unicode.Scalar(Unicode.Scalar("A").value + pos)!)
+                case "\u{A0}"..."\u{FF}":
+                    // Latin 1 supplement
+                    let thisdir = (dir % 95) + 1
+                    let newRune = 0xA0 + (runeValue.unicodeScalars.first!.value - 0xA0 - thisdir) % 96
+                    crypted += String(Unicode.Scalar(newRune)!)
+                case "\u{100}"...:
+                    // Some random Unicode range; we have no good rules here
+                    let thisdir = (dir % 127) + 1
+                    let base = runeValue.unicodeScalars.first!.value - runeValue.unicodeScalars.first!.value % 256
+                    let newRune = base + (runeValue.unicodeScalars.first!.value - base + thisdir) % 256
+                    // If the new character isn't a valid UTF8 char
+                    // then don't rotate it.  Quote it instead
+                    if let rune = Unicode.Scalar(newRune) {
+                        crypted += String(rune)
+                    }
+                    else {
+                        crypted += String(obfuscQuoteRune)
+                        crypted += String(runeValue)
+                    }
+                default:
+                    // Leave character untouched
+                    crypted += String(runeValue)
+                }
+            }
+            return crypted
+        }
+        else if name_crypt {
             guard var input = plain.data(using: .utf8) else {
                 return nil
             }
@@ -458,7 +791,79 @@ public class CryptRclone: ChildStorage {
             return ""
         }
         
-        if(name_crypt){
+        if name_obfuscation {
+            guard let range = ciphertext.range(of: ".") else {
+                return nil
+            }
+            let num = ciphertext.components(separatedBy: ".")[0]
+            let otext = ciphertext[range.upperBound...]
+            if num == "!" {
+                return String(otext)
+            }
+            guard var dir = Int(num) else {
+                return nil
+            }
+            for i in nameKey {
+                dir += Int(i)
+            }
+            var plain = ""
+            var inQuote = false
+            let obfuscQuoteRune:Character = "!"
+            for runeValue in otext {
+                if inQuote {
+                    plain += String(runeValue)
+                    inQuote = false
+                }
+                else {
+                    switch runeValue {
+                    case obfuscQuoteRune:
+                        inQuote = true
+                    case "0"..."9":
+                        // Number
+                        let thisdir = (dir % 9) + 1
+                        var newRune = runeValue.unicodeScalars.first!.value - UInt32(thisdir)
+                        if newRune < Unicode.Scalar("0").value {
+                            newRune += 10
+                        }
+                        plain += String(Unicode.Scalar(newRune)!)
+                    case "A"..."Z","a"..."z":
+                        let thisdir = dir % 25 + 1
+                        var pos = Int(runeValue.unicodeScalars.first!.value - Unicode.Scalar("A").value)
+                        if pos >= 26 {
+                            pos -= 6
+                        }
+                        pos = pos - thisdir
+                        if pos < 0 {
+                            pos += 52
+                        }
+                        if pos >= 26 {
+                            pos += 6
+                        }
+                        plain += String(Unicode.Scalar(Unicode.Scalar("A").value + UInt32(pos))!)
+                    case "\u{A0}"..."\u{FF}":
+                        let thisdir = (dir % 95) + 1
+                        var newRune = runeValue.unicodeScalars.first!.value - UInt32(thisdir)
+                        if newRune < 0xA0 {
+                            newRune += 96
+                        }
+                        plain += String(Unicode.Scalar(newRune)!)
+                    case "\u{100}"...:
+                        let thisdir = (dir % 127) + 1
+                        let base = runeValue.unicodeScalars.first!.value - runeValue.unicodeScalars.first!.value % 256
+                        var offset = Int(runeValue.unicodeScalars.first!.value - base) - thisdir
+                        if offset < 0 {
+                            offset += 256
+                        }
+                        let newRune = base + UInt32(offset)
+                        plain += String(Unicode.Scalar(newRune)!)
+                    default:
+                        plain += String(runeValue)
+                    }
+                }
+            }
+            return plain
+        }
+        else if name_crypt {
             guard let rawcipher = DecodeFileName(input: ciphertext) else {
                 return nil
             }
@@ -800,7 +1205,7 @@ class AES_EME {
                         var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
                         var outLength = Int(0)
                         status = CCCrypt(op,
-                                         CCAlgorithm(kCCAlgorithmAES128),
+                                         CCAlgorithm(kCCAlgorithmAES),
                                          CCOptions(kCCOptionECBMode),
                                          keyBytes.baseAddress,
                                          key.count,
@@ -828,7 +1233,7 @@ class AES_EME {
                     var outLength = Int(0)
                     let mcBytes = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
                     status = CCCrypt(op,
-                                     CCAlgorithm(kCCAlgorithmAES128),
+                                     CCAlgorithm(kCCAlgorithmAES),
                                      CCOptions(kCCOptionECBMode),
                                      keyBytes.baseAddress,
                                      key.count,
@@ -868,7 +1273,7 @@ class AES_EME {
                         var outLength = Int(0)
                         var outBytes = [UInt8](repeating: 0, count: 16)
                         status = CCCrypt(op,
-                                         CCAlgorithm(kCCAlgorithmAES128),
+                                         CCAlgorithm(kCCAlgorithmAES),
                                          CCOptions(kCCOptionECBMode),
                                          keyBytes.baseAddress,
                                          key.count,
@@ -965,7 +1370,7 @@ class AES_EME {
         var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
         key.withUnsafeBytes { keyBytes in
             status = CCCrypt(CCOperation(kCCEncrypt),
-                             CCAlgorithm(kCCAlgorithmAES128),
+                             CCAlgorithm(kCCAlgorithmAES),
                              CCOptions(kCCOptionECBMode),
                              keyBytes.baseAddress,
                              key.count,

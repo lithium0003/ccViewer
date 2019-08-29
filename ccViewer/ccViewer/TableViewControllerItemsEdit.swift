@@ -166,6 +166,34 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
             gone = false
         }
     }
+
+    func checkDupName(testName: String, onFinish: ((Bool)->Void)?) {
+        CloudFactory.shared[storageName]?.list(fileId: rootFileId) {
+            DispatchQueue.main.async {
+                self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                self.result_base = self.result
+                let text = self.navigationItem.searchController?.searchBar.text ?? ""
+                if text.isEmpty {
+                    self.result = self.result_base
+                } else {
+                    self.result = self.result_base
+                    self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+                }
+                
+                for item in self.result {
+                    if item.name == testName {
+                        DispatchQueue.global().async {
+                            onFinish?(false)
+                        }
+                        return
+                    }
+                }
+                DispatchQueue.global().async {
+                    onFinish?(true)
+                }
+            }
+        }
+    }
     
     @objc func refresh() {
         self.result = []
@@ -322,28 +350,34 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                     if newname == "" {
                                                         return
                                                     }
-                                                    DispatchQueue.global().async {
-                                                        CFURLStartAccessingSecurityScopedResource(url as CFURL)
-                                                        defer {
-                                                            CFURLStopAccessingSecurityScopedResource(url as CFURL)
-                                                        }
-                                                        let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
-                                                        do {
-                                                            if FileManager.default.fileExists(atPath: tmpurl.path) {
-                                                                try FileManager.default.removeItem(at: tmpurl)
-                                                            }
-                                                            try FileManager.default.copyItem(at: url, to: tmpurl)
-                                                        } catch {
+                                                    self.checkDupName(testName: newname) { success in
+                                                        guard success else {
                                                             return
                                                         }
-                                                        service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
-                                                            guard id != nil, self.gone else {
+
+                                                        DispatchQueue.global().async {
+                                                            CFURLStartAccessingSecurityScopedResource(url as CFURL)
+                                                            defer {
+                                                                CFURLStopAccessingSecurityScopedResource(url as CFURL)
+                                                            }
+                                                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
+                                                            do {
+                                                                if FileManager.default.fileExists(atPath: tmpurl.path) {
+                                                                    try FileManager.default.removeItem(at: tmpurl)
+                                                                }
+                                                                try FileManager.default.copyItem(at: url, to: tmpurl)
+                                                            } catch {
                                                                 return
                                                             }
-                                                            DispatchQueue.main.asyncAfter(deadline: .now()) {
-                                                                self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                                                                self.result_base = self.result
-                                                                self.tableView.reloadData()
+                                                            service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
+                                                                guard id != nil, self.gone else {
+                                                                    return
+                                                                }
+                                                                DispatchQueue.main.asyncAfter(deadline: .now()) {
+                                                                    self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                                                                    self.result_base = self.result
+                                                                    self.tableView.reloadData()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -386,32 +420,37 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                     if newname == "" {
                                                         return
                                                     }
-                                                    DispatchQueue.global().async {
-                                                        guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
+                                                    self.checkDupName(testName: newname) { success in
+                                                        guard success else {
                                                             return
                                                         }
-                                                        defer {
-                                                            CFURLStopAccessingSecurityScopedResource(url as CFURL)
-                                                        }
-                                                        let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
-                                                        do {
-                                                            if FileManager.default.fileExists(atPath: tmpurl.path) {
-                                                                try FileManager.default.removeItem(at: tmpurl)
-                                                            }
-                                                            try FileManager.default.copyItem(at: url, to: tmpurl)
-                                                        }
-                                                        catch let error {
-                                                            print(error)
-                                                            return
-                                                        }
-                                                        service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
-                                                            guard id != nil, self.gone else {
+                                                        DispatchQueue.global().async {
+                                                            guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
                                                                 return
                                                             }
-                                                            DispatchQueue.main.asyncAfter(deadline: .now()) {
-                                                                self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                                                                self.result_base = self.result
-                                                                self.tableView.reloadData()
+                                                            defer {
+                                                                CFURLStopAccessingSecurityScopedResource(url as CFURL)
+                                                            }
+                                                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
+                                                            do {
+                                                                if FileManager.default.fileExists(atPath: tmpurl.path) {
+                                                                    try FileManager.default.removeItem(at: tmpurl)
+                                                                }
+                                                                try FileManager.default.copyItem(at: url, to: tmpurl)
+                                                            }
+                                                            catch let error {
+                                                                print(error)
+                                                                return
+                                                            }
+                                                            service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
+                                                                guard id != nil, self.gone else {
+                                                                    return
+                                                                }
+                                                                DispatchQueue.main.asyncAfter(deadline: .now()) {
+                                                                    self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                                                                    self.result_base = self.result
+                                                                    self.tableView.reloadData()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -449,17 +488,23 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                 if newname == "" {
                                                     return
                                                 }
-                                                DispatchQueue.main.async {
-                                                    self.activityIndicator.startAnimating()
-                                                }
-                                                service.mkdir(parentId: self.rootFileId, newname: newname) { id in
-                                                    if id != nil {
-                                                        self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                                                        self.result_base = self.result
+                                                
+                                                self.checkDupName(testName: newname) { success in
+                                                    guard success else {
+                                                        return
                                                     }
                                                     DispatchQueue.main.async {
-                                                        self.activityIndicator.stopAnimating()
-                                                        self.tableView.reloadData()
+                                                        self.activityIndicator.startAnimating()
+                                                    }
+                                                    service.mkdir(parentId: self.rootFileId, newname: newname) { id in
+                                                        if id != nil {
+                                                            self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                                                            self.result_base = self.result
+                                                        }
+                                                        DispatchQueue.main.async {
+                                                            self.activityIndicator.stopAnimating()
+                                                            self.tableView.reloadData()
+                                                        }
                                                     }
                                                 }
                                             }
@@ -495,27 +540,32 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                     return
                                                 }
                                                 self.selection = []
-                                                DispatchQueue.main.async {
-                                                    self.activityIndicator.startAnimating()
-                                                }
-                                                item.rename(newname: newname) { id in
-                                                    var result = "failed"
-                                                    if id != nil {
-                                                        self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                                                        self.result_base = self.result
-                                                        result = "done"
+                                                self.checkDupName(testName: newname) { success in
+                                                    guard success else {
+                                                        return
                                                     }
                                                     DispatchQueue.main.async {
-                                                        self.activityIndicator.stopAnimating()
-                                                        self.tableView.reloadData()
-                                                        
-                                                        let alert2 = UIAlertController(title: "Result",
-                                                                                       message: "rename \(result)",
-                                                            preferredStyle: .alert)
-                                                        let okAction = UIAlertAction(title: "OK", style: .default)
-                                                        alert2.addAction(okAction)
-                                                        
-                                                        self.present(alert2, animated: true, completion: nil)
+                                                        self.activityIndicator.startAnimating()
+                                                    }
+                                                    item.rename(newname: newname) { id in
+                                                        var result = "failed"
+                                                        if id != nil {
+                                                            self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                                                            self.result_base = self.result
+                                                            result = "done"
+                                                        }
+                                                        DispatchQueue.main.async {
+                                                            self.activityIndicator.stopAnimating()
+                                                            self.tableView.reloadData()
+                                                            
+                                                            let alert2 = UIAlertController(title: "Result",
+                                                                                           message: "rename \(result)",
+                                                                preferredStyle: .alert)
+                                                            let okAction = UIAlertAction(title: "OK", style: .default)
+                                                            alert2.addAction(okAction)
+                                                            
+                                                            self.present(alert2, animated: true, completion: nil)
+                                                        }
                                                     }
                                                 }
                                             }

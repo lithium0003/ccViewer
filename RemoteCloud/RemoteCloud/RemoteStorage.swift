@@ -18,6 +18,7 @@ public enum CloudStorages: CaseIterable {
     case pCloud
     case CryptCarotDAV
     case CryptRclone
+    case Cryptomator
 }
 
 public protocol RemoteStorage {
@@ -158,7 +159,7 @@ public class RemoteItem {
         service.move(fileId: id, fromParent: parent, toParent: toParentId, onFinish: onFinish)
     }
     
-    public func read(start: Int64?, length: Int64?, onFinish: ((Data?)->Void)?){
+    public func read(start: Int64? = nil, length: Int64? = nil, onFinish: ((Data?)->Void)?){
         service.read(fileId: id, start: start, length: length, onFinish: onFinish)
     }
 }
@@ -230,10 +231,6 @@ public class CloudFactory {
             }
         }
         storageList["Local"] = newStorage(service: .Local, tagname: "Local")
-        
-//        for s in storages {
-//            deepLoad(storage: s)
-//        }
     }
     
     public let data = dataItems()
@@ -252,6 +249,8 @@ public class CloudFactory {
             return UIImage(named: "carot", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .CryptRclone:
             return UIImage(named: "rclone", in: Bundle(for: type(of: self)), compatibleWith: nil)
+        case .Cryptomator:
+            return UIImage(named: "cryptomator", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .Local:
             return UIImage(named: "local", in: Bundle(for: type(of: self)), compatibleWith: nil)
         }
@@ -271,6 +270,8 @@ public class CloudFactory {
             return "CryptCarotDAV"
         case .CryptRclone:
             return "CryptRclone"
+        case .Cryptomator:
+            return "Cryptomator"
         case .Local:
             return "Local"
         }
@@ -292,6 +293,8 @@ public class CloudFactory {
             return CryptCarotDAV(name: tagname)
         case .CryptRclone:
             return CryptRclone(name: tagname)
+        case .Cryptomator:
+            return Cryptomator(name: tagname)
         case .Local:
             return LocalStorage(name: tagname)
         }

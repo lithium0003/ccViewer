@@ -413,11 +413,6 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                                                 }
                                                 
             })
-            let defaultAction3 = UIAlertAction(title: NSLocalizedString("Raw viewer", comment: ""),
-                                               style: .default,
-                                               handler:{ action in
-                                                self.displayRawViewer(item: item)
-            })
             let defaultAction4 = UIAlertAction(title: NSLocalizedString("Media player", comment: ""),
                                                style: .default,
                                                handler:{ action in
@@ -432,12 +427,46 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                                                 self.playFFmpeg(item: item, onFinish: { finish in
                                                 })
             })
+            let defaultAction6 = UIAlertAction(title: NSLocalizedString("Force open with ...", comment: ""),
+                                               style: .default,
+                                               handler:{ action in
+                                                let alert2 = UIAlertController(title: item.name,
+                                                                              message: nil,
+                                                                              preferredStyle: .actionSheet)
+                                                let cancelAction2 = UIAlertAction(title: "Cancel", style: .cancel)
+                                                let defaultAction61 = UIAlertAction(title: NSLocalizedString("as Image", comment: ""),
+                                                                                    style: .default,
+                                                                                    handler:{ action in
+                                                                                        self.displayImageViewer(item: item, fallback: false)
+                                                                                    })
+                                                let defaultAction62 = UIAlertAction(title: NSLocalizedString("as PDF", comment: ""),
+                                                                                    style: .default,
+                                                                                    handler:{ action in
+                                                                                        self.displayPDFViewer(item: item, fallback: false)
+                                                })
+                                                let defaultAction63 = UIAlertAction(title: NSLocalizedString("as Raw binay", comment: ""),
+                                                                                   style: .default,
+                                                                                   handler:{ action in
+                                                                                    self.displayRawViewer(item: item)
+                                                })
+                                                alert2.addAction(cancelAction2)
+                                                alert2.addAction(defaultAction61)
+                                                alert2.addAction(defaultAction62)
+                                                alert2.addAction(defaultAction63)
+
+                                                let cell = self.tableView.cellForRow(at: indexPath)
+                                                alert2.popoverPresentationController?.sourceView = self.tableView
+                                                alert2.popoverPresentationController?.sourceRect = CGRect(x: cell?.frame.midX ?? 0, y: cell?.frame.midY ?? 0, width: 0, height: 0)
+                                                
+                                                self.present(alert2, animated: true, completion: nil)
+
+                                                })
             alert.addAction(cancelAction)
             alert.addAction(defaultAction)
             alert.addAction(defaultAction2)
-            alert.addAction(defaultAction3)
             alert.addAction(defaultAction4)
             alert.addAction(defaultAction5)
+            alert.addAction(defaultAction6)
 
             let cell = tableView.cellForRow(at: indexPath)
             alert.popoverPresentationController?.sourceView = tableView
@@ -728,26 +757,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             displayMediaViewer(item: item, fallback: true)
         }
         else if UserDefaults.standard.bool(forKey: "PDFViewer") && (item.ext == "pdf") {
-            let prevRoot = UIApplication.topViewController()
-            activityIndicator.startAnimating()
-            let stream = item.open()
-            stream.read(position: 0, length: Int(item.size)) { data in
-                if let data = data, let document = PDFDocument(data: data) {
-                    DispatchQueue.main.async {
-                        let next = self.storyboard!.instantiateViewController(withIdentifier: "PDFView") as? ViewControllerPDF
-                        next?.document = document
-                        self.activityIndicator.stopAnimating()
-                        self.semaphore.signal()
-                        prevRoot?.present(next!, animated: true, completion: nil)
-                    }
-                }
-                else {
-                    DispatchQueue.main.async {
-                        self.activityIndicator.stopAnimating()
-                        self.fallbackView(item: item)
-                    }
-                }
-            }
+            displayPDFViewer(item: item, fallback: true)
         }
         else {
             DispatchQueue.main.async {
@@ -766,21 +776,21 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         navigationController?.pushViewController(base, animated: true)
         let localpos = UserDefaults.standard.bool(forKey: "resumePlaypos") ? CloudFactory.shared.data.getMark(storage: item.storage, targetID: item.id) : nil
         Player.play(item: item, start: localpos, fontsize: 60) { position in
+            self.navigationController?.popToViewController(self, animated: true)
             let group = DispatchGroup()
             if let pos = position {
                 if UserDefaults.standard.bool(forKey: "savePlaypos") {
-                    CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                         CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
+                    }
+                    group.notify(queue: .main) {
+                        CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
                     }
                 }
             }
             group.notify(queue: .main) {
-                self.navigationController?.popToViewController(self, animated: true)
+                self.tableView.reloadData()
                 onFinish(position != nil)
-                DispatchQueue.main.asyncAfter(deadline: .now()+5) {
-                    self.tableView.reloadData()
-                }
             }
         }
     }
@@ -828,10 +838,35 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         activityIndicator.startAnimating()
         let stream = item.open()
         stream.read(position: 0, length: Int(item.size)) { data in
-            if let data = data, let image = UIImage(data: data) {
+            if let data = data, let image = UIImage(data: data), let fixedImage = image.fixedOrientation() {
                 DispatchQueue.main.async {
                     let next = self.storyboard!.instantiateViewController(withIdentifier: "ImageView") as? ViewControllerImage
-                    next?.imagedata = image
+                    next?.imagedata = fixedImage
+                    self.activityIndicator.stopAnimating()
+                    self.semaphore.signal()
+                    prevRoot?.present(next!, animated: true, completion: nil)
+                }
+            }
+            else {
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                    if fallback {
+                        self.fallbackView(item: item)
+                    }
+                }
+            }
+        }
+    }
+    
+    func displayPDFViewer(item: RemoteItem, fallback: Bool) {
+        let prevRoot = UIApplication.topViewController()
+        activityIndicator.startAnimating()
+        let stream = item.open()
+        stream.read(position: 0, length: Int(item.size)) { data in
+            if let data = data, let document = PDFDocument(data: data) {
+                DispatchQueue.main.async {
+                    let next = self.storyboard!.instantiateViewController(withIdentifier: "PDFView") as? ViewControllerPDF
+                    next?.document = document
                     self.activityIndicator.stopAnimating()
                     self.semaphore.signal()
                     prevRoot?.present(next!, animated: true, completion: nil)
@@ -863,18 +898,16 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             }
             if let pos = position {
                 if UserDefaults.standard.bool(forKey: "savePlaypos") {
-                    DispatchQueue.main.asyncAfter(deadline: .now()+1) {
-                        CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
+                    DispatchQueue.main.asyncAfter(deadline: .now()) {
                         let group = DispatchGroup()
                         self.activityIndicator.startAnimating()
                         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                             CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
                         }
                         group.notify(queue: .main) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
                             self.activityIndicator.stopAnimating()
-                            DispatchQueue.main.asyncAfter(deadline: .now()+5) {
-                                self.tableView.reloadData()
-                            }
+                            self.tableView.reloadData()
                         }
                     }
                 }
@@ -904,4 +937,70 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         // Pass the selected object to the new view controller.
     }
     */    
+}
+
+// https://gist.github.com/schickling/b5d86cb070130f80bb40
+extension UIImage {
+    
+    /// Fix image orientaton to protrait up
+    func fixedOrientation() -> UIImage? {
+        guard imageOrientation != UIImage.Orientation.up else {
+            // This is default orientation, don't need to do anything
+            return self.copy() as? UIImage
+        }
+        
+        guard let cgImage = self.cgImage else {
+            // CGImage is not available
+            return nil
+        }
+        
+        guard let colorSpace = cgImage.colorSpace, let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: cgImage.bitsPerComponent, bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil // Not able to create CGContext
+        }
+        
+        var transform: CGAffineTransform = CGAffineTransform.identity
+        
+        switch imageOrientation {
+        case .down, .downMirrored:
+            transform = transform.translatedBy(x: size.width, y: size.height)
+            transform = transform.rotated(by: CGFloat.pi)
+        case .left, .leftMirrored:
+            transform = transform.translatedBy(x: size.width, y: 0)
+            transform = transform.rotated(by: CGFloat.pi / 2.0)
+        case .right, .rightMirrored:
+            transform = transform.translatedBy(x: 0, y: size.height)
+            transform = transform.rotated(by: CGFloat.pi / -2.0)
+        case .up, .upMirrored:
+            break
+        @unknown default:
+            break
+        }
+        
+        // Flip image one more time if needed to, this is to prevent flipped image
+        switch imageOrientation {
+        case .upMirrored, .downMirrored:
+            transform = transform.translatedBy(x: size.width, y: 0)
+            transform = transform.scaledBy(x: -1, y: 1)
+        case .leftMirrored, .rightMirrored:
+            transform = transform.translatedBy(x: size.height, y: 0)
+            transform = transform.scaledBy(x: -1, y: 1)
+        case .up, .down, .left, .right:
+            break
+        @unknown default:
+            break
+        }
+        
+        ctx.concatenate(transform)
+        
+        switch imageOrientation {
+        case .left, .leftMirrored, .right, .rightMirrored:
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: size.height, height: size.width))
+        default:
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            break
+        }
+        
+        guard let newCGImage = ctx.makeImage() else { return nil }
+        return UIImage.init(cgImage: newCGImage, scale: 1, orientation: .up)
+    }
 }

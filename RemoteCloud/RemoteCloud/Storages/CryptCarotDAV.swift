@@ -312,7 +312,7 @@ public class CryptCarotDAV: ChildStorage {
             IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
                 key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
                     status = CCCrypt(CCOperation(kCCEncrypt),
-                                     CCAlgorithm(kCCAlgorithmAES128),
+                                     CCAlgorithm(kCCAlgorithmAES),
                                      0,
                                      keyBytes.bindMemory(to: UInt8.self).baseAddress,
                                      key.count,
@@ -388,7 +388,7 @@ public class CryptCarotDAV: ChildStorage {
             cryptbuf2.withUnsafeBytes { (cryptBytes: UnsafeRawBufferPointer)->Void in
                 key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
                     status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES128),
+                                     CCAlgorithm(kCCAlgorithmAES),
                                      CCOptions(kCCOptionECBMode),
                                      keyBytes.bindMemory(to: UInt8.self).baseAddress,
                                      key.count,
@@ -417,7 +417,7 @@ public class CryptCarotDAV: ChildStorage {
             IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
                 key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
                     status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES128),
+                                     CCAlgorithm(kCCAlgorithmAES),
                                      0,
                                      keyBytes.bindMemory(to: UInt8.self).baseAddress,
                                      key.count,
@@ -499,7 +499,7 @@ public class CryptCarotDAV: ChildStorage {
             CC_SHA256_Update(&context, &buffer, CC_LONG(len))
             var outLength = Int(0)
             let status = CCCrypt(CCOperation(kCCEncrypt),
-                                 CCAlgorithm(kCCAlgorithmAES128),
+                                 CCAlgorithm(kCCAlgorithmAES),
                                  0,
                                  &keybuf,
                                  keybuf.count,
@@ -605,7 +605,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
             IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
                 key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
                     status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES128),
+                                     CCAlgorithm(kCCAlgorithmAES),
                                      0,
                                      keyBytes.bindMemory(to: UInt8.self).baseAddress,
                                      key.count,

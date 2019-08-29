@@ -38,7 +38,6 @@
 
 "Export ..." = "他のアプリで開く";
 "Toggle Mark" = "再生済みマーク";
-"Raw viewer" = "生データを見る";
 "Media player" = "メディアプレーヤー";
 "Sofware player" = "ソフトウエア デコーダー";
 
@@ -58,3 +57,8 @@
 "twoUp" = "見開き表示";
 "rightToLeft" = "右綴じ";
 "frontCover" = "表紙あり";
+
+"Force open with ..." = "強制的に形式指定で開く ...";
+"as Image" = "画像として開く";
+"as PDF" = "PDFとして開く";
+"as Raw binay" = "生データとして開く";

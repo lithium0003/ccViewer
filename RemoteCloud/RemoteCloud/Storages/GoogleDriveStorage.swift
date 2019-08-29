@@ -408,7 +408,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         }
     }
 
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, group: DispatchGroup?) {
+    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, teamID: String? = nil, group: DispatchGroup?) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
 
@@ -433,6 +433,14 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         let size = Int64(item["size"] as? String ?? "0") ?? 0
         let hashstr = item["md5Checksum"] as? String ?? ""
         
+        let fixId: String
+        if let teamid = teamID {
+            fixId = "\(teamid) \(id)"
+        }
+        else {
+            fixId = id
+        }
+
         group?.enter()
         DispatchQueue.main.async {
             let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
@@ -441,7 +449,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             var prevPath: String?
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fixId, self.storageName ?? "")
             if let result = try? viewContext.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
@@ -457,7 +465,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             if trashed == 0 {
                 let newitem = RemoteData(context: viewContext)
                 newitem.storage = self.storageName
-                newitem.id = id
+                newitem.id = fixId
                 newitem.name = name
                 let comp = name.components(separatedBy: ".")
                 if comp.count >= 1 {
@@ -631,7 +639,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     let group = DispatchGroup()
                     
                     for item in items {
-                        self.storeItem(item: item, parentFileId: fileId, parentPath: path, group: group)
+                        self.storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, group: group)
                     }
                     group.notify(queue: .main){
                         let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
@@ -823,11 +831,16 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
     
     public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
         let fixParentId: String
+        var teamID: String? = nil
         if parentId.contains(" ") {
             let comp = parentId.components(separatedBy: " ")
+            teamID = comp[0]
             fixParentId = comp[1]
         }
         else if parentId == "" {
+            fixParentId = rootName
+        }
+        else if parentId == "mydrive" {
             fixParentId = rootName
         }
         else {
@@ -890,10 +903,17 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     guard let id = json["id"] as? String else {
                         throw RetryError.Retry
                     }
+                    let fixId: String
+                    if let teamID = teamID {
+                        fixId = "\(teamID) \(id)"
+                    }
+                    else {
+                        fixId = id
+                    }
                     DispatchQueue.global().async {
-                        self.getFile(fileId: id, parentId: parentId, parentPath: parentPath) { success in
+                        self.getFile(fileId: fixId, parentId: parentId, parentPath: parentPath) { success in
                             if success {
-                                onFinish?(id)
+                                onFinish?(fixId)
                             }
                             else {
                                 onFinish?(nil)
@@ -972,7 +992,15 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     let group = DispatchGroup()
                     group.enter()
                     DispatchQueue.global().async {
-                        self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, group: group)
+                        let teamID: String?
+                        if fileId.contains(" ") {
+                            let comp = fileId.components(separatedBy: " ")
+                            teamID = comp[0]
+                        }
+                        else {
+                            teamID = nil
+                        }
+                        self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, group: group)
                         group.leave()
                     }
                     group.notify(queue: .main){
@@ -1085,10 +1113,18 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     guard let id = json["id"] as? String else {
                         throw RetryError.Retry
                     }
-                    DispatchQueue.global().async {
-                        self.getFile(fileId: id) { s in
+                    DispatchQueue.global().asyncAfter(deadline: .now()+1) {
+                        let fixId: String
+                        if fileId.contains(" ") {
+                            let comp = fileId.components(separatedBy: " ")
+                            fixId = "\(comp[0]) \(id)"
+                        }
+                        else {
+                            fixId = id
+                        }
+                        self.getFile(fileId: fixId) { s in
                             if s {
-                                onFinish?(id)
+                                onFinish?(fixId)
                             }
                             else {
                                 onFinish?(nil)
@@ -1131,10 +1167,18 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             onFinish?(nil)
             return
         }
+        var targetId = fileId
         if fileId.contains(" ") {
-            callSemaphore.signal()
-            onFinish?(nil)
-            return
+            // teamdrive
+            let comp = fileId.components(separatedBy: " ")
+            let driveId = comp[0]
+            let fixFileId = comp[1]
+            if driveId == fixFileId {
+                callSemaphore.signal()
+                onFinish?(nil)
+                return
+            }
+            targetId = fixFileId
         }
         let toParentFix: String
         if toParentId.contains(" ") {
@@ -1181,7 +1225,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     return
                 }
                 
-                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fileId)?addParents=\(toParentFix)&removeParents=\(formParentFix)&supportsTeamDrives=true")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(targetId)?addParents=\(toParentFix)&removeParents=\(formParentFix)&supportsTeamDrives=true")!)
                 request.httpMethod = "PATCH"
                 request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
                 request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
@@ -1208,9 +1252,19 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                             throw RetryError.Retry
                         }
                         DispatchQueue.global().async {
-                            self.getFile(fileId: id, parentId: toParentId, parentPath: toParentPath) { s in
+                            let fixId: String
+                            if fileId.contains(" ") {
+                                // teamdrive
+                                let comp = fileId.components(separatedBy: " ")
+                                let driveId = comp[0]
+                                fixId = "\(driveId) \(id)"
+                            }
+                            else {
+                                fixId = id
+                            }
+                            self.getFile(fileId: fixId, parentId: toParentId, parentPath: toParentPath) { s in
                                 if s {
-                                    onFinish?(id)
+                                    onFinish?(fixId)
                                 }
                                 else {
                                     onFinish?(nil)
@@ -1325,20 +1379,42 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         if fileId.contains(" ") {
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
-            deleteDrive(driveId: driveId) { success in
-                guard success else {
-                    onFinish?(false)
-                    return
+            let fixFileId = comp[1]
+            if driveId == fixFileId {
+                deleteDrive(driveId: driveId) { success in
+                    guard success else {
+                        onFinish?(false)
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                        
+                        self.deleteChildRecursive(parent: driveId)
+                        
+                        try? viewContext.save()
+                        DispatchQueue.global().async {
+                            onFinish?(true)
+                        }
+                    }
                 }
-                
-                DispatchQueue.main.async {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    self.deleteChildRecursive(parent: driveId)
-                    
-                    try? viewContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(true)
+            }
+            else {
+                let json: [String: Any] = ["trashed": true]
+                updateFile(fileId: fileId, metadata: json) { id in
+                    guard let id = id else {
+                        onFinish?(false)
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                        
+                        self.deleteChildRecursive(parent: id)
+                        
+                        try? viewContext.save()
+                        DispatchQueue.global().async {
+                            onFinish?(true)
+                        }
                     }
                 }
             }
@@ -1450,7 +1526,13 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             // teamdrive
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
-            updateDrive(driveId: driveId, metadata: json, onFinish: onFinish)
+            let fixFileId = comp[1]
+            if driveId == fixFileId {
+                updateDrive(driveId: driveId, metadata: json, onFinish: onFinish)
+            }
+            else {
+                updateFile(fileId: fileId, metadata: json, onFinish: onFinish)
+            }
         }
         else {
             updateFile(fileId: fileId, metadata: json, onFinish: onFinish)
@@ -1458,9 +1540,19 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
     }
     
     override func changeTime(fileId: String, newdate: Date, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" || fileId.contains(" ") {
+        if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
             onFinish?(nil)
             return
+        }
+        if fileId.contains(" ") {
+            // teamdrive
+            let comp = fileId.components(separatedBy: " ")
+            let driveId = comp[0]
+            let fixFileId = comp[1]
+            if driveId == fixFileId {
+                onFinish?(nil)
+                return
+            }
         }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
@@ -1754,7 +1846,11 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 
             default:
                 print("\(httpResponse.statusCode) resume request")
-
+                print("\(httpResponse.allHeaderFields)")
+                if let data = taskdata["data"] as? Data {
+                    print(String(bytes: data, encoding: .utf8) ?? "")
+                }
+                
                 guard let tstream = InputStream(url: target) else {
                     throw RetryError.Failed
                 }

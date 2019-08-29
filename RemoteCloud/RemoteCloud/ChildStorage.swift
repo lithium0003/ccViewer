@@ -902,13 +902,19 @@ public class ChildStorage: RemoteStorageBase {
         let baseStorage = array[0]
         let baseFileId = array[1]
         if baseStorage == "" {
+            try? FileManager.default.removeItem(at: target)
+            onFinish?(nil)
             return
         }
         
         guard let s = CloudFactory.shared[baseStorage] as? RemoteStorageBase else {
+            try? FileManager.default.removeItem(at: target)
+            onFinish?(nil)
             return
         }
         guard let b = CloudFactory.shared[baseStorage]?.get(fileId: baseFileId) else {
+            try? FileManager.default.removeItem(at: target)
+            onFinish?(nil)
             return
         }
         let parentPath = b.path
@@ -917,6 +923,7 @@ public class ChildStorage: RemoteStorageBase {
             if let crypttarget = self.processFile(target: target) {
                 s.upload(parentId: baseFileId, uploadname: self.ConvertEncryptName(name: uploadname, folder: false), target: crypttarget) { newBaseId in
                     guard let newBaseId = newBaseId else {
+                        try? FileManager.default.removeItem(at: target)
                         onFinish?(nil)
                         return
                     }

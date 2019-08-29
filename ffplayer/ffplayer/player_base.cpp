@@ -1159,6 +1159,7 @@ int video_thread(void *arg)
                     return 1;
                 
                 if (inframe) av_frame_unref(inframe);
+                if (!filt_out) break;
                 while (av_buffersink_get_frame(filt_out, &frame) >= 0) {
                     
                     if (frame.width != is->video_srcwidth || frame.height != is->video_srcheight

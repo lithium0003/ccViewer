@@ -70,7 +70,7 @@ public class LocalStorage: RemoteStorageBase {
             return
         }
         let id = getIdFromURL(url: item)
-        let name = item.lastPathComponent
+        let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
         group?.enter()
         DispatchQueue.main.async {
             let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
