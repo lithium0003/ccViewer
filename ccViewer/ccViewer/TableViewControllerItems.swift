@@ -613,14 +613,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 f.timeStyle = .medium
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.groupingSeparator = ","
-            formatter.groupingSize = 3
-            let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useAll]
+            formatter.countStyle = .file
+            let sStr = formatter.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) bytes \t\(result[indexPath.row].subinfo ?? "")"
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) \t\(result[indexPath.row].subinfo ?? "")"
             cell.backgroundColor = UIColor.init(red: 0.95, green: 1.0, blue: 0.95, alpha: 1.0)
         }
         else {
@@ -632,14 +631,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 f.timeStyle = .medium
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.groupingSeparator = ","
-            formatter.groupingSize = 3
-            let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useAll]
+            formatter.countStyle = .file
+            let sStr = formatter.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) bytes \t\(result[indexPath.row].subinfo ?? "")"
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) \t\(result[indexPath.row].subinfo ?? "")"
             if let storage = result[indexPath.row].storage, let id = result[indexPath.row].id {
                 let localpos = CloudFactory.shared.data.getMark(storage: storage, targetID: id)
                 if localpos != nil {
