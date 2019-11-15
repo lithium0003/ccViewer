@@ -17,6 +17,7 @@ brew install yasm
 ### prepare depencency
 
 ```bash
+./chromecast.sh
 cd work
 ./clone.sh
 ./build.sh
