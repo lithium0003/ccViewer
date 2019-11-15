@@ -25,8 +25,12 @@ class ViewControllerPasswordCryptometor: UIViewController, UITextFieldDelegate {
         super.viewDidLoad()
         
         self.title = "Cryptometor password"
-        view.backgroundColor = .white
-        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
         stackView = UIStackView()
         stackView.axis = .vertical
         stackView.alignment = .center
@@ -75,8 +79,12 @@ class ViewControllerPasswordCryptometor: UIViewController, UITextFieldDelegate {
         stackView4.insertArrangedSubview(button2, at: 1)
         
         activityIndicatorView.center = view.center
-        activityIndicatorView.style = .whiteLarge
-        activityIndicatorView.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicatorView.style = .large
+        } else {
+            // Fallback on earlier versions
+            activityIndicatorView.style = .whiteLarge
+        }
         activityIndicatorView.hidesWhenStopped = true
         view.addSubview(activityIndicatorView)
     }
@@ -659,7 +667,7 @@ public class Cryptomator: ChildStorage {
         }
         
         // upload masterkey file
-        CloudFactory.shared[baseRootStorage]?.upload(parentId: baseRootFileId, uploadname: masterkey_filename, target: tempTarget) { id in
+        CloudFactory.shared[baseRootStorage]?.upload(parentId: baseRootFileId, sessionId: UUID().uuidString, uploadname: masterkey_filename, target: tempTarget) { id in
             onFinish?(id != nil)
         }
     }
@@ -749,7 +757,7 @@ public class Cryptomator: ChildStorage {
             newitem.name = newname
             let comp = newname.components(separatedBy: ".")
             if comp.count >= 1 {
-                newitem.ext = comp.last!
+                newitem.ext = comp.last!.lowercased()
             }
             newitem.cdate = newcdate
             newitem.mdate = newmdate
@@ -913,7 +921,7 @@ public class Cryptomator: ChildStorage {
                     output.write(content, maxLength: content.count)
                 }
                 
-                s.upload(parentId: item.id, uploadname: shortName, target: target) { newBaseId in
+                s.upload(parentId: item.id, sessionId: UUID().uuidString, uploadname: shortName, target: target) { newBaseId in
                     onFinish?(newBaseId != nil)
                 }
             }
@@ -1121,7 +1129,7 @@ public class Cryptomator: ChildStorage {
                         output.write(content, maxLength: content.count)
                     }
                     
-                    s.upload(parentId: baseItem.id, uploadname: deflatedName ?? encDirname, target: target) { newBaseId in
+                    s.upload(parentId: baseItem.id, sessionId: UUID().uuidString, uploadname: deflatedName ?? encDirname, target: target) { newBaseId in
                         guard let newBaseId = newBaseId else {
                             onFinish?(nil)
                             return
@@ -1152,7 +1160,7 @@ public class Cryptomator: ChildStorage {
                                     newitem.name = newname
                                     let comp = newname.components(separatedBy: ".")
                                     if comp.count >= 1 {
-                                        newitem.ext = comp.last!
+                                        newitem.ext = comp.last!.lowercased()
                                     }
                                     newitem.cdate = newcdate
                                     newitem.mdate = newmdate
@@ -1684,7 +1692,7 @@ public class Cryptomator: ChildStorage {
                             newitem.name = newname
                             let comp = newname.components(separatedBy: ".")
                             if comp.count >= 1 {
-                                newitem.ext = comp.last!
+                                newitem.ext = comp.last!.lowercased()
                             }
                             newitem.cdate = newcdate
                             newitem.mdate = newmdate
@@ -1962,7 +1970,7 @@ public class Cryptomator: ChildStorage {
         }
     }
 
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         let uploadname = uploadname.precomposedStringWithCanonicalMapping
         os_log("%{public}@", log: log, type: .debug, "uploadFile(\(String(describing: type(of: self))):\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
@@ -2023,7 +2031,7 @@ public class Cryptomator: ChildStorage {
                         return
                     }
                     if let crypttarget = self.processFile(target: target) {
-                        s.upload(parentId: baseItem.id, uploadname: deflatedName ?? encFilename, target: crypttarget) { newBaseId in
+                        s.upload(parentId: baseItem.id, sessionId: sessionId, uploadname: deflatedName ?? encFilename, target: crypttarget) { newBaseId in
                             guard let newBaseId = newBaseId else {
                                 try? FileManager.default.removeItem(at: target)
                                 onFinish?(nil)
@@ -2051,7 +2059,7 @@ public class Cryptomator: ChildStorage {
                                         newitem.name = newname
                                         let comp = newname.components(separatedBy: ".")
                                         if comp.count >= 1 {
-                                            newitem.ext = comp.last!
+                                            newitem.ext = comp.last!.lowercased()
                                         }
                                         newitem.cdate = newcdate
                                         newitem.mdate = newmdate
@@ -2391,36 +2399,38 @@ class CryptomatorCryptor {
     }
 
     func decryptChunk(chunk: Data, chunkId: Int64) -> Data? {
-        // check mac
-        let nonce_chunk = chunk.subdata(in: 0..<NONCE_SIZE)
-        let expectedMacBuf = chunk.subdata(in: (chunk.count-MAC_SIZE)..<chunk.count)
-        let payload = chunk.subdata(in: NONCE_SIZE..<(chunk.count-MAC_SIZE))
-        
-        var mac_target = Data()
-        mac_target.append(contentsOf: headerNonce)
-        var bigId = chunkId.bigEndian
-        mac_target.append(contentsOf: [UInt8](withUnsafeBytes(of: &bigId) { $0 }))
-        mac_target.append(nonce_chunk)
-        mac_target.append(payload)
-        
-        var result = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-        CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA256), macMasterKey, macMasterKey.count, [UInt8](mac_target), mac_target.count, &result)
-        
-        guard expectedMacBuf.elementsEqual(result) else {
-            print("mac not match in chunk.")
-            return nil
+        return autoreleasepool {
+            // check mac
+            let nonce_chunk = chunk.subdata(in: 0..<NONCE_SIZE)
+            let expectedMacBuf = chunk.subdata(in: (chunk.count-MAC_SIZE)..<chunk.count)
+            let payload = chunk.subdata(in: NONCE_SIZE..<(chunk.count-MAC_SIZE))
+            
+            var mac_target = Data()
+            mac_target.append(contentsOf: headerNonce)
+            var bigId = chunkId.bigEndian
+            mac_target.append(contentsOf: [UInt8](withUnsafeBytes(of: &bigId) { $0 }))
+            mac_target.append(nonce_chunk)
+            mac_target.append(payload)
+            
+            var result = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+            CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA256), macMasterKey, macMasterKey.count, [UInt8](mac_target), mac_target.count, &result)
+            
+            guard expectedMacBuf.elementsEqual(result) else {
+                print("mac not match in chunk.")
+                return nil
+            }
+            
+            // decrypt payload:
+            guard let cipher = AES_CTR(key: contentKey, nonce: [UInt8](nonce_chunk)) else {
+                print("AES_CTR error")
+                return nil
+            }
+            guard let plain = cipher.encrypt(plaintext: [UInt8](payload)) else {
+                print("block decrypt error")
+                return nil
+            }
+            return Data(plain)
         }
-        
-        // decrypt payload:
-        guard let cipher = AES_CTR(key: contentKey, nonce: [UInt8](nonce_chunk)) else {
-            print("AES_CTR error")
-            return nil
-        }
-        guard let plain = cipher.encrypt(plaintext: [UInt8](payload)) else {
-            print("block decrypt error")
-            return nil
-        }
-        return Data(plain)
     }
 
 }
@@ -2517,14 +2527,19 @@ public class RemoteCryptomatorStream: SlotStream {
                         var slot = slot1
                         var plainBlock = Data()
                         for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                            let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                            let chunk = data.subdata(in: start..<end)
-                            guard let plain = self.cipher.decryptChunk(chunk: chunk, chunkId: slot) else {
-                                self.error = true
+                            autoreleasepool {
+                                let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
+                                let chunk = data.subdata(in: start..<end)
+                                guard let plain = self.cipher.decryptChunk(chunk: chunk, chunkId: slot) else {
+                                    self.error = true
+                                    return
+                                }
+                                plainBlock.append(plain)
+                                slot += 1
+                            }
+                            guard !self.error else {
                                 return
                             }
-                            plainBlock.append(plain)
-                            slot += 1
                         }
                         self.queue_buf.async {
                             self.buffer[pos1] = plainBlock

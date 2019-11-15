@@ -30,6 +30,12 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
         super.viewDidLoad()
 
         // Do any additional setup after loading the view.
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
         pickerView.delegate = self
         offsetTextField.delegate = self
         
@@ -41,10 +47,20 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
         scrollView.addSubview(textView!)
         
         activityIndicator.center = view.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -74,7 +90,7 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
             self.infoLabel.text = "\(sStr) bytes\t\(String(format: "0x%08x", data.size))"
             self.activityIndicator.startAnimating()
         }
-        self.remoteData?.read(position: 0, length: 64*1024) { data in
+        self.remoteData?.read(position: 0, length: 64*1024, onProgress: nil) { data in
             if let data = data {
                 let str = self.convertData(type: 0, data: data)
                 DispatchQueue.main.async {
@@ -141,7 +157,7 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         activityIndicator.startAnimating()
-        self.remoteData?.read(position: offset, length: 64*1024) { data in
+        self.remoteData?.read(position: offset, length: 64*1024, onProgress: nil) { data in
             if let data = data {
                 let str = self.convertData(type: row, data: data)
                 DispatchQueue.main.async {
@@ -179,7 +195,7 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
         
         let newoffset = Int64(textField.text ?? "0", radix: 16) ?? 0
         offset = newoffset
-        self.remoteData?.read(position: offset, length: 64*1024) { data in
+        self.remoteData?.read(position: offset, length: 64*1024, onProgress: nil) { data in
             if let data = data {
                 let str = self.convertData(type: row, data: data)
                 DispatchQueue.main.async {

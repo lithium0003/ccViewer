@@ -12,9 +12,15 @@ import os.log
 
 class PurchaceViewController: UIViewController, PurchaseManagerDelegate {
     let log = OSLog(subsystem: Bundle.main.bundleIdentifier!, category: "Utility")
+    #if targetEnvironment(macCatalyst)
+    let productIdentifiers : [String] = ["maccatalyst.info.lithium03.ccViewer.coffee",
+                                         "maccatalyst.info.lithium03.ccViewer.orange",
+                                         "maccatalyst.info.lithium03.ccViewer.dinner"]
+    #else
     let productIdentifiers : [String] = ["info.lithium03.ccViewer.coffee",
                                          "info.lithium03.ccViewer.orange",
                                          "info.lithium03.ccViewer.dinner"]
+    #endif
     var retry_count = 0
     
     
@@ -105,32 +111,34 @@ class PurchaceViewController: UIViewController, PurchaseManagerDelegate {
         //---------------------------
         // コンテンツ解放処理
         //---------------------------
-        if let id = self.productIdentifiers.firstIndex(of: transaction.payment.productIdentifier) {
-            switch id {
-            case 0:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product1")
-                item1.isEnabled = true
-                image1.image = UIImage(named: "Image1")
-                count1.text = (count > 0) ? "\(count)" : ""
-            case 1:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product2")
-                item2.isEnabled = true
-                image2.image = UIImage(named: "Image2")
-                count2.text = (count > 0) ? "\(count)" : ""
-            case 2:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product3")
-                item3.isEnabled = true
-                image3.image = UIImage(named: "Image3")
-                count3.text = (count > 0) ? "\(count)" : ""
-            default:
-                break
+        DispatchQueue.main.async {
+            if let id = self.productIdentifiers.firstIndex(of: transaction.payment.productIdentifier) {
+                switch id {
+                case 0:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product1")
+                    self.item1.isEnabled = true
+                    self.image1.image = UIImage(named: "Image1")
+                    self.count1.text = (count > 0) ? "\(count)" : ""
+                case 1:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product2")
+                    self.item2.isEnabled = true
+                    self.image2.image = UIImage(named: "Image2")
+                    self.count2.text = (count > 0) ? "\(count)" : ""
+                case 2:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product3")
+                    self.item3.isEnabled = true
+                    self.image3.image = UIImage(named: "Image3")
+                    self.count3.text = (count > 0) ? "\(count)" : ""
+                default:
+                    break
+                }
             }
+            //コンテンツ解放が終了したら、この処理を実行(true: 課金処理全部完了, false 課金処理中断)
+            decisionHandler(true)
         }
-        //コンテンツ解放が終了したら、この処理を実行(true: 課金処理全部完了, false 課金処理中断)
-        decisionHandler(true)
     }
     //課金終了時に呼び出される(startPurchaseで指定したプロダクトID以外のものが課金された時。)
     func purchaseManager(_ purchaseManager: PurchaseManager!, didFinishUntreatedPurchaseWithTransaction transaction: SKPaymentTransaction!, decisionHandler: ((_ complete: Bool) -> Void)!) {
@@ -138,45 +146,49 @@ class PurchaceViewController: UIViewController, PurchaseManagerDelegate {
         //---------------------------
         // コンテンツ解放処理
         //---------------------------
-        if let id = self.productIdentifiers.firstIndex(of: transaction.payment.productIdentifier) {
-            switch id {
-            case 0:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product1")
-                item1.isEnabled = true
-                image1.image = UIImage(named: "Image1")
-                count1.text = (count > 0) ? "\(count)" : ""
-            case 1:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product2")
-                item2.isEnabled = true
-                image2.image = UIImage(named: "Image2")
-                count2.text = (count > 0) ? "\(count)" : ""
-            case 2:
-                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3") + 1
-                NSUbiquitousKeyValueStore.default.set(count, forKey: "Product3")
-                item3.isEnabled = true
-                image3.image = UIImage(named: "Image3")
-                count3.text = (count > 0) ? "\(count)" : ""
-            default:
-                break
+        DispatchQueue.main.async {
+            if let id = self.productIdentifiers.firstIndex(of: transaction.payment.productIdentifier) {
+                switch id {
+                case 0:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product1")
+                    self.item1.isEnabled = true
+                    self.image1.image = UIImage(named: "Image1")
+                    self.count1.text = (count > 0) ? "\(count)" : ""
+                case 1:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product2")
+                    self.item2.isEnabled = true
+                    self.image2.image = UIImage(named: "Image2")
+                    self.count2.text = (count > 0) ? "\(count)" : ""
+                case 2:
+                    let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3") + 1
+                    NSUbiquitousKeyValueStore.default.set(count, forKey: "Product3")
+                    self.item3.isEnabled = true
+                    self.image3.image = UIImage(named: "Image3")
+                    self.count3.text = (count > 0) ? "\(count)" : ""
+                default:
+                    break
+                }
             }
+            //コンテンツ解放が終了したら、この処理を実行(true: 課金処理全部完了, false 課金処理中断)
+            decisionHandler(true)
         }
-        //コンテンツ解放が終了したら、この処理を実行(true: 課金処理全部完了, false 課金処理中断)
-        decisionHandler(true)
     }
     //課金失敗時に呼び出される
     func purchaseManager(_ purchaseManager: PurchaseManager!, didFailWithError error: NSError!) {
         print("課金失敗！！")
         // TODO errorを使ってアラート表示
         os_log("purchaseManager(didFailWithError) %{public}@", log: self.log, type: .error, error.localizedDescription)
-        let alert: UIAlertController = UIAlertController(title: error.localizedDescription, message: error.localizedRecoverySuggestion, preferredStyle:  UIAlertController.Style.alert)
-        let defaultAction = UIAlertAction(title: "OK", style: UIAlertAction.Style.default, handler: nil)
-        alert.addAction(defaultAction)
-        
-        let screenSize = UIScreen.main.bounds
-        alert.popoverPresentationController?.sourceRect = CGRect(x: screenSize.size.width/2, y: screenSize.size.height, width: 0, height: 0)
-        present(alert, animated: true)
+        DispatchQueue.main.async {
+            let alert: UIAlertController = UIAlertController(title: error.localizedDescription, message: error.localizedRecoverySuggestion, preferredStyle:  UIAlertController.Style.alert)
+            let defaultAction = UIAlertAction(title: "OK", style: UIAlertAction.Style.default, handler: nil)
+            alert.addAction(defaultAction)
+            
+            let screenSize = UIScreen.main.bounds
+            alert.popoverPresentationController?.sourceRect = CGRect(x: screenSize.size.width/2, y: screenSize.size.height, width: 0, height: 0)
+            self.present(alert, animated: true)
+        }
 
     }
     // リストア終了時に呼び出される(個々のトランザクションは”課金終了”で処理)
@@ -202,49 +214,51 @@ class PurchaceViewController: UIViewController, PurchaseManagerDelegate {
                 print(error!.localizedDescription)
                 return
             }
-            for product in products! {
-                let priceString = ProductManager.priceStringFromProduct(product: product)
-                if let id = self?.productIdentifiers.firstIndex(of: product.productIdentifier) {
-                    if self != nil {
-                        switch id {
-                        case 0:
-                            self?.item1.titleLabel?.numberOfLines = 0
-                            self?.item1.titleLabel?.textAlignment = .center
-                            self?.item1.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
-                            self?.item1.isEnabled = true
-                            let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1")
-                            if count > 0 {
-                                self?.image1.image = UIImage(named: "Image1")
-                                self?.count1.text = (count > 0) ? "\(count)" : ""
+            DispatchQueue.main.async {
+                for product in products! {
+                    let priceString = ProductManager.priceStringFromProduct(product: product)
+                    if let id = self?.productIdentifiers.firstIndex(of: product.productIdentifier) {
+                        if self != nil {
+                            switch id {
+                            case 0:
+                                self?.item1.titleLabel?.numberOfLines = 0
+                                self?.item1.titleLabel?.textAlignment = .center
+                                self?.item1.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
+                                self?.item1.isEnabled = true
+                                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product1")
+                                if count > 0 {
+                                    self?.image1.image = UIImage(named: "Image1")
+                                    self?.count1.text = (count > 0) ? "\(count)" : ""
+                                }
+                            case 1:
+                                self?.item2.titleLabel?.numberOfLines = 0
+                                self?.item2.titleLabel?.textAlignment = .center
+                                self?.item2.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
+                                self?.item2.isEnabled = true
+                                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2")
+                                if count > 0 {
+                                    self?.image2.image = UIImage(named: "Image2")
+                                    self?.count2.text = (count > 0) ? "\(count)" : ""
+                                }
+                            case 2:
+                                self?.item3.titleLabel?.numberOfLines = 0
+                                self?.item3.titleLabel?.textAlignment = .center
+                                self?.item3.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
+                                self?.item3.isEnabled = true
+                                let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3")
+                                if count > 0 {
+                                    self?.image3.image = UIImage(named: "Image3")
+                                    self?.count3.text = (count > 0) ? "\(count)" : ""
+                                }
+                            default:
+                                break
                             }
-                        case 1:
-                            self?.item2.titleLabel?.numberOfLines = 0
-                            self?.item2.titleLabel?.textAlignment = .center
-                            self?.item2.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
-                            self?.item2.isEnabled = true
-                            let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product2")
-                            if count > 0 {
-                                self?.image2.image = UIImage(named: "Image2")
-                                self?.count2.text = (count > 0) ? "\(count)" : ""
-                            }
-                        case 2:
-                            self?.item3.titleLabel?.numberOfLines = 0
-                            self?.item3.titleLabel?.textAlignment = .center
-                            self?.item3.setTitle("\(product.localizedTitle) : \(priceString)\n\(product.localizedDescription)", for: .normal)
-                            self?.item3.isEnabled = true
-                            let count = NSUbiquitousKeyValueStore.default.longLong(forKey: "Product3")
-                            if count > 0 {
-                                self?.image3.image = UIImage(named: "Image3")
-                                self?.count3.text = (count > 0) ? "\(count)" : ""
-                            }
-                        default:
-                            break
                         }
+                        print(product.productIdentifier + " \(product.localizedTitle):\(priceString)\n\(product.localizedDescription)" )
                     }
-                    print(product.productIdentifier + " \(product.localizedTitle):\(priceString)\n\(product.localizedDescription)" )
                 }
+                group.leave()
             }
-            group.leave()
         })
         group.notify(queue: .main ) { [weak self] in
             if (self?.retry_count ?? 0) > 0 {

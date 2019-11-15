@@ -23,8 +23,24 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
 
     var imageView: UIImageView!
     var imagedata: UIImage!
-    var item: RemoteItem!
+    var items: [RemoteItem] = []
+    var data: [Data?] = []
+    var images: [UIImage?] = []
+    var itemIdx = 0
+    var errorIdx: [Int] = []
     
+    var isIconShowen = true
+    var button_close: UIButton!
+    
+    var isDownloading = false
+    
+    lazy var downloadProgress: DownloadProgressViewController = {
+        let d = DownloadProgressViewController()
+        d.modalPresentationStyle = .custom
+        d.transitioningDelegate = self
+        return d
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -40,9 +56,50 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         scrollView.addSubview(imageView)
         
         activityIndicator.center = view.center
-        activityIndicator.style = .whiteLarge
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+
+        let close_image = UIImage(named: "close")
+        button_close = UIButton()
+        button_close.setImage(close_image, for: .normal)
+        button_close.backgroundColor = UIColor(white: 0, alpha: 0.5)
+        button_close.layer.cornerRadius = 10
+        button_close.addTarget(self, action: #selector(closebuttonEvent), for: .touchUpInside)
+        view.addSubview(button_close)
+                
+        button_close.translatesAutoresizingMaskIntoConstraints = false
+        button_close.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10).isActive = true
+        button_close.leftAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leftAnchor, constant: 10).isActive = true
+        button_close.widthAnchor.constraint(equalToConstant: 50).isActive = true;
+        button_close.heightAnchor.constraint(equalToConstant: 50).isActive = true;
+
+        let gestureRecognizerDown = UISwipeGestureRecognizer(target: self, action: #selector(downSwipe))
+        gestureRecognizerDown.direction = .down
+        view.addGestureRecognizer(gestureRecognizerDown)
+    }
+    
+    func iconShow() {
+        button_close.isHidden = false
+        isIconShowen = true
+    }
+    
+    func iconHide() {
+        button_close.isHidden = true
+        isIconShowen = false
     }
     
     override func didMove(toParent parent: UIViewController?) {
@@ -52,6 +109,13 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         }
     }
     
+    override open var shouldAutorotate: Bool {
+        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
+            return false
+        }
+        return true
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         
@@ -80,6 +144,12 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
     }
 
     @IBAction func singleTap(_ sender: Any) {
+        if isIconShowen {
+            iconHide()
+        }
+        else {
+            iconShow()
+        }
         if let image = imageView.image {
             let w_scale = scrollView.frame.width / image.size.width
             let h_scale = scrollView.frame.height / image.size.height
@@ -95,87 +165,250 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         }
         
         let location = sender.location(in: self.view)
-        exportItem(item: item, rect: CGRect(origin: location, size: CGSize(width: 0, height: 0)))
+        #if !targetEnvironment(macCatalyst)
+        exportItem(rect: CGRect(origin: location, size: CGSize(width: 0, height: 0)))
+        #endif
     }
     
-    @IBAction func dissmiss(_ sender: Any) {
-        let transition: CATransition = CATransition()
-        transition.duration = 0.1
-        transition.type = .moveIn
-        transition.subtype = .fromLeft
-        view.window?.layer.add(transition, forKey: "transition")
-        dismiss(animated: false, completion: nil)
+    func presentImage(toLeft: Bool) {
+        if let im = images[itemIdx] {
+            let newImage = UIImageView(image: im)
+            let transition = CATransition()
+            transition.duration = 0.1
+            transition.type = .moveIn
+            transition.subtype = toLeft ? .fromRight : .fromLeft
+            view.layer.add(transition, forKey: nil)
+
+            imagedata = im
+            imageView.removeFromSuperview()
+            scrollView.addSubview(newImage)
+            imageView = newImage
+            if let image = imageView.image {
+                let w_scale = scrollView.frame.width / image.size.width
+                let h_scale = scrollView.frame.height / image.size.height
+                
+                let scale = min(w_scale, h_scale)
+                scrollView.setZoomScale(scale, animated: false)
+            }
+        }
+        else {
+            transrateData(toLeft: toLeft)
+        }
     }
     
-    func writeTempfile(file: URL,stream: RemoteStream, pos: Int64, size: Int64, onFinish: @escaping ()->Void) {
-        var len = 1024*1024
-        guard gone else {
-            try? FileManager.default.removeItem(at: file)
-            return
-        }
-        if pos + Int64(len) > size {
-            len = Int(size - pos)
-        }
-        if len > 0 {
-            stream.read(position: pos, length: len) { data in
-                if let data = data {
-                    let output = OutputStream(url: file, append: true)
-                    output?.open()
-                    let count = data.withUnsafeBytes() { bytes in
-                        output?.write(bytes.bindMemory(to: UInt8.self).baseAddress!, maxLength: data.count) ?? 0
-                    }
-                    if count > 0 {
-                        self.writeTempfile(file: file, stream: stream, pos: pos + Int64(count), size: size, onFinish: onFinish)
-                    }
-                    else {
-                        onFinish()
+    func transrateData(toLeft: Bool) {
+        if let d = data[itemIdx] {
+            let idx = itemIdx
+            activityIndicator.startAnimating()
+            DispatchQueue.global().async {
+                if let image = UIImage(data: d), let fixedImage = image.fixedOrientation() {
+                    self.images[idx] = fixedImage
+                    DispatchQueue.main.async {
+                        self.activityIndicator.stopAnimating()
+                        self.presentImage(toLeft: toLeft)
                     }
                 }
                 else {
-                    onFinish()
+                    self.errorIdx += [idx]
+                    DispatchQueue.main.async {
+                        self.activityIndicator.stopAnimating()
+                    }
                 }
             }
         }
         else {
-            onFinish()
+            downloadData(toLeft: toLeft)
         }
     }
     
-    func exportItem(item: RemoteItem, rect: CGRect) {
+    func downloadData(toLeft: Bool) {
+        let idx = itemIdx
+        guard items[idx].size > 0 else {
+            errorIdx += [idx]
+            return
+        }
+        downloadProgress.filepos = 0
+        downloadProgress.filesize = Int(items[idx].size)
+        downloadProgress.isLive = true
+        present(downloadProgress, animated: false, completion: nil)
+
+        isDownloading = true
+        let stream = items[idx].open()
+        stream.read(position: 0, length: Int(items[idx].size), onProgress: { pos in
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = pos
+            }
+            return self.downloadProgress.isLive
+        }) { data in
+            self.isDownloading = false
+            guard self.downloadProgress.isLive else {
+                stream.isLive = false
+                return
+            }
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = Int(self.items[idx].size)
+            }
+            if let data = data {
+                self.data[idx] = data
+                DispatchQueue.main.async {
+                    self.downloadProgress.dismiss(animated: false, completion: nil)
+                    self.transrateData(toLeft: toLeft)
+                }
+            }
+            else {
+                DispatchQueue.main.async {
+                    self.downloadProgress.dismiss(animated: true, completion: nil)
+                }
+            }
+        }
+    }
+    
+    @IBAction func RightSwipeGesture(_ sender: UISwipeGestureRecognizer) {
+        guard !isDownloading else {
+            return
+        }
+        itemIdx -= 1
+        while errorIdx.contains(itemIdx), itemIdx >= 0 {
+            itemIdx -= 1
+        }
+        if itemIdx < 0 {
+            itemIdx = 0
+            return
+        }
+        presentImage(toLeft: false)
+    }
+    
+    @IBAction func LeftSwipeGesuture(_ sender: UISwipeGestureRecognizer) {
+        guard !isDownloading else {
+            return
+        }
+        itemIdx += 1
+        while errorIdx.contains(itemIdx), itemIdx < items.count {
+            itemIdx += 1
+        }
+        if itemIdx >= items.count {
+            itemIdx = items.count - 1
+            return
+        }
+        presentImage(toLeft: true)
+    }
+    
+    
+    @objc func downSwipe(_ sender: Any) {
+        dismiss(animated: true, completion: nil)
+    }
+
+    @objc func closebuttonEvent(_ sender: UIButton) {
+        dismiss(animated: true, completion: nil)
+    }
+
+    func exportItem(rect: CGRect) {
         guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSTemporaryDirectory()) else {
             return
         }
         let freesize = (attributes[FileAttributeKey.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-        if item.size >= freesize {
+        
+        if items[itemIdx].size >= freesize {
             let alart = UIAlertController(title: "No storage", message: "item is too big", preferredStyle: .alert)
             let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
             alart.addAction(okButton)
             present(alart, animated: true, completion: nil)
         }
-        guard let url = NSURL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(item.name) else {
+        guard let url = NSURL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(items[itemIdx].name) else {
             return
         }
-        activityIndicator.startAnimating()
         
-        let stream = item.open()
-        writeTempfile(file: url, stream: stream, pos: 0, size: item.size) {
-            DispatchQueue.main.async {
-                self.activityIndicator.stopAnimating()
-                
-                self.documentInteractionController = UIDocumentInteractionController.init(url: url)
-                self.documentInteractionController?.delegate = self
-                if self.documentInteractionController?.presentOpenInMenu(from: rect, in: self.view, animated: true) ?? false {
+        if let d = data[itemIdx] {
+            activityIndicator.startAnimating()
+            DispatchQueue.global().async {
+                do {
+                    try d.write(to: url)
+                }
+                catch {
+                    DispatchQueue.main.async {
+                        let alart = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+                        let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+                        alart.addAction(okButton)
+                        self.present(alart, animated: true, completion: nil)
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                    self.documentInteractionController = UIDocumentInteractionController(url: url)
+                    self.documentInteractionController?.delegate = self
+                    if self.documentInteractionController?.presentOpenInMenu(from: rect, in: self.view, animated: true) ?? false {
+                    }
+                    else {
+                        let alart = UIAlertController(title: "No share app", message: "item cannot be handled", preferredStyle: .alert)
+                        let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+                        alart.addAction(okButton)
+                        self.present(alart, animated: true, completion: nil)
+                    }
+                }
+            }
+        }
+        else {
+            downloadProgress.filepos = 0
+            downloadProgress.filesize = Int(items[itemIdx].size)
+            downloadProgress.isLive = true
+            present(downloadProgress, animated: false, completion: nil)
+            
+            let stream = items[itemIdx].open()
+            stream.read(position: 0, length: Int(items[itemIdx].size), onProgress: { pos in
+                DispatchQueue.main.async {
+                    self.downloadProgress.filepos = pos
+                }
+                return self.downloadProgress.isLive
+            }) { data in
+                guard self.downloadProgress.isLive else {
+                    stream.isLive = false
+                    return
+                }
+                DispatchQueue.main.async {
+                    self.downloadProgress.filepos = Int(self.items[self.itemIdx].size)
+                }
+                if let data = data {
+                    self.data[self.itemIdx] = data
+                    DispatchQueue.main.async {
+                        self.downloadProgress.dismiss(animated: false, completion: nil)
+                        self.activityIndicator.startAnimating()
+                    }
+                    DispatchQueue.global().async {
+                        do {
+                            try data.write(to: url)
+                        }
+                        catch {
+                            DispatchQueue.main.async {
+                                let alart = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+                                let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+                                alart.addAction(okButton)
+                                self.present(alart, animated: true, completion: nil)
+                            }
+                        }
+                        DispatchQueue.main.async {
+                            self.activityIndicator.stopAnimating()
+                            self.documentInteractionController = UIDocumentInteractionController(url: url)
+                            self.documentInteractionController?.delegate = self
+                            if self.documentInteractionController?.presentOpenInMenu(from: rect, in: self.view, animated: true) ?? false {
+                            }
+                            else {
+                                let alart = UIAlertController(title: "No share app", message: "item cannot be handled", preferredStyle: .alert)
+                                let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
+                                alart.addAction(okButton)
+                                self.present(alart, animated: true, completion: nil)
+                            }
+                        }
+                    }
                 }
                 else {
-                    let alart = UIAlertController(title: "No share app", message: "item cannot be handled", preferredStyle: .alert)
-                    let okButton = UIAlertAction(title: "OK", style: .default, handler: nil)
-                    alart.addAction(okButton)
-                    self.present(alart, animated: true, completion: nil)
+                    DispatchQueue.main.async {
+                        self.downloadProgress.dismiss(animated: true, completion: nil)
+                    }
                 }
             }
         }
     }
-
+    
     func documentInteractionControllerDidDismissOpenInMenu(_ controller: UIDocumentInteractionController) {
         if let url = controller.url {
             if !sending.contains(url) {
@@ -210,3 +443,10 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
     */
 
 }
+
+extension ViewControllerImage: UIViewControllerTransitioningDelegate {
+    func presentationController(forPresented presented: UIViewController, presenting: UIViewController?, source: UIViewController) -> UIPresentationController? {
+        return CustomPresentationController(presentedViewController: presented, presenting: presenting)
+    }
+}
+

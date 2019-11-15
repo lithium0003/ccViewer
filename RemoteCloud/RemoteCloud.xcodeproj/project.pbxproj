@@ -26,7 +26,9 @@
 		3CF14614223B29360025081A /* CryptRclone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF14613223B29360025081A /* CryptRclone.swift */; };
 		3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3ABABA2272C707002A8D16 /* Secret.swift */; };
 		3F3ABABD2273119D002A8D16 /* pCloudStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */; };
+		3F92E7052336BFBA00D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7042336BFBA00D1FF9B /* Media.xcassets */; };
 		3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F987DEB2277608A0020A796 /* Cryptomator.swift */; };
+		3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE23B1E2340B96200916DA6 /* UploadManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,7 +64,9 @@
 		3CF14613223B29360025081A /* CryptRclone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptRclone.swift; sourceTree = "<group>"; };
 		3F3ABABA2272C707002A8D16 /* Secret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secret.swift; sourceTree = "<group>"; };
 		3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = pCloudStorage.swift; sourceTree = "<group>"; };
+		3F92E7042336BFBA00D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3F987DEB2277608A0020A796 /* Cryptomator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cryptomator.swift; sourceTree = "<group>"; };
+		3FE23B1E2340B96200916DA6 /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +129,8 @@
 				3CF14612223B28F50025081A /* Storages */,
 				3C14C450225CE17C0044E4A7 /* SubItem */,
 				3F3ABABA2272C707002A8D16 /* Secret.swift */,
+				3F92E7042336BFBA00D1FF9B /* Media.xcassets */,
+				3FE23B1E2340B96200916DA6 /* UploadManager.swift */,
 			);
 			path = RemoteCloud;
 			sourceTree = "<group>";
@@ -246,6 +252,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3F92E7052336BFBA00D1FF9B /* Media.xcassets in Resources */,
 				3CA2C95B2234E6F600481DB5 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -277,6 +284,7 @@
 				3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */,
 				3C0654A322384CD0003BD932 /* ChildStorage.swift in Sources */,
 				3C14C44F225C69410044E4A7 /* SubItem.swift in Sources */,
+				3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */,
 				3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */,
 				3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */,
 				3C400922224190920028A45A /* OneDriveStorage.swift in Sources */,
@@ -354,7 +362,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -412,7 +420,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;

@@ -52,7 +52,10 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 onFinish?(false)
             }
         })
-        
+        if #available(iOS 13.0, *) {
+            self.webAuthSession?.presentationContextProvider = self
+        }
+
         self.webAuthSession?.start()
     }
 
@@ -64,7 +67,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "client_id=\(clientid)&client_secret=\(secret)&code=\(oauthToken)"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -319,7 +322,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             newitem.name = name
             let comp = name.components(separatedBy: ".")
             if comp.count >= 1 {
-                newitem.ext = comp.last!
+                newitem.ext = comp.last!.lowercased()
             }
             newitem.cdate = Date(timeIntervalSince1970: TimeInterval(ctime))
             newitem.mdate = Date(timeIntervalSince1970: TimeInterval(mtime))
@@ -1082,7 +1085,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
     }
     
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         os_log("%{public}@", log: log, type: .debug, "uploadFile(pCloud:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         guard parentId == "" || parentId.starts(with: "d") else {
@@ -1213,10 +1216,14 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
 
                 targetStream.close()
                 outStream.close()
-                
+
+                #if !targetEnvironment(macCatalyst)
                 let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
                 config.isDiscretionary = true
                 config.sessionSendsLaunchEvents = true
+                #else
+                let config = URLSessionConfiguration.default
+                #endif
                 let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
                 self.sessions += [session]
                 
@@ -1234,7 +1241,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     var sessions = [URLSession]()
     
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        urlSessionDidFinishCallback?(session)
+        CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -1320,5 +1327,12 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         catch {
             onFinish?(nil)
         }
+    }
+}
+
+@available(iOS 13.0, *)
+extension pCloudStorage: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return UIApplication.topViewController()!.view.window!
     }
 }

@@ -15,16 +15,30 @@ class ViewControllerFirst: UIViewController {
         super.viewDidLoad()
 
         // Do any additional setup after loading the view.
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
+        if UserDefaults.standard.integer(forKey: "playSkipForwardSec") == 0 {
+            UserDefaults.standard.set(30, forKey: "playSkipForwardSec")
+        }
+        if UserDefaults.standard.integer(forKey: "playSkipBackwardSec") == 0 {
+            UserDefaults.standard.set(30, forKey: "playSkipBackwardSec")
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
         if UserDefaults.standard.bool(forKey: "tutorial") {
             if let password = getKeyChain(key: "password"), password != "" {
                 let next = storyboard!.instantiateViewController(withIdentifier: "Protect")
+                next.modalPresentationStyle = .fullScreen
                 self.present(next, animated: false)
             }
             else{
                 let next = storyboard!.instantiateViewController(withIdentifier: "MainNavigation")
+                next.modalPresentationStyle = .fullScreen
                 self.present(next, animated: false)
             }
         }
@@ -41,6 +55,7 @@ class ViewControllerFirst: UIViewController {
             
             UserDefaults.standard.set(true, forKey: "tutorial")
             let next = storyboard!.instantiateViewController(withIdentifier: "Tutorial")
+            next.modalPresentationStyle = .fullScreen
             self.present(next, animated: false)
         }
     }

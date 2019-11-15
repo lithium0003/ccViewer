@@ -23,8 +23,10 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         let purchaseButton = UIBarButtonItem(title: NSLocalizedString("Purchase", comment: ""), style: .plain, target: self, action: #selector(settingButtonDidTap))
         
         navigationItem.rightBarButtonItem = purchaseButton
+        
+        tableView.keyboardDismissMode = .interactive
     }
-
+    
     override func viewWillAppear(_ animated: Bool) {
         navigationController?.isToolbarHidden = true
     }
@@ -56,36 +58,43 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             // 更新
             itemAddStatus = SecItemUpdate(dic as CFDictionary, [kSecValueData as String: _data] as CFDictionary)
         } else {
-            //print("保存失敗")
+            print("保存失敗")
         }
 
         if itemAddStatus == errSecSuccess {
-            //print("正常終了")
+            print("正常終了")
         } else {
-            //("保存失敗")
+            print("保存失敗")
         }
     }
     
-    let sections = [NSLocalizedString("Protect on Lanch", comment: ""),
-                    NSLocalizedString("Tutorial", comment: ""),
-                    NSLocalizedString("Viewer", comment: ""),
-                    NSLocalizedString("Software decode", comment: ""),
-                    NSLocalizedString("Save play position", comment: ""),
-                    NSLocalizedString("PlayList", comment: ""),
-                    NSLocalizedString("Help", comment: "")
+    let sections = [NSLocalizedString("Protect on Lanch", comment: ""), //0
+                    NSLocalizedString("Tutorial", comment: ""),         //1
+                    NSLocalizedString("Viewer", comment: ""),           //2
+                    NSLocalizedString("Software decode", comment: ""),  //3
+                    NSLocalizedString("Save play position", comment: ""),//4
+                    NSLocalizedString("PlayList", comment: ""),         //5
+                    NSLocalizedString("Partial Play", comment: ""),     //6
+                    NSLocalizedString("Player control", comment: ""),   //7
+                    NSLocalizedString("Help", comment: "")              //8
                     ]
     let settings = [["Password"],
                     [NSLocalizedString("Run one more", comment: "")],
                     [NSLocalizedString("Use Image viewer", comment: ""),
                      NSLocalizedString("Use PDF viewer", comment: ""),
                      NSLocalizedString("Use Media viewer", comment: ""),
-                     NSLocalizedString("Lock rotation in Media viewer", comment: "")],
+                     NSLocalizedString("Lock rotation", comment: ""),
+                     NSLocalizedString("Force landscape", comment: "")],
                     [NSLocalizedString("Use FFmpeg Media viewer", comment: ""),
                      NSLocalizedString("Prior Media viewer is FFmpeg", comment: "")],
                     [NSLocalizedString("Save last play position", comment: ""),
                      NSLocalizedString("Resume play at last position", comment: ""),
                      NSLocalizedString("Synchronize on devices", comment: "")],
                     [NSLocalizedString("Synchronize on devices", comment: "")],
+                    [NSLocalizedString("Start skip", comment: ""),
+                     NSLocalizedString("Stop after specified duration", comment: "")],
+                    [NSLocalizedString("Skip foward (sec)", comment: ""),
+                     NSLocalizedString("Skip backward (sec)", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
                      NSLocalizedString("Version", comment: "")]
@@ -113,7 +122,6 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         // Configure the cell...
         cell.textLabel?.text = settings[indexPath.section][indexPath.row]
         
-        cell.backgroundColor = .white
         cell.detailTextLabel?.text = nil
         cell.accessoryView = nil
         cell.accessoryType = .none
@@ -127,6 +135,7 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                 textFiled.returnKeyType = .done
                 textFiled.clearButtonMode = .whileEditing
                 textFiled.isSecureTextEntry = true
+                textFiled.textContentType = .oneTimeCode
                 textFiled.tag = 0;
                 textFiled.delegate = self
                 cell.accessoryView = textFiled
@@ -154,14 +163,13 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                 aSwitch.isOn = UserDefaults.standard.bool(forKey: "MediaViewer")
                 aSwitch.tag = 3
             case 3:
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    aSwitch.isOn = UserDefaults.standard.bool(forKey: "MediaViewerRotation")
-                }
-                else {
-                    aSwitch.isOn = false
-                    cell.backgroundColor = UIColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
-                }
+                aSwitch.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "MediaViewerRotation")
                 aSwitch.tag = 4
+            case 4:
+                aSwitch.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "ForceLandscape")
+                aSwitch.tag = 11
             default:
                 break
             }
@@ -210,6 +218,40 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             cell.accessoryView = aSwitch
         case 6:
             switch indexPath.row {
+            case 0:
+                let picker = TimePickerKeyboard(frame: CGRect(x: 0, y: 0, width: 80, height: 28))
+                picker.setValue(time: UserDefaults.standard.integer(forKey: "playStartSkipSec")) { value in
+                    UserDefaults.standard.set(value, forKey: "playStartSkipSec")
+                }
+                cell.accessoryView = picker
+            case 1:
+                let picker = TimePickerKeyboard(frame: CGRect(x: 0, y: 0, width: 80, height: 28))
+                picker.setValue(time: UserDefaults.standard.integer(forKey: "playStopAfterSec")) { value in
+                    UserDefaults.standard.set(value, forKey: "playStopAfterSec")
+                }
+                cell.accessoryView = picker
+            default:
+                break
+            }
+        case 7:
+            switch indexPath.row {
+            case 0:
+                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 30, height: 28))
+                picker.setValue(time: UserDefaults.standard.integer(forKey: "playSkipForwardSec")) { value in
+                    UserDefaults.standard.set(value, forKey: "playSkipForwardSec")
+                }
+                cell.accessoryView = picker
+            case 1:
+                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 30, height: 28))
+                picker.setValue(time: UserDefaults.standard.integer(forKey: "playSkipBackwardSec")) { value in
+                    UserDefaults.standard.set(value, forKey: "playSkipBackwardSec")
+                }
+                cell.accessoryView = picker
+            default:
+                break
+            }
+        case 8:
+            switch indexPath.row {
             case 0...1:
                 cell.accessoryType = .detailButton
             case 2:
@@ -234,11 +276,11 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         case 3:
             UserDefaults.standard.set(value, forKey: "MediaViewer")
         case 4:
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                UserDefaults.standard.set(value, forKey: "MediaViewerRotation")
-            }
-            else {
-                mySwitch.isOn = false
+            UserDefaults.standard.set(value, forKey: "MediaViewerRotation")
+            let v = UIViewController()
+            v.modalPresentationStyle = .fullScreen
+            present(v, animated: false) {
+                v.dismiss(animated: false, completion: nil)
             }
         case 5:
             UserDefaults.standard.set(value, forKey: "FFplayer")
@@ -252,6 +294,13 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             UserDefaults.standard.set(value, forKey: "cloudPlaypos")
         case 10:
             UserDefaults.standard.set(value, forKey: "cloudPlaylist")
+        case 11:
+            UserDefaults.standard.set(value, forKey: "ForceLandscape")
+            let v = UIViewController()
+            v.modalPresentationStyle = .fullScreen
+            present(v, animated: false) {
+                v.dismiss(animated: false, completion: nil)
+            }
         default:
             break
         }
@@ -268,11 +317,12 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             switch indexPath.row {
             case 0:
                 let next = storyboard!.instantiateViewController(withIdentifier: "Tutorial")
+                next.modalPresentationStyle = .fullScreen
                 self.present(next, animated: false)
             default:
                 break
             }
-        case 6:
+        case 8:
             switch indexPath.row {
             case 0:
                 let url = URL(string: NSLocalizedString("Online help URL", comment: ""))!
@@ -298,6 +348,10 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         return true
     }
 
+    @objc func doActionTextField(_ sender: UITextField) {
+        SetPassword(key: "password", password: sender.text ?? "")
+    }
+    
     /*
     // MARK: - Navigation
 

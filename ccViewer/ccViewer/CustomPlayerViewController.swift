@@ -14,7 +14,31 @@ import MediaPlayer
 
 import RemoteCloud
 
-class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelegate {
+extension Notification.Name {
+    static let avPlayerViewDisappear = Notification.Name("avPlayerViewDisappear")
+}
+
+extension AVPlayerViewController {
+    override open func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        NotificationCenter.default.post(name: .avPlayerViewDisappear, object: self)
+    }
+    override open var shouldAutorotate: Bool {
+        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
+            return false
+        }
+        return true
+    }
+    override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        if UserDefaults.standard.bool(forKey: "ForceLandscape") {
+            return .landscapeLeft
+        }
+        return .all
+    }
+}
+
+class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
+    static var pipVideo = false
 
     var playItems = [[String: Any]]()
     var loop = false
@@ -66,6 +90,9 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
             let playitem = getPlayItem(url: url)
             self.infoItems[url] = item
             let pos: CMTime
+            if let stop = item["stop"] as? Double {
+                playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(stop, preferredTimescale: Int32(NSEC_PER_SEC))
+            }
             if let start = item["start"] as? Double {
                 pos = CMTimeMakeWithSeconds(start, preferredTimescale: Int32(NSEC_PER_SEC))
                 playitem.seek(to: pos) { finished in
@@ -80,12 +107,12 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
     lazy var playerViewController: AVPlayerViewController = {
         var viewController = AVPlayerViewController()
         viewController.delegate = self
+        viewController.allowsPictureInPicturePlayback = !CustomPlayerView.pipVideo
         return viewController
     }()
     
     var finish = false
     var iscancel = false
-    var pipVideo = false
     var isVideo = false
     
     func setupRemoteTransportControls() {
@@ -248,14 +275,7 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
         }
     }
     
-    override var prefersStatusBarHidden: Bool {
-        return true
-    }
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-    
-        setNeedsStatusBarAppearanceUpdate()
+    func play(parent: UIViewController) {
         playerViewController.player = player
         playerViewController.updatesNowPlayingInfoCenter = false
         
@@ -286,18 +306,28 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
         }
         
         let center = NotificationCenter.default
-        for pitem in player.items() {
+        for pitem in self.player.items() {
             center.addObserver(self, selector: #selector(newErrorLogEntry), name: .AVPlayerItemNewErrorLogEntry, object: pitem)
             center.addObserver(self, selector: #selector(failedToPlayToEndTime), name: .AVPlayerItemFailedToPlayToEndTime, object: pitem)
             center.addObserver(self, selector: #selector(didPlayToEndTime), name: .AVPlayerItemDidPlayToEndTime, object: pitem)
         }
         
+        center.addObserver(forName: .avPlayerViewDisappear, object: playerViewController, queue: nil) { notification in
+            if !CustomPlayerView.pipVideo {
+                self.finishDisplay()
+            }
+        }
+        
         setupRemoteTransportControls()
+
+        parent.present(playerViewController, animated: true) {
+            self.player.play()
+        }
     }
 
     @objc func appMovedToForeground() {
         print("App moved to ForeGround!")
-        if !pipVideo && isVideo {
+        if !CustomPlayerView.pipVideo && isVideo {
             playerViewController.player = player
         }
     }
@@ -305,24 +335,11 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
     @objc func appMovedToBackground() {
         print("App moved to Background!")
         isVideo = player.currentItem?.asset.tracks(withMediaType: .video).count != 0
-        if !pipVideo && isVideo {
+        if !CustomPlayerView.pipVideo && isVideo {
             playerViewController.player = nil
         }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        if finish && !pipVideo {
-            finishDisplay()
-        }
-        else if !finish {
-            present(playerViewController, animated: true) {
-                self.playerViewController.player?.play()
-                self.finish = true
-            }
-        }
-    }
-    
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         
         if let player = object as? AVPlayer, keyPath == #keyPath(AVPlayer.currentItem.status) {
@@ -375,6 +392,9 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
             let url = getURL(storage: storage, fileId: id)
             let playitem = getPlayItem(url: url)
             let pos: CMTime
+            if let stop = item["stop"] as? Double {
+                playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(stop, preferredTimescale: Int32(NSEC_PER_SEC))
+            }
             if let start = item["start"] as? Double {
                 pos = CMTimeMakeWithSeconds(start, preferredTimescale: Int32(NSEC_PER_SEC))
                 playitem.seek(to: pos) { finished in
@@ -435,23 +455,26 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
     }
 
     func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(_ playerViewController: AVPlayerViewController) -> Bool {
-        pipVideo = true
+        CustomPlayerView.pipVideo = true
         return true
     }
     
     func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        let currentViewController = navigationController?.visibleViewController
         
-        if currentViewController != playerViewController {
-            if let topViewController = navigationController?.topViewController {
-                topViewController.present(playerViewController, animated: true) {
-                    self.pipVideo = false
-                    completionHandler(true)
-                }
+        if let currentViewController = UIApplication.topViewController() {
+            currentViewController.present(playerViewController, animated: true) {
+                completionHandler(true)
             }
         }
     }
     
+    func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        CustomPlayerView.pipVideo = false
+        if playerViewController.player?.rate ?? 0 == 0 {
+            finishDisplay()
+        }
+    }
+        
     func finishDisplay() {
         var ret = 0.0
         if let len = playerViewController.player?.currentItem?.asset.duration.seconds,
@@ -472,22 +495,6 @@ class CustomPlayerViewController: UIViewController, AVPlayerViewControllerDelega
         }
         self.customDelegate.removeAll()
         self.onFinish?(ret)
-    }
-}
-
-extension AVPlayerViewController {
-    override open var shouldAutorotate: Bool {
-        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
-            return false
-        }
-        return true
-    }
-    
-    override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
-            return .landscapeRight
-        }
-        return .all
     }
 }
 
@@ -567,7 +574,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
         }
         let maxlen = 1*1024*1024
         let len = (length > maxlen) ? maxlen : length
-        self.stream?.read(position: position, length: len) { data in
+        self.stream?.read(position: position, length: len, onProgress: nil){ data in
             print("read s\(position) r\(len) d\(data?.count ?? -1)")
             self.queue.async {
                 if let data = data {

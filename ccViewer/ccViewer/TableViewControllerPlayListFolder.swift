@@ -70,10 +70,10 @@ class TableViewControllerPlayListFolder: UITableViewController, UISearchResultsU
         var name = filterdItem[indexPath.row]["name"] as? String
         if name == "" {
             name = "(root)"
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 0.95, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "RootSelectColor")
         }
         else {
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "SelectFolderColor")
         }
         
         cell.textLabel?.numberOfLines = 0

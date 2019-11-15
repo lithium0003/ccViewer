@@ -19,6 +19,11 @@ class ViewControllerProtect: UIViewController, UITextFieldDelegate {
 
         // Do any additional setup after loading the view.
         PasswordText.delegate = self
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -28,6 +33,7 @@ class ViewControllerProtect: UIViewController, UITextFieldDelegate {
         }
         else{
             let next = storyboard!.instantiateViewController(withIdentifier: "MainNavigation")
+            next.modalPresentationStyle = .fullScreen
             self.present(next, animated: false)
         }
     }
@@ -42,6 +48,7 @@ class ViewControllerProtect: UIViewController, UITextFieldDelegate {
                 if success {
                     DispatchQueue.main.async {
                         let next = self.storyboard!.instantiateViewController(withIdentifier: "MainNavigation")
+                        next.modalPresentationStyle = .fullScreen
                         self.present(next, animated: false)
                     }
                 }
@@ -91,6 +98,7 @@ class ViewControllerProtect: UIViewController, UITextFieldDelegate {
         if let password = getKeyChain(key: "password") {
             if textField.text == password {
                 let next = self.storyboard!.instantiateViewController(withIdentifier: "MainNavigation")
+                next.modalPresentationStyle = .fullScreen
                 self.present(next, animated: false)
             }
             else{
@@ -99,6 +107,7 @@ class ViewControllerProtect: UIViewController, UITextFieldDelegate {
         }
         else{
             let next = self.storyboard!.instantiateViewController(withIdentifier: "MainNavigation")
+            next.modalPresentationStyle = .fullScreen
             self.present(next, animated: false)
         }
         

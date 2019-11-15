@@ -16,43 +16,47 @@ public class NetworkStorage: RemoteStorageBase {
     var tokenLife: TimeInterval = 0
     var lastCall = Date()
     let callSemaphore = DispatchSemaphore(value: 5)
-    let callWait = 0.1
+    let callWait = 0.2
     var cache_accessToken = ""
     var cache_refreshToken = ""
     var accessToken: String {
-        if let name = storageName {
-            if let token = getKeyChain(key: "\(name)_accessToken") {
-                if cacheTokenDate == tokenDate {
-                    cache_accessToken = token
-                }
-                else {
-                    if setKeyChain(key: "\(name)_accessToken", value: cache_accessToken) {
-                        tokenDate = cacheTokenDate
+        get {
+            if let name = storageName {
+                if let token = getKeyChain(key: "\(name)_accessToken") {
+                    if cacheTokenDate == tokenDate {
+                        cache_accessToken = token
+                    }
+                    else {
+                        if setKeyChain(key: "\(name)_accessToken", value: cache_accessToken) {
+                            tokenDate = cacheTokenDate
+                        }
                     }
                 }
+                return cache_accessToken
             }
-            return cache_accessToken
-        }
-        else {
-            return ""
+            else {
+                return ""
+            }
         }
     }
     var refreshToken: String {
-        if let name = storageName {
-            if let token = getKeyChain(key: "\(name)_refreshToken") {
-                if cacheTokenDate == tokenDate {
-                    cache_refreshToken = token
-                }
-                else {
-                    if setKeyChain(key: "\(name)_refreshToken", value: cache_refreshToken) {
-                        tokenDate = cacheTokenDate
+        get {
+            if let name = storageName {
+                if let token = getKeyChain(key: "\(name)_refreshToken") {
+                    if cacheTokenDate == tokenDate {
+                        cache_refreshToken = token
+                    }
+                    else {
+                        if setKeyChain(key: "\(name)_refreshToken", value: cache_refreshToken) {
+                            tokenDate = cacheTokenDate
+                        }
                     }
                 }
+                return cache_refreshToken
             }
-            return cache_refreshToken
-        }
-        else {
-            return ""
+            else {
+                return ""
+            }
         }
     }
     
@@ -72,7 +76,9 @@ public class NetworkStorage: RemoteStorageBase {
                         onFinish?(true)
                     }
                     else {
-                        self.authorize(onFinish: onFinish)
+                        DispatchQueue.main.async {
+                            self.authorize(onFinish: onFinish)
+                        }
                     }
                 }
             }
@@ -93,7 +99,9 @@ public class NetworkStorage: RemoteStorageBase {
     }
     
     func checkToken(onFinish: ((Bool) -> Void)?) -> Void {
-        if Date() < cacheTokenDate + tokenLife - 5*60 {
+        //if Date() < cacheTokenDate + tokenLife - 5*60 {
+        os_log("%{public}@", log: log, type: .debug, "\(Date()) \(cacheTokenDate),\(tokenLife)")
+        if Date() < cacheTokenDate + tokenLife / 2 {
             onFinish?(true)
         }
         else if refreshToken == "" {
@@ -162,9 +170,9 @@ public class SlotStream: RemoteStream {
     let queue_wait = DispatchQueue(label: "io_wait")
     var waitlist: [Int64] = []
     var buffer: [Int64:Data] = [:]
-    let bufSize:Int64 = 1*1024*1024
-    let slotcount = 100
-    let slotadvance: Int64 = 2
+    let bufSize:Int64 = 2*1024*1024
+    let slotcount = 50
+    let slotadvance: Int64 = 5
     var error = false
     
     var read_start: Int64 = 0
@@ -270,7 +278,7 @@ public class SlotStream: RemoteStream {
         disposeBuffer()
     }
     
-    override public func read(position : Int64, length: Int) -> Data? {
+    override public func read(position : Int64, length: Int, onProgress: ((Int)->Bool)? = nil) -> Data? {
         guard init_group.wait(timeout: DispatchTime.now()+120) == DispatchTimeoutResult.success else {
             return nil
         }
@@ -287,20 +295,30 @@ public class SlotStream: RemoteStream {
             let start = Date()
             while !self.error && self.isLive {
                 var done = true
+                var loadpos:Int64 = 0
                 for p in read_start/self.bufSize...read_end/self.bufSize {
-                    //print("scanbuffer \(p*self.bufSize)")
-                    done = done && self.dataAvailable(pos: p*self.bufSize)
+                    let slotdone = self.dataAvailable(pos: p*self.bufSize)
+                    done = done && slotdone
+                    if !slotdone {
+                        //print("not filled buffer \(p*self.bufSize)")
+                        loadpos = p*self.bufSize
+                        break
+                    }
                 }
                 if done {
-                    break;
+                    let _ = onProgress?(Int(read_end))
+                    break
+                }
+                if !(onProgress?(Int(loadpos)) ?? true) {
+                    self.error = true
+                    break
                 }
                 Thread.sleep(forTimeInterval: 1)
                 if start.timeIntervalSinceNow < -120 {
-                    //print("error on timeout")
+                    print("error on timeout")
                     self.error = true
                 }
                 for p in read_start/self.bufSize...read_end/self.bufSize+self.slotadvance {
-                    //print("fillbuffer \(p*bufSize)")
                     self.fillBuffer(pos: p*self.bufSize)
                 }
             }

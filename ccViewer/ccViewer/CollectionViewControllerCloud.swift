@@ -29,9 +29,22 @@ class CollectionViewControllerCloud: UICollectionViewController {
 
         // Do any additional setup after loading the view.
         activityIndicator.center = view.center
-        activityIndicator.style = .gray
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
     }
 
     /*
@@ -111,7 +124,6 @@ class CollectionViewControllerCloud: UICollectionViewController {
                                                                 self.activityIndicator.stopAnimating()
                                                                 self.navigationController?.popToRootViewController(animated: true)
                                                             }
-//                                                            CloudFactory.shared.deepLoad(storage: newname)
                                                         }
                                                     }
                                                     else{

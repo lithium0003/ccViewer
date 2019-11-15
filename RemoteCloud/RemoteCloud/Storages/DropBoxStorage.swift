@@ -52,7 +52,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
         let url = "https://www.dropbox.com/oauth2/authorize?client_id=\(client)&response_type=token&redirect_uri=\(callbackUrlScheme)://dropbox_callback"
         let authURL = URL(string: url);
         
-        self.webAuthSession = ASWebAuthenticationSession.init(url: authURL!, callbackURLScheme: callbackUrlScheme, completionHandler: { (callBack:URL?, error:Error?) in
+        self.webAuthSession = ASWebAuthenticationSession(url: authURL!, callbackURLScheme: callbackUrlScheme, completionHandler: { (callBack:URL?, error:Error?) in
             
             // handle auth response
             guard error == nil, let successURL = callBack else {
@@ -72,7 +72,10 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
             self.saveToken(accessToken: access_token, accountId: account_id)
             onFinish?(true)
         })
-        
+        if #available(iOS 13.0, *) {
+            self.webAuthSession?.presentationContextProvider = self
+        }
+
         self.webAuthSession?.start()
     }
 
@@ -180,7 +183,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
             newitem.name = name
             let comp = name.components(separatedBy: ".")
             if comp.count >= 1 {
-                newitem.ext = comp.last!
+                newitem.ext = comp.last!.lowercased()
             }
             newitem.cdate = formatter.date(from: ctime ?? "")
             newitem.mdate = formatter.date(from: mtime ?? "")
@@ -901,7 +904,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
         return NetworkRemoteItem(path: path)
     }
 
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         os_log("%{public}@", log: log, type: .debug, "uploadFile(dropbox:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         let group = DispatchGroup()
@@ -929,11 +932,13 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
                 let attr = try FileManager.default.attributesOfItem(atPath: target.path)
                 let fileSize = attr[.size] as! UInt64
                 
+                UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+                
                 if fileSize < 150*1000*1000 {
-                    self.uploadShortFile(parentId: parentId, parentPath: parentPath, uploadname: uploadname, target: target, onFinish: onFinish)
+                    self.uploadShortFile(parentId: parentId, sessionId: sessionId, parentPath: parentPath, uploadname: uploadname, target: target, onFinish: onFinish)
                 }
                 else {
-                    self.uploadLongFile(parentId: parentId, parentPath: parentPath, uploadname: uploadname, target: target, onFinish: onFinish)
+                    self.uploadLongFile(parentId: parentId, sessionId: sessionId, parentPath: parentPath, uploadname: uploadname, target: target, onFinish: onFinish)
                 }
             }
             catch {
@@ -942,7 +947,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
         }
     }
     
-    func uploadShortFile(parentId: String, parentPath: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    func uploadShortFile(parentId: String, sessionId: String, parentPath: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         checkToken() { success in
             guard success else {
                 onFinish?(nil)
@@ -1016,7 +1021,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
         }
     }
 
-    func uploadLongFile(parentId: String, parentPath: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    func uploadLongFile(parentId: String, sessionId: String, parentPath: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         guard let targetStream = InputStream(url: target) else {
             onFinish?(nil)
             return
@@ -1047,16 +1052,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
             request.setValue(String(data: argData, encoding: .utf8) ?? "", forHTTPHeaderField: "Dropbox-API-Arg")
             let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
             try? Data(bytes: buf, count: len).write(to: tmpurl)
-            
+
+            #if !targetEnvironment(macCatalyst)
             let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
             config.isDiscretionary = true
             config.sessionSendsLaunchEvents = true
+            #else
+            let config = URLSessionConfiguration.default
+            #endif
             let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
             self.sessions += [session]
 
             let task = session.uploadTask(with: request, fromFile: tmpurl)
             let taskid = task.taskIdentifier
-            self.task_upload[taskid] = ["data": Data(), "target": targetStream, "parentId": parentId, "parentPath": parentPath, "uploadname": uploadname, "offset": len, "tmpfile": tmpurl, "orgtarget": target, "accessToken": self.accessToken]
+            self.task_upload[taskid] = ["data": Data(), "target": targetStream, "parentId": parentId, "parentPath": parentPath, "uploadname": uploadname, "offset": len, "tmpfile": tmpurl, "orgtarget": target, "accessToken": self.accessToken, "session": sessionId]
             self.onFinsh_upload[taskid] = onFinish
             task.resume()
         }
@@ -1067,7 +1076,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
     var sessions = [URLSession]()
     
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        urlSessionDidFinishCallback?(session)
+        CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -1086,7 +1095,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
     }
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard var taskdata = self.task_upload.removeValue(forKey: task.taskIdentifier) else {
+        guard let taskdata = self.task_upload.removeValue(forKey: task.taskIdentifier) else {
             return
         }
         guard let onFinish = self.onFinsh_upload.removeValue(forKey: task.taskIdentifier) else {
@@ -1179,6 +1188,9 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
             guard let uploadname = taskdata["uploadname"] as? String else {
                 throw RetryError.Failed
             }
+            guard let sessionId = taskdata["session"] as? String else {
+                throw RetryError.Failed
+            }
             if let error = error {
                 print(error)
                 throw RetryError.Failed
@@ -1243,6 +1255,8 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
             var buf:[UInt8] = [UInt8](repeating: 0, count: 32*1024*1024)
             let len = targetStream.read(&buf, maxLength: buf.count)
 
+            UploadManeger.shared.UploadProgress(identifier: sessionId, possition: offset)
+
             if len == 32*1024*1024 {
                 let url = "https://content.dropboxapi.com/2/files/upload_session/append_v2"
                 
@@ -1266,7 +1280,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["data": Data(), "session_id": session_id, "target": targetStream, "parentId": parentId, "parentPath": parentPath, "uploadname": uploadname, "offset": len+offset, "tmpfile": tmpurl, "orgtarget": orgtarget, "accessToken": token]
+                self.task_upload[taskid] = ["data": Data(), "session_id": session_id, "target": targetStream, "parentId": parentId, "parentPath": parentPath, "uploadname": uploadname, "offset": len+offset, "tmpfile": tmpurl, "orgtarget": orgtarget, "accessToken": token, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
             }
@@ -1301,5 +1315,12 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
     
     func convertUnicode(_ str: String) -> String {
         return str.flatMap({ $0.unicodeScalars }).map({ $0.escaped(asASCII: true).replacingOccurrences(of: #"\\u\{([0-9a-fA-F]+)\}"#, with: #"\\u$1"#, options: .regularExpression) }).joined()
+    }
+}
+
+@available(iOS 13.0, *)
+extension DropBoxStorage: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return UIApplication.topViewController()!.view.window!
     }
 }

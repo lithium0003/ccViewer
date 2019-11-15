@@ -11,6 +11,77 @@ import PDFKit
 
 import RemoteCloud
 import ffplayer
+import ffconverter
+
+#if !targetEnvironment(macCatalyst)
+import GoogleCast
+#endif
+
+let kCastControlBarsAnimationDuration: TimeInterval = 0.20
+
+public protocol SortItemsDelegate: NSObjectProtocol {
+    func DoSort()
+}
+
+extension TableViewControllerItems: SortItemsDelegate {
+    func DoSort() {
+        let order = UserDefaults.standard.integer(forKey: "ItemSortOrder")
+        switch order {
+        case 0:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "").lowercased() < (in2.name  ?? "").lowercased() } )
+        case 1:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "").lowercased() > (in2.name  ?? "").lowercased() } )
+        case 2:
+            result_base = result_base.sorted(by: { in1, in2 in in1.size < in2.size } )
+        case 3:
+            result_base = result_base.sorted(by: { in1, in2 in in1.size > in2.size } )
+        case 4:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.mdate ?? Date(timeIntervalSince1970: 0)) < (in2.mdate ?? Date(timeIntervalSince1970: 0)) } )
+        case 5:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.mdate ?? Date(timeIntervalSince1970: 0)) > (in2.mdate ?? Date(timeIntervalSince1970: 0)) } )
+        case 6:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.ext ?? "") < (in2.ext ?? "") } )
+        case 7:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.ext ?? "") > (in2.ext ?? "") } )
+        default:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "").lowercased() < (in2.name  ?? "").lowercased() } )
+        }
+        let folders = result_base.filter({ $0.folder })
+        let files = result_base.filter({ !$0.folder })
+        result_base = folders
+        result_base += files
+
+        // filter
+        let text = navigationItem.searchController?.searchBar.text ?? ""
+        if text.isEmpty {
+            result = result_base
+        } else {
+            result = result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+        }
+        
+        tableView.reloadData()
+    }
+}
+
+extension TableViewControllerItems: UploadManagerDelegate {
+    func didRefreshItems() {
+        if var buttons = navigationItem.rightBarButtonItems {
+            if UploadManeger.shared.uploadCount > 0, !buttons.contains(UploadManeger.shared.UploadCountButton) {
+                buttons += [UploadManeger.shared.UploadCountButton]
+                navigationItem.rightBarButtonItems = buttons
+            }
+            if UploadManeger.shared.uploadCount == 0, let i = buttons.firstIndex(of: UploadManeger.shared.UploadCountButton) {
+                buttons.remove(at: i)
+                navigationItem.rightBarButtonItems = buttons
+            }
+        }
+    }
+    
+    // for iPhone
+    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+        return .none
+    }
+}
 
 class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, UIDocumentInteractionControllerDelegate {
     var rootPath: String = ""
@@ -32,8 +103,71 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
     var flexible: UIBarButtonItem!
     var playloopItem: UIBarButtonItem!
     var playshuffleItem: UIBarButtonItem!
+    var playCastItem: UIBarButtonItem!
+    var castButton: UIBarButtonItem?
+    
+    var player: CustomPlayerView?
+    var convertPlayer: ConvertPlayerView?
 
+    lazy var downloadProgress: DownloadProgressViewController = {
+        let d = DownloadProgressViewController()
+        d.modalPresentationStyle = .custom
+        d.transitioningDelegate = self
+        return d
+    }()
+    
     var editting = false
+        
+    let media_exts = [
+        "mov",
+        "mp4",
+        "mp3",
+        "wav",
+        "aac",
+    ]
+    
+    let pict_exts = [
+        "tif","tiff",
+        "heic",
+        "jpg","jpeg",
+        "gif",
+        "png",
+        "bmp",
+        "ico",
+        "cur",
+        "xbm",
+        "3fr", // (Hasselblad)
+        "ari", // (Arri_Alexa)
+        "arw","srf","sr2", // (Sony)
+        "bay", // (Casio)
+        "braw", // (Blackmagic Design)
+        "cri", // (Cintel)
+        "crw","cr2","cr3", // (Canon)
+        "cap","iiq","eip", // (Phase_One)
+        "dcs","dcr","drf","k25","kdc", // (Kodak)
+        "dng", // (Adobe)
+        "erf", // (Epson)
+        "fff", // (Imacon/Hasselblad raw)
+        "gpr", // (GoPro)
+        "mef", // (Mamiya)
+        "mdc", // (Minolta, Agfa)
+        "mos", // (Leaf)
+        "mrw", // (Minolta, Konica Minolta)
+        "mos", // (Leaf)
+        "mrw", // (Minolta, Konica Minolta)
+        "nef","nrw", // (Nikon)
+        "orf", // (Olympus)
+        "pef","ptx", // (Pentax)
+        "pxn", // (Logitech)
+        "r3d", // (RED Digital Cinema)
+        "raf", // (Fuji)
+        "raw","rw2", // (Panasonic)
+        "raw","rwl","dng", // (Leica)
+        "rwz", // (Rawzor)
+        "srw", // (Samsung)
+        "x3f", // (Sigma)
+    ]
+        
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,26 +177,32 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
 
         // Uncomment the following line to display an Edit button in the navigation bar for this view controller.
         // self.navigationItem.rightBarButtonItem = self.editButtonItem
+        
         self.title = rootPath
         
         let settingButton = UIBarButtonItem(image: UIImage(named: "gear"), style: .plain, target: self, action: #selector(settingButtonDidTap))
         let editButton = UIBarButtonItem(barButtonSystemItem: .compose, target: self, action: #selector(editButtonDidTap))
-
-        if subItem {
-            navigationItem.rightBarButtonItem = settingButton
-        }
-        else {
-            navigationItem.rightBarButtonItems = [settingButton, editButton]
-        }
+            
+        navigationItem.rightBarButtonItems = [settingButton, editButton]
         
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refresh), for: .valueChanged)
 
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
 
         let searchController = UISearchController(searchResultsController: nil)
         searchController.searchResultsUpdater = self
@@ -74,11 +214,15 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         editlistItem = UIBarButtonItem(image: UIImage(named: "addplay"), style: .plain, target: self, action: #selector(barButtonEditListTapped))
         playloopItem = UIBarButtonItem(image: UIImage(named: "loop"), style: .plain, target: self, action: #selector(barButtonPlayLoopTapped))
         playshuffleItem = UIBarButtonItem(image: UIImage(named: "shuffle"), style: .plain, target: self, action: #selector(barButtonPlayShuffleTapped))
+        playCastItem = UIBarButtonItem(image: UIImage(named: "cast"), style: .plain, target: self, action: #selector(barButtonPlayCastTapped))
         flexible = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem]
+        
+        #if !targetEnvironment(macCatalyst)
+        castButton = UIBarButtonItem(customView: GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24)))
+        #endif
         
         definesPresentationContext = true
-        editting = true        
+        editting = true
     }
     
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -90,10 +234,42 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         super.viewDidLayoutSubviews()
         activityIndicator.center = tableView.center
         activityIndicator.center.y = tableView.bounds.size.height/2 + tableView.contentOffset.y
+        
     }
 
+    override var prefersStatusBarHidden: Bool {
+        return false
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setNeedsStatusBarAppearanceUpdate()
+    }
+    
+    func restoreToolbarButton() {
+        #if !targetEnvironment(macCatalyst)
+        let castContext = GCKCastContext.sharedInstance()
+        if Converter.IsCasting() && (castContext.castState == .connected || castContext.castState == .connecting) {
+            if let castButton = castButton {
+                toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem, flexible, castButton]
+            }
+            else {
+                toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem]
+            }
+        }
+        else {
+            toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem]
+        }
+        #else
+        toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem]
+        #endif
+    }
+    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+
+        UploadManeger.shared.delegate = self
+        didRefreshItems()
         
         if UserDefaults.standard.bool(forKey: "playloop") {
             playloopItem.image = UIImage(named: "loop_inv")
@@ -107,16 +283,20 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else {
             playshuffleItem.image = UIImage(named: "shuffle")
         }
+        if Converter.IsCasting() {
+            playCastItem.image = UIImage(named: "cast_on")
+        }
+        else {
+            playCastItem.image = UIImage(named: "cast")
+        }
+
+        restoreToolbarButton()
         
         navigationController?.navigationBar.barTintColor = nil
         navigationController?.isToolbarHidden = false
 
-        self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-        self.result_base = self.result
-        let text = self.navigationItem.searchController?.searchBar.text ?? ""
-        if !text.isEmpty {
-            self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
-        }
+        self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+        self.DoSort()
         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
             CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                 DispatchQueue.main.async {
@@ -155,6 +335,57 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         }
     }
     
+    @objc func barButtonPlayCastTapped(_ sender: UIBarButtonItem) {
+        if Converter.IsCasting() {
+            Converter.Stop()
+            activityIndicator.stopAnimating()
+            
+            restoreToolbarButton()
+        }
+        else {
+            let alert = UIAlertController(title: "Cast for", message: "select device to cast", preferredStyle: .alert)
+            let default1 = UIAlertAction(title: "Local device", style: .default) { action in
+                Converter.Start()
+
+                if Converter.IsCasting() {
+                    self.playCastItem.image = UIImage(named: "cast_on")
+                }
+                else {
+                    self.playCastItem.image = UIImage(named: "cast")
+                }
+            }
+            alert.addAction(default1)
+            #if !targetEnvironment(macCatalyst)
+            let default2 = UIAlertAction(title: "Chromecast", style: .default) { action in
+                Converter.Start()
+
+                if let castButton = self.castButton {
+                    if !(self.toolbarItems?.contains(castButton) ?? false) {
+                        self.toolbarItems = self.toolbarItems! + [self.flexible, castButton]
+                    }
+                }
+                if Converter.IsCasting() {
+                    self.playCastItem.image = UIImage(named: "cast_on")
+                }
+                else {
+                    self.playCastItem.image = UIImage(named: "cast")
+                }
+            }
+            alert.addAction(default2)
+            #endif
+            let cancel = UIAlertAction(title: "cancel", style: .cancel, handler: nil)
+
+            alert.addAction(cancel)
+
+            present(alert, animated: true, completion: nil)
+        }
+        if Converter.IsCasting() {
+            playCastItem.image = UIImage(named: "cast_on")
+        }
+        else {
+            playCastItem.image = UIImage(named: "cast")
+        }
+    }
 
     @objc func barButtonPlayListTapped(_ sender: UIBarButtonItem) {
         let next = storyboard!.instantiateViewController(withIdentifier: "PlayList") as? TableViewControllerPlaylist
@@ -171,7 +402,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             toolbarItems = [cancelButton, flexible, selectionButton, flexible, doneButton]
         }
         else {
-            toolbarItems = [playlistItem, flexible, playallItem, flexible, editlistItem]
+            restoreToolbarButton()
         }
         tableView.reloadData()
     }
@@ -209,7 +440,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         }
         group.notify(queue: .main) {
             self.tableView.isEditing = false
-            self.toolbarItems = [self.playlistItem, self.flexible, self.playloopItem, self.flexible, self.playallItem, self.flexible, self.playshuffleItem, self.flexible, self.editlistItem]
+            self.restoreToolbarButton()
             self.tableView.reloadData()
             self.activityIndicator.stopAnimating()
         }
@@ -223,35 +454,37 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 item.ext == "mov" || item.ext == "mp4" || item.ext == "mp3" || item.ext == "wav" || item.ext == "aac"
             }
         }
+        if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") {
+            media = false
+        }
         
         if media {
-            let next = CustomPlayerViewController()
-            next.playItems = result.filter({ !$0.folder }).map({ item in
+            player = CustomPlayerView()
+            let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+            let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            player?.playItems = result.filter({ !$0.folder }).map({ item in
                 let storage = item.storage ?? ""
                 let id = item.id ?? ""
-                let playitem: [String: Any] = ["storage": storage, "id": id]
+                var playitem: [String: Any] = ["storage": storage, "id": id]
+                if skip > 0 {
+                    playitem["start"] = Double(skip)
+                }
+                if stop > 0 {
+                    playitem["stop"] = Double(skip+stop)
+                }
                 return playitem
             })
-            next.shuffle = UserDefaults.standard.bool(forKey: "playshuffle")
-            next.loop = UserDefaults.standard.bool(forKey: "playloop")
+            player?.shuffle = UserDefaults.standard.bool(forKey: "playshuffle")
+            player?.loop = UserDefaults.standard.bool(forKey: "playloop")
 
-            next.onFinish = { position in
-                DispatchQueue.main.asyncAfter(deadline: .now()) {
-                    self.navigationController?.popToViewController(self, animated: true)
-                }
+            player?.onFinish = { position in
             }
             
-            if next.playItems.count > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now()) {
-                    self.navigationController?.pushViewController(next, animated: false)
-                }
+            if player?.playItems.count ?? 0 > 0 {
+                self.player?.play(parent: self)
             }
         }
         else {
-            let base = ViewControllerFFplayer()
-            base.view.backgroundColor = .black
-            navigationController?.pushViewController(base, animated: true)
-            
             var playItems = [RemoteItem]()
             for aitem in result.filter({ !$0.folder }) {
                 if let item = CloudFactory.shared[aitem.storage ?? ""]?.get(fileId: aitem.id ?? "") {
@@ -260,9 +493,8 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             }
             
             if playItems.count > 0 {
-                Player.play(items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop"), fontsize: 60) { finish in
+                Player.play(parent: self, items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop")) { finish in
                     DispatchQueue.main.async {
-                        self.navigationController?.popToViewController(self, animated: true)
                         self.tableView.reloadData()
                     }
                 }
@@ -276,15 +508,8 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         if subItem {
             (CloudFactory.shared[storageName] as? RemoteSubItem)?.listsubitem(fileId: self.rootFileId) {
                 DispatchQueue.main.async {
-                    self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                    self.result_base = self.result
-                    let text = self.navigationItem.searchController?.searchBar.text ?? ""
-                    if text.isEmpty {
-                        self.result = self.result_base
-                    } else {
-                        self.result = self.result_base
-                        self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
-                    }
+                    self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                    self.DoSort()
                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                         CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                             DispatchQueue.main.async {
@@ -305,15 +530,8 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else {
             CloudFactory.shared[storageName]?.list(fileId: rootFileId) {
                 DispatchQueue.main.async {
-                    self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                    self.result_base = self.result
-                    let text = self.navigationItem.searchController?.searchBar.text ?? ""
-                    if text.isEmpty {
-                        self.result = self.result_base
-                    } else {
-                        self.result = self.result_base
-                        self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
-                    }
+                    self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                    self.DoSort()
                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                         CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                             DispatchQueue.main.async {
@@ -339,23 +557,37 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         self.navigationController?.pushViewController(next!, animated: true)
     }
 
+    
     @objc func editButtonDidTap(_ sender: UIBarButtonItem) {
+        let contentVC = PopupEditContentViewController()
+        contentVC.modalPresentationStyle = .popover
+        contentVC.preferredContentSize = CGSize(width: 200, height: 400)
+        contentVC.popoverPresentationController?.barButtonItem = sender
+        contentVC.popoverPresentationController?.permittedArrowDirections = .any
+        contentVC.popoverPresentationController?.delegate = self
+        contentVC.dataparent = self
+        contentVC.isShowEdit = !subItem
+        
+        present(contentVC, animated: true, completion: nil)
+    }
+
+    func editStartFunc() {
         let next = storyboard!.instantiateViewController(withIdentifier: "MainEdit") as? TableViewControllerItemsEdit
         
         next?.rootPath = rootPath
         next?.rootFileId = rootFileId
         next?.storageName = storageName
-        
         editting = true
         self.navigationController?.pushViewController(next!, animated: false)
     }
-
+    
+    
     func updateSearchResults(for searchController: UISearchController) {
         let text = searchController.searchBar.text ?? ""
         if text.isEmpty {
             result = result_base
         } else {
-            result = result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+            result = result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
         }
         tableView.reloadData()
     }
@@ -437,12 +669,12 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                                                 let defaultAction61 = UIAlertAction(title: NSLocalizedString("as Image", comment: ""),
                                                                                     style: .default,
                                                                                     handler:{ action in
-                                                                                        self.displayImageViewer(item: item, fallback: false)
+                                                                                        self.displayImageViewer(item: item)
                                                                                     })
                                                 let defaultAction62 = UIAlertAction(title: NSLocalizedString("as PDF", comment: ""),
                                                                                     style: .default,
                                                                                     handler:{ action in
-                                                                                        self.displayPDFViewer(item: item, fallback: false)
+                                                                                        self.displayPDFViewer(item: item)
                                                 })
                                                 let defaultAction63 = UIAlertAction(title: NSLocalizedString("as Raw binay", comment: ""),
                                                                                    style: .default,
@@ -477,8 +709,11 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
     }
     
     func writeTempfile(file: URL,stream: RemoteStream, pos: Int64, size: Int64, onFinish: @escaping ()->Void) {
-        var len = 1024*1024
-        guard gone else {
+        DispatchQueue.main.async {
+            self.downloadProgress.filepos = Int(pos)
+        }
+        var len = 2*1024*1024
+        guard gone, downloadProgress.isLive else {
             try? FileManager.default.removeItem(at: file)
             return
         }
@@ -524,12 +759,19 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         guard let url = NSURL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(item.name) else {
             return
         }
-        activityIndicator.startAnimating()
+        
+        downloadProgress.filepos = 0
+        downloadProgress.filesize = Int(item.size)
+        downloadProgress.isLive = true
+        present(downloadProgress, animated: true, completion: nil)
 
         let stream = item.open()
         writeTempfile(file: url, stream: stream, pos: 0, size: item.size) {
+            guard self.gone, self.downloadProgress.isLive else {
+                return
+            }
             DispatchQueue.main.async {
-                self.activityIndicator.stopAnimating()
+                self.downloadProgress.dismiss(animated: true, completion: nil)
 
                 self.documentInteractionController = UIDocumentInteractionController.init(url: url)
                 self.documentInteractionController?.delegate = self
@@ -592,59 +834,73 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         cell.textLabel?.lineBreakMode = .byWordWrapping
         cell.textLabel?.text = result[indexPath.row].name
         
+        cell.detailTextLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        guard let formatString = DateFormatter.dateFormat(fromTemplate: "yyyyMMdd", options: 0, locale: Locale.current) else { fatalError() }
+        
         if result[indexPath.row].folder {
             cell.accessoryType = .disclosureIndicator
             var tStr = ""
             if result[indexPath.row].mdate != nil {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
             cell.detailTextLabel?.text = "\(tStr) \tfolder"
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "FolderColor")
         }
         else if hasSubItem(name: result[indexPath.row].name) {
             cell.accessoryType = .disclosureIndicator
             var tStr = ""
             if result[indexPath.row].mdate != nil {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useAll]
-            formatter.countStyle = .file
-            let sStr = formatter.string(fromByteCount: Int64(result[indexPath.row].size))
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.groupingSeparator = ","
+            formatter.groupingSize = 3
+            let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter2 = ByteCountFormatter()
+            formatter2.allowedUnits = [.useAll]
+            formatter2.countStyle = .file
+            let sStr2 = formatter2.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) \t\(result[indexPath.row].subinfo ?? "")"
-            cell.backgroundColor = UIColor.init(red: 0.95, green: 1.0, blue: 0.95, alpha: 1.0)
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes) \t\(result[indexPath.row].subinfo ?? "")"
+            cell.backgroundColor = UIColor(named: "CueColor")
         }
         else {
             cell.accessoryType = .none
             var tStr = ""
             if result[indexPath.row].mdate != nil {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useAll]
-            formatter.countStyle = .file
-            let sStr = formatter.string(fromByteCount: Int64(result[indexPath.row].size))
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.groupingSeparator = ","
+            formatter.groupingSize = 3
+            let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter2 = ByteCountFormatter()
+            formatter2.allowedUnits = [.useAll]
+            formatter2.countStyle = .file
+            let sStr2 = formatter2.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) \t\(result[indexPath.row].subinfo ?? "")"
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes) \t\(result[indexPath.row].subinfo ?? "")"
             if let storage = result[indexPath.row].storage, let id = result[indexPath.row].id {
                 let localpos = CloudFactory.shared.data.getMark(storage: storage, targetID: id)
                 if localpos != nil {
-                    cell.backgroundColor = UIColor.init(red: 0.95, green: 0.95, blue: 0.95, alpha: 1.0)
+                    cell.backgroundColor = UIColor(named: "DidPlayColor")
                 }
                 else {
-                    cell.backgroundColor = .white
+                    if #available(iOS 13.0, *) {
+                        cell.backgroundColor = UIColor.systemBackground
+                    } else {
+                        cell.backgroundColor = UIColor.white
+                    }
                 }
             }
         }
@@ -720,7 +976,8 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     semaphore.signal()
                     self.displayRawViewer(item: item)
                 }
-                else if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") {
+                else if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") &&
+                    !Converter.IsCasting() {
                     semaphore.signal()
                     playFFmpeg(item: item) { finish in
                         if finish {
@@ -746,16 +1003,21 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         guard gone else {
             return
         }
-        if UserDefaults.standard.bool(forKey: "ImageViewer") && (item.ext == "tif" || item.ext == "tiff" || item.ext == "heic" || item.ext == "jpg" || item.ext == "jpeg" || item.ext == "gif" || item.ext == "png" || item.ext == "bmp" || item.ext == "ico" || item.ext ==  "cur" || item.ext == "xbm") {
+        if UserDefaults.standard.bool(forKey: "ImageViewer") && pict_exts.contains(item.ext) {
             
-            displayImageViewer(item: item, fallback: true)
-        }
-        else if UserDefaults.standard.bool(forKey: "MediaViewer") && (item.ext == "mov" || item.ext == "mp4" || item.ext == "mp3" || item.ext == "wav" || item.ext == "aac") {
-            
-            displayMediaViewer(item: item, fallback: true)
+            displayImageViewer(item: item)
         }
         else if UserDefaults.standard.bool(forKey: "PDFViewer") && (item.ext == "pdf") {
-            displayPDFViewer(item: item, fallback: true)
+            displayPDFViewer(item: item)
+        }
+        else if Converter.IsCasting() {
+            semaphore.signal()
+            playConverter(item: item) { fin in
+            }
+        }
+        else if UserDefaults.standard.bool(forKey: "MediaViewer") && media_exts.contains(item.ext)  {
+            
+            displayMediaViewer(item: item, fallback: true)
         }
         else {
             DispatchQueue.main.async {
@@ -767,28 +1029,194 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             }
         }
     }
+
+    func waitToPlay(target: URL, onFind: @escaping ()->Void) {
+        let task = URLSession.shared.dataTask(with: target) { _, response, _ in
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    DispatchQueue.main.asyncAfter(deadline: .now()+1) {
+                        onFind()
+                    }
+                    return
+                }
+            }
+            if Converter.IsCasting() {
+                DispatchQueue.global().asyncAfter(deadline: .now()+1) {
+                    self.waitToPlay(target: target, onFind: onFind)
+                }
+            }
+            return
+        }
+        
+        task.resume()
+    }
+
+    func playConverter(item: RemoteItem, onFinish: @escaping (Bool)->Void) {
+        self.activityIndicator.startAnimating()
+        #if !targetEnvironment(macCatalyst)
+        let castContext = GCKCastContext.sharedInstance()
+        if castContext.castState == .connected || castContext.castState == .connecting {
+            var url: URL? = nil
+            DispatchQueue.global().async {
+                let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+                let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+                let info = ConvertIteminfo(item: item)
+                if skip > 0 {
+                    info.startpos = Double(skip)
+                }
+                if stop > 0 {
+                    info.playduration = Double(stop)
+                }
+                url = Converter.Play(item: info, local: false, onSelect: {
+                    info in
+                    let group = DispatchGroup()
+                    var video = info.mainVideo
+                    var subtitle = info.mainSubtitle
+                    group.enter()
+                    DispatchQueue.main.async {
+                        let dialog = SelectStreamViewController()
+                        dialog.info = info
+                        dialog.onDone = { v, s in
+                            video = v
+                            subtitle = s
+                            group.leave()
+                        }
+                        self.present(dialog, animated: true, completion: nil)
+                    }
+                    group.wait()
+                    return (video, subtitle)
+                }) { ready in
+                    DispatchQueue.main.async {
+                        self.activityIndicator.stopAnimating()
+                        guard ready else {
+                            return
+                        }
+                        let group = DispatchGroup()
+                        if UserDefaults.standard.bool(forKey: "savePlaypos") {
+                            if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+                                CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0, group: group)
+                            }
+                            group.notify(queue: .main) {
+                                CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0)
+                                self.tableView.reloadData()
+                            }
+                        }
+                        guard let target = url else {
+                            return
+                        }
+                        print(target)
+                        
+                        let metadata = GCKMediaMetadata()
+                        metadata.setString(item.name, forKey: kGCKMetadataKeyTitle)
+                        let mediaInfoBuilder = GCKMediaInformationBuilder.init(contentURL: target)
+                        mediaInfoBuilder.streamType = GCKMediaStreamType.none
+                        mediaInfoBuilder.contentType = "application/vnd.apple.mpegurl"
+                        mediaInfoBuilder.metadata = metadata
+                        
+                                            
+                        let mediaInfo = mediaInfoBuilder.build()
+                        let instance = GCKCastContext.sharedInstance()
+                        instance.presentDefaultExpandedMediaControls()
+                        instance.sessionManager.currentSession?.remoteMediaClient?.loadMedia(mediaInfo)
+
+                    }
+                }
+                if(url == nil) {
+                    DispatchQueue.main.async {
+                        self.activityIndicator.stopAnimating()
+                    }
+                }
+                onFinish(url != nil)
+            }
+            return
+        }
+        #endif
+        convertPlayer = ConvertPlayerView()
+        var url: URL? = nil
+        DispatchQueue.global().async {
+            let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+            let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            let info = ConvertIteminfo(item: item)
+            if skip > 0 {
+                info.startpos = Double(skip)
+            }
+            if stop > 0 {
+                info.playduration = Double(stop)
+            }
+            url = Converter.Play(item: info, local: true, onSelect: {
+                info in
+                let group = DispatchGroup()
+                var video = info.mainVideo
+                var subtitle = info.mainSubtitle
+                group.enter()
+                DispatchQueue.main.async {
+                    let dialog = SelectStreamViewController()
+                    dialog.info = info
+                    dialog.onDone = { v, s in
+                        video = v
+                        subtitle = s
+                        group.leave()
+                    }
+                    self.present(dialog, animated: true, completion: nil)
+                }
+                group.wait()
+                return (video, subtitle)
+            }) { ready in
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                    guard ready else {
+                        return
+                    }
+                    let group = DispatchGroup()
+                    if UserDefaults.standard.bool(forKey: "savePlaypos") {
+                        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+                            CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0, group: group)
+                        }
+                        group.notify(queue: .main) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0)
+                            self.tableView.reloadData()
+                        }
+                    }
+                    guard let target = url else {
+                        return
+                    }
+                    self.convertPlayer?.target = target
+                    self.convertPlayer?.item = item
+                    self.convertPlayer?.play(parent: self)
+                }
+            }
+            if(url == nil) {
+                DispatchQueue.main.async {
+                    self.activityIndicator.stopAnimating()
+                }
+            }
+            onFinish(url != nil)
+        }
+    }
     
     func playFFmpeg(item: RemoteItem, onFinish: @escaping (Bool)->Void) {
-        let base = ViewControllerFFplayer()
-        base.view.backgroundColor = .black
-        navigationController?.pushViewController(base, animated: true)
         let localpos = UserDefaults.standard.bool(forKey: "resumePlaypos") ? CloudFactory.shared.data.getMark(storage: item.storage, targetID: item.id) : nil
-        Player.play(item: item, start: localpos, fontsize: 60) { position in
-            self.navigationController?.popToViewController(self, animated: true)
-            let group = DispatchGroup()
+        Player.play(parent: self, item: item, start: localpos) { position in
             if let pos = position {
                 if UserDefaults.standard.bool(forKey: "savePlaypos") {
-                    if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
-                        CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
-                    }
-                    group.notify(queue: .main) {
-                        CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
+                    DispatchQueue.main.asyncAfter(deadline: .now()) {
+                        let group = DispatchGroup()
+                        self.activityIndicator.startAnimating()
+                        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+                            CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
+                        }
+                        group.notify(queue: .main) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
+                            self.activityIndicator.stopAnimating()
+                            self.tableView.reloadData()
+                        }
                     }
                 }
             }
-            group.notify(queue: .main) {
-                self.tableView.reloadData()
-                onFinish(position != nil)
+            if position == nil {
+                DispatchQueue.main.asyncAfter(deadline: .now()+2) {
+                    onFinish(position != nil)
+                }
             }
         }
     }
@@ -831,70 +1259,139 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         self.navigationController?.pushViewController(next!, animated: true)
     }
     
-    func displayImageViewer(item: RemoteItem, fallback: Bool) {
-        let prevRoot = UIApplication.topViewController()
-        activityIndicator.startAnimating()
+    func displayImageViewer(item: RemoteItem) {
+        downloadProgress.filepos = 0
+        downloadProgress.filesize = Int(item.size)
+        downloadProgress.isLive = true
+        present(downloadProgress, animated: false, completion: nil)
+
+        let next = self.storyboard!.instantiateViewController(withIdentifier: "ImageView") as? ViewControllerImage
+
+        let image_ids = result.filter({ !$0.folder && pict_exts.contains($0.ext?.lowercased() ?? "") }).compactMap({ $0.id })
+        let image_items = image_ids.compactMap({ CloudFactory.shared[storageName]?.get(fileId: $0) })
+        
+        guard image_items.count > 0 else {
+            self.semaphore.signal()
+            return
+        }
+        
+        next?.items = image_items
+        next?.itemIdx = image_items.firstIndex(where: { $0.id == item.id }) ?? 0
+        next?.data = [Data?](repeating: nil, count: image_items.count)
+        next?.images = [UIImage?](repeating: nil, count: image_items.count)
+        
         let stream = item.open()
-        stream.read(position: 0, length: Int(item.size)) { data in
+        stream.read(position: 0, length: Int(item.size), onProgress: { pos in
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = pos
+            }
+            return self.downloadProgress.isLive
+        }) { data in
+            guard self.downloadProgress.isLive else {
+                self.semaphore.signal()
+                stream.isLive = false
+                return
+            }
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = Int(item.size)
+            }
             if let data = data, let image = UIImage(data: data), let fixedImage = image.fixedOrientation() {
+                next?.data[next?.itemIdx ?? 0] = data
+                next?.images[next?.itemIdx ?? 0] = fixedImage
                 DispatchQueue.main.async {
-                    let next = self.storyboard!.instantiateViewController(withIdentifier: "ImageView") as? ViewControllerImage
                     next?.imagedata = fixedImage
-                    next?.item = item
-                    self.activityIndicator.stopAnimating()
+                    next?.modalPresentationStyle = .fullScreen
+                    self.downloadProgress.dismiss(animated: false, completion: nil)
+                    self.activityIndicator.startAnimating()
                     self.semaphore.signal()
-                    prevRoot?.present(next!, animated: true, completion: nil)
+                    self.present(next!, animated: true) {
+                        self.activityIndicator.stopAnimating()
+                    }
                 }
             }
             else {
                 DispatchQueue.main.async {
-                    self.activityIndicator.stopAnimating()
-                    if fallback {
-                        self.fallbackView(item: item)
-                    }
+                    self.downloadProgress.dismiss(animated: true, completion: nil)
+                    self.semaphore.signal()
                 }
             }
         }
     }
     
-    func displayPDFViewer(item: RemoteItem, fallback: Bool) {
-        let prevRoot = UIApplication.topViewController()
-        activityIndicator.startAnimating()
+    func displayPDFViewer(item: RemoteItem) {
+        downloadProgress.filepos = 0
+        downloadProgress.filesize = Int(item.size)
+        downloadProgress.isLive = true
+        present(downloadProgress, animated: false, completion: nil)
+
         let stream = item.open()
-        stream.read(position: 0, length: Int(item.size)) { data in
+        stream.read(position: 0, length: Int(item.size), onProgress: { pos in
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = pos
+            }
+            return self.downloadProgress.isLive
+        }) { data in
+            guard self.downloadProgress.isLive else {
+                self.semaphore.signal()
+                stream.isLive = false
+                return
+            }
+            DispatchQueue.main.async {
+                self.downloadProgress.filepos = Int(item.size)
+            }
             if let data = data, let document = PDFDocument(data: data) {
                 DispatchQueue.main.async {
                     let next = self.storyboard!.instantiateViewController(withIdentifier: "PDFView") as? ViewControllerPDF
                     next?.document = document
-                    self.activityIndicator.stopAnimating()
+                    next?.modalPresentationStyle = .fullScreen
+                    self.downloadProgress.dismiss(animated: false, completion: nil)
                     self.semaphore.signal()
-                    prevRoot?.present(next!, animated: true, completion: nil)
+                    self.present(next!, animated: true, completion: nil)
                 }
             }
             else {
                 DispatchQueue.main.async {
-                    self.activityIndicator.stopAnimating()
-                    if fallback {
-                        self.fallbackView(item: item)
-                    }
+                    self.downloadProgress.dismiss(animated: true, completion: nil)
+                    self.semaphore.signal()
                 }
             }
         }
     }
     
     func displayMediaViewer(item: RemoteItem, fallback: Bool) {
-        let next = CustomPlayerViewController()
+        player = CustomPlayerView()
         
         let localpos = UserDefaults.standard.bool(forKey: "resumePlaypos") ? CloudFactory.shared.data.getMark(storage: item.storage, targetID: item.id) : nil
         var playitem: [String: Any] = ["storage": storageName, "id": item.id]
         if let start = localpos {
             playitem["start"] = start
         }
-        next.playItems = [playitem]
-        next.onFinish = { position in
-            DispatchQueue.main.asyncAfter(deadline: .now()) {
-                self.navigationController?.popToViewController(self, animated: true)
+        let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+        let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+        if skip > 0 {
+            if let start = localpos, start > Double(skip) {
             }
+            else {
+                playitem["start"] = Double(skip)
+            }
+        }
+        if stop > 0 {
+            let stoppos = Double(skip + stop)
+            if let start = localpos, start > stoppos {
+                if skip > 0 {
+                    playitem["start"] = Double(skip)
+                }
+                else {
+                    playitem["start"] = nil
+                }
+                playitem["stop"] = stoppos
+            }
+            else {
+                playitem["stop"] = stoppos
+            }
+        }
+        player?.playItems = [playitem]
+        player?.onFinish = { position in
             if let pos = position {
                 if UserDefaults.standard.bool(forKey: "savePlaypos") {
                     DispatchQueue.main.asyncAfter(deadline: .now()) {
@@ -922,9 +1419,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         }
         
         semaphore.signal()
-        DispatchQueue.main.asyncAfter(deadline: .now()) {
-            self.navigationController?.pushViewController(next, animated: false)
-        }
+        self.player?.play(parent: self)
     }
     
     /*
@@ -935,7 +1430,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         // Get the new view controller using segue.destination.
         // Pass the selected object to the new view controller.
     }
-    */    
+    */
 }
 
 // https://gist.github.com/schickling/b5d86cb070130f80bb40
@@ -1001,5 +1496,467 @@ extension UIImage {
         
         guard let newCGImage = ctx.makeImage() else { return nil }
         return UIImage.init(cgImage: newCGImage, scale: 1, orientation: .up)
+    }
+}
+
+class PopupEditContentViewController: UIViewController {
+    
+    var stackView: UIStackView!
+    var dataparent: TableViewControllerItems!
+    var isShowEdit: Bool = true
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Do any additional setup after loading the view.
+        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+        
+        stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.distribution = .fill
+        stackView.spacing = 10
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor).isActive = true
+        stackView.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor).isActive = true
+
+        if isShowEdit {
+            let button1 = UIButton()
+            button1.setTitle("Edit items", for: .normal)
+            button1.setTitleColor(.systemRed, for: .normal)
+            button1.addTarget(self, action: #selector(buttonEvent1), for: .touchUpInside)
+            stackView.addArrangedSubview(button1)
+        }
+        
+        let button2 = UIButton()
+        button2.setTitle("Name A → Z", for: .normal)
+        if #available(iOS 13.0, *) {
+            button2.setTitleColor(.label, for: .normal)
+        } else {
+            button2.setTitleColor(.black, for: .normal)
+        }
+        button2.addTarget(self, action: #selector(buttonEvent2), for: .touchUpInside)
+        stackView.addArrangedSubview(button2)
+
+        let button3 = UIButton()
+        button3.setTitle("Name Z → A", for: .normal)
+        if #available(iOS 13.0, *) {
+            button3.setTitleColor(.label, for: .normal)
+        } else {
+            button3.setTitleColor(.black, for: .normal)
+        }
+        button3.addTarget(self, action: #selector(buttonEvent3), for: .touchUpInside)
+        stackView.addArrangedSubview(button3)
+
+        let button4 = UIButton()
+        button4.setTitle("Size 0 → 9", for: .normal)
+        if #available(iOS 13.0, *) {
+            button4.setTitleColor(.label, for: .normal)
+        } else {
+            button4.setTitleColor(.black, for: .normal)
+        }
+        button4.addTarget(self, action: #selector(buttonEvent4), for: .touchUpInside)
+        stackView.addArrangedSubview(button4)
+
+        let button5 = UIButton()
+        button5.setTitle("Size 9 → 0", for: .normal)
+        if #available(iOS 13.0, *) {
+            button5.setTitleColor(.label, for: .normal)
+        } else {
+            button5.setTitleColor(.black, for: .normal)
+        }
+        button5.addTarget(self, action: #selector(buttonEvent5), for: .touchUpInside)
+        stackView.addArrangedSubview(button5)
+
+        let button6 = UIButton()
+        button6.setTitle("Time old → new", for: .normal)
+        if #available(iOS 13.0, *) {
+            button6.setTitleColor(.label, for: .normal)
+        } else {
+            button6.setTitleColor(.black, for: .normal)
+        }
+        button6.addTarget(self, action: #selector(buttonEvent6), for: .touchUpInside)
+        stackView.addArrangedSubview(button6)
+
+        let button7 = UIButton()
+        button7.setTitle("Time new → old", for: .normal)
+        if #available(iOS 13.0, *) {
+            button7.setTitleColor(.label, for: .normal)
+        } else {
+            button7.setTitleColor(.black, for: .normal)
+        }
+        button7.addTarget(self, action: #selector(buttonEvent7), for: .touchUpInside)
+        stackView.addArrangedSubview(button7)
+
+        let button8 = UIButton()
+        button8.setTitle("Extension A → Z", for: .normal)
+        if #available(iOS 13.0, *) {
+            button8.setTitleColor(.label, for: .normal)
+        } else {
+            button8.setTitleColor(.black, for: .normal)
+        }
+        button8.addTarget(self, action: #selector(buttonEvent8), for: .touchUpInside)
+        stackView.addArrangedSubview(button8)
+
+        let button9 = UIButton()
+        button9.setTitle("Extension Z → A", for: .normal)
+        if #available(iOS 13.0, *) {
+            button9.setTitleColor(.label, for: .normal)
+        } else {
+            button9.setTitleColor(.black, for: .normal)
+        }
+        button9.addTarget(self, action: #selector(buttonEvent9), for: .touchUpInside)
+        stackView.addArrangedSubview(button9)
+    }
+    
+    @objc func buttonEvent1(_ sender: UIButton) {
+        dismiss(animated: true) {
+            self.dataparent.editStartFunc()
+        }
+    }
+
+    @objc func buttonEvent2(_ sender: UIButton) {
+        UserDefaults.standard.set(0, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent3(_ sender: UIButton) {
+        UserDefaults.standard.set(1, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+    
+    @objc func buttonEvent4(_ sender: UIButton) {
+        UserDefaults.standard.set(2, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent5(_ sender: UIButton) {
+        UserDefaults.standard.set(3, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent6(_ sender: UIButton) {
+        UserDefaults.standard.set(4, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent7(_ sender: UIButton) {
+        UserDefaults.standard.set(5, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent8(_ sender: UIButton) {
+        UserDefaults.standard.set(6, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+
+    @objc func buttonEvent9(_ sender: UIButton) {
+        UserDefaults.standard.set(7, forKey: "ItemSortOrder")
+        dismiss(animated: true) {
+            self.dataparent.DoSort()
+        }
+    }
+}
+
+extension TableViewControllerItems: UIViewControllerTransitioningDelegate {
+    func presentationController(forPresented presented: UIViewController, presenting: UIViewController?, source: UIViewController) -> UIPresentationController? {
+        return CustomPresentationController(presentedViewController: presented, presenting: presenting)
+    }
+}
+
+class CustomPresentationController: UIPresentationController {
+    // 呼び出し元のView Controller の上に重ねるオーバレイView
+    var overlayView = UIView()
+
+    // 表示トランジション開始前に呼ばれる
+    override func presentationTransitionWillBegin() {
+        guard let containerView = containerView else {
+            return
+        }
+
+        overlayView.frame = containerView.bounds
+        //overlayView.gestureRecognizers = [UITapGestureRecognizer(target: self, action: #selector(CustomPresentationController.overlayViewDidTouch(_:)))]
+        overlayView.backgroundColor = .black
+        overlayView.alpha = 0.0
+        containerView.insertSubview(overlayView, at: 0)
+
+        // トランジションを実行
+        presentedViewController.transitionCoordinator?.animate(alongsideTransition: {[weak self] context in
+            self?.overlayView.alpha = 0.7
+            }, completion:nil)
+    }
+
+    // 非表示トランジション開始前に呼ばれる
+    override func dismissalTransitionWillBegin() {
+        presentedViewController.transitionCoordinator?.animate(alongsideTransition: {[weak self] context in
+            self?.overlayView.alpha = 0.0
+            }, completion:nil)
+    }
+
+    // 非表示トランジション開始後に呼ばれる
+    override func dismissalTransitionDidEnd(_ completed: Bool) {
+        if completed {
+            overlayView.removeFromSuperview()
+        }
+    }
+
+    // 子のコンテナサイズを返す
+    override func size(forChildContentContainer container: UIContentContainer, withParentContainerSize parentSize: CGSize) -> CGSize {
+        return CGSize(width: 250, height: 250)
+    }
+
+    // 呼び出し先のView Controllerのframeを返す
+    override var frameOfPresentedViewInContainerView: CGRect {
+        var presentedViewFrame = CGRect()
+        let containerBounds = containerView!.bounds
+        let childContentSize = size(forChildContentContainer: presentedViewController, withParentContainerSize: containerBounds.size)
+
+        presentedViewFrame.size = childContentSize
+        presentedViewFrame.origin.x = (containerBounds.size.width - childContentSize.width) / 2.0
+        presentedViewFrame.origin.y = (containerBounds.size.height - childContentSize.height) / 2.0
+
+        return presentedViewFrame
+    }
+
+    // レイアウト開始前に呼ばれる
+    override func containerViewWillLayoutSubviews() {
+        overlayView.frame = containerView!.bounds
+        presentedView?.frame = frameOfPresentedViewInContainerView
+        presentedView?.layer.cornerRadius = 10
+        presentedView?.clipsToBounds = true
+    }
+
+
+    // レイアウト開始後に呼ばれる
+    override func containerViewDidLayoutSubviews() {
+    }
+
+    // overlayViewをタップした時に呼ばれる
+    @objc func overlayViewDidTouch(_ sender: UITapGestureRecognizer) {
+        presentedViewController.dismiss(animated: true, completion: nil)
+    }
+}
+
+class DownloadProgressViewController: UIViewController, DownloadManagerDelegate {
+    
+    lazy var activityIndicator: UIActivityIndicatorView = {
+        let activityIndicator = UIActivityIndicatorView()
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.color = UIColor(named: "IndicatorColor")
+        return activityIndicator
+    }()
+    
+    lazy var labelProgress: UILabel = {
+        let label = UILabel()
+        label.text = "0 / 0"
+        return label
+    }()
+    
+    lazy var progressView: UIProgressView = {
+        let p = UIProgressView(progressViewStyle: .default)
+        return p
+    }()
+    
+    func progress() {
+        let formatter2 = ByteCountFormatter()
+        formatter2.allowedUnits = [.useAll]
+        formatter2.countStyle = .file
+        let s2 = formatter2.string(fromByteCount: Int64(filesize))
+        let p2 = formatter2.string(fromByteCount: Int64(filepos))
+        labelProgress.text = "\(p2) / \(s2)"
+        if filesize > 0 {
+            progressView.setProgress(Float(filepos) / Float(filesize), animated: true)
+        }
+        else {
+            progressView.setProgress(0.0, animated: true)
+        }
+    }
+    
+    var filesize: Int = 0 {
+        didSet {
+            progress()
+        }
+    }
+
+    var filepos: Int = 0 {
+        didSet {
+            progress()
+        }
+    }
+    
+    var isLive = true
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+        
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.spacing = 10
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+
+        stackView.addArrangedSubview(activityIndicator)
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.startAnimating()
+
+        stackView.addArrangedSubview(labelProgress)
+        stackView.addArrangedSubview(progressView)
+        progressView.widthAnchor.constraint(equalTo: view.widthAnchor).isActive = true
+
+        let buttonCancel = UIButton(type: .roundedRect)
+        buttonCancel.setTitle("Cancel", for: .normal)
+        buttonCancel.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
+        stackView.addArrangedSubview(buttonCancel)
+    }
+    
+    @objc func buttonEvent(_ sender: UIButton) {
+        isLive = false
+        dismiss(animated: true, completion: nil)
+    }
+}
+
+
+class SelectStreamViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDelegate {
+    var onDone: ((Int, Int)->Void)?
+    var info: PlayItemInfo?
+    
+    var picker1: UIPickerView!
+    var picker2: UIPickerView!
+    
+    var videoIdx: Int = -1
+    var subtitleIdx: Int = -1
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+        
+        videoIdx = info?.mainVideo ?? -1
+        subtitleIdx = info?.mainSubtitle ?? -1
+        
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.spacing = 10
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+        
+        let stackView1 = UIStackView()
+        stackView1.axis = .horizontal
+        stackView1.spacing = 10
+        stackView.addArrangedSubview(stackView1)
+        
+        let label1 = UILabel()
+        label1.text = NSLocalizedString("Video", comment: "")
+        stackView1.addArrangedSubview(label1)
+        
+        picker1 = UIPickerView()
+        picker1.dataSource = self
+        picker1.delegate = self
+        stackView1.addArrangedSubview(picker1)
+        
+        let stackView2 = UIStackView()
+        stackView2.axis = .horizontal
+        stackView2.spacing = 10
+        stackView.addArrangedSubview(stackView2)
+        
+        let label2 = UILabel()
+        label2.text = NSLocalizedString("Subtitle", comment: "")
+        stackView2.addArrangedSubview(label2)
+
+        picker2 = UIPickerView()
+        picker2.dataSource = self
+        picker2.delegate = self
+        stackView2.addArrangedSubview(picker2)
+
+        let buttonOK = UIButton(type: .roundedRect)
+        buttonOK.setTitle("OK", for: .normal)
+        buttonOK.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
+        stackView.addArrangedSubview(buttonOK)
+        
+        if let key = info?.videos.keys.sorted(), let ind = key.firstIndex(of: videoIdx) {
+            picker1.selectRow(ind, inComponent: 0, animated: false)
+        }
+        if let key = info?.subtitle.keys.sorted(), let ind = key.firstIndex(of: subtitleIdx) {
+            picker2.selectRow(ind, inComponent: 0, animated: false)
+        }
+    }
+        
+    @objc func buttonEvent(_ sender: UIButton) {
+        dismiss(animated: true) {
+            self.onDone?(self.videoIdx, self.subtitleIdx)
+        }
+    }
+    
+    func numberOfComponents(in pickerView: UIPickerView) -> Int {
+        return 1
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        if pickerView == picker1 {
+            return info?.videos.count ?? 0
+        }
+        else if pickerView == picker2 {
+            return info?.subtitle.count ?? 0
+        }
+        return 0
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        if pickerView == picker1, let key = info?.videos.keys.sorted() {
+            return "\(key[row]) : \(info?.videos[key[row]] ?? "")"
+        }
+        if pickerView == picker2, let key = info?.subtitle.keys.sorted() {
+            return "\(key[row]) : \(info?.subtitle[key[row]] ?? "")"
+        }
+        return nil
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        if pickerView == picker1, let key = info?.videos.keys.sorted() {
+            videoIdx = key[row]
+        }
+        if pickerView == picker2, let key = info?.subtitle.keys.sorted() {
+            subtitleIdx = key[row]
+        }
     }
 }

@@ -27,8 +27,12 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
         super.viewDidLoad()
         
         self.title = "CryptRclone password"
-        view.backgroundColor = .white
-        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
         stackView = UIStackView()
         stackView.axis = .vertical
         stackView.alignment = .center
@@ -303,16 +307,20 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
                 continue
             }
             if let type = confItems["type"], type == "crypt" {
-                guard let password = confItems["password"] else {
-                    continue
+                var password = ""
+                var password2 = ""
+                if let p = confItems["password"] {
+                    password = p
                 }
-                guard let password2 = confItems["password2"] else {
-                    continue
+                if let p = confItems["password2"] {
+                    password2 = p
                 }
-                guard let filename_encryption = confItems["filename_encryption"] else {
-                    continue
+                if let filename_encryption = confItems["filename_encryption"] {
+                    crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": filename_encryption]
                 }
-                crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": filename_encryption]
+                else {
+                    crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": "standard"]
+                }
             }
         }
         
@@ -361,11 +369,11 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
                              0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95, 0xf6, 0x38,]
         var ciphertext_stdbase64 = ciphertext.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         ciphertext_stdbase64.append(contentsOf: String(repeating: "=", count: 4 - ciphertext_stdbase64.count % 4))
-        print(ciphertext_stdbase64)
+        //print(ciphertext_stdbase64)
         guard let cipher = Data(base64Encoded: ciphertext_stdbase64) else {
             return nil
         }
-        print(cipher)
+        //print(cipher)
         guard cipher.count >= 16 else {
             return ciphertext
         }
@@ -377,7 +385,7 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
         guard let plain = aes.encrypt(plaintext: [UInt8](buffer)) else {
             return ciphertext
         }
-        print(plain)
+        //print(plain)
         return String(bytes: plain, encoding: .utf8)
     }
     
@@ -1129,14 +1137,19 @@ public class RemoteCryptRcloneStream: SlotStream {
                         var slot = slot1
                         var plainBlock = Data()
                         for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                            let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                            let chunk = data.subdata(in: start..<end)
-                            guard let plain = Secretbox.open(box: chunk, nonce: self.addNonce(pos: slot), key: self.key) else {
-                                self.error = true
+                            autoreleasepool {
+                                let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
+                                let chunk = data.subdata(in: start..<end)
+                                guard let plain = Secretbox.open(box: chunk, nonce: self.addNonce(pos: slot), key: self.key) else {
+                                    self.error = true
+                                    return
+                                }
+                                plainBlock.append(plain)
+                                slot += 1
+                            }
+                            guard !self.error else {
                                 return
                             }
-                            plainBlock.append(plain)
-                            slot += 1
                         }
                         self.queue_buf.async {
                             self.buffer[pos1] = plainBlock
@@ -1194,13 +1207,18 @@ class AES_EME {
         }
         
         let PPj = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
+        defer {
+            PPj.deallocate()
+        }
         C.withUnsafeMutableBufferPointer { (Cbytes: inout UnsafeMutableBufferPointer<UInt8>)->Void in
             tweek.withUnsafeBufferPointer { (T: UnsafeBufferPointer<UInt8>)->Void in
                 key.withUnsafeBufferPointer { (keyBytes: UnsafeBufferPointer<UInt8>)->Void in
                     for j in 0..<m {
                         let Pj = UnsafeBufferPointer<UInt8>(rebasing: input[j*16..<(j+1)*16])
                         /* PPj = 2**(j-1)*L xor Pj */
-                        XorBlocks(output: PPj, in1: Pj, in2: LTable[j])
+                        LTable[j].withUnsafeBufferPointer {
+                            XorBlocks(output: PPj, in1: Pj, in2: $0)
+                        }
                         
                         /* PPPj = AESenc(K; PPj) */
                         var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
@@ -1223,6 +1241,9 @@ class AES_EME {
                     }
                     /* MP =(xorSum PPPj) xor T */
                     let MPt = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
+                    defer {
+                        MPt.deallocate()
+                    }
                     XorBlocks(output: MPt, in1: UnsafeBufferPointer<UInt8>(rebasing: Cbytes[0..<16]), in2: T)
                     for j in 1..<m {
                         XorBlocks(inout1: MPt, in2: UnsafeBufferPointer<UInt8>(rebasing: Cbytes[j*16..<(j+1)*16]))
@@ -1233,6 +1254,9 @@ class AES_EME {
                     var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
                     var outLength = Int(0)
                     let mcBytes = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
+                    defer {
+                        mcBytes.deallocate()
+                    }
                     status = CCCrypt(op,
                                      CCAlgorithm(kCCAlgorithmAES),
                                      CCOptions(kCCOptionECBMode),
@@ -1252,6 +1276,9 @@ class AES_EME {
                     
                     /* M = MP xor MC */
                     let M = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
+                    defer {
+                        M.deallocate()
+                    }
                     XorBlocks(output: M, in1: MP, in2: MC)
                     for j in 1..<m {
                         MultByTwo(inout1: M)
@@ -1261,6 +1288,9 @@ class AES_EME {
                     
                     /* CCC1 = (xorSum CCCj) xor T xor MC */
                     let CCC1 = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 16)
+                    defer {
+                        CCC1.deallocate()
+                    }
                     XorBlocks(output: CCC1, in1: MC, in2: T)
                     for j in 1..<m {
                         XorBlocks(inout1: CCC1, in2: UnsafeBufferPointer<UInt8>(rebasing: Cbytes[j*16..<(j+1)*16]))
@@ -1289,7 +1319,9 @@ class AES_EME {
                             return
                         }
                         outBytes.withUnsafeBufferPointer { outBuf in
-                            XorBlocks(output: UnsafeMutableBufferPointer<UInt8>(rebasing: Cbytes[j*16..<(j+1)*16]), in1: outBuf, in2: LTable[j])
+                            LTable[j].withUnsafeBufferPointer { Lt in
+                                XorBlocks(output: UnsafeMutableBufferPointer<UInt8>(rebasing: Cbytes[j*16..<(j+1)*16]), in1: outBuf, in2: Lt)
+                            }
                         }
                     }
                 }
@@ -1361,7 +1393,7 @@ class AES_EME {
     }
 
     // tabulateL - calculate L_i for messages up to a length of m cipher blocks
-    func TabulateL(m: Int) -> [UnsafeBufferPointer<UInt8>]? {
+    func TabulateL(m: Int) -> [[UInt8]]? {
         
         /* set L0 = 2*AESenc(K; 0) */
         let eZero = [UInt8](repeating: 0, count: 16)
@@ -1385,25 +1417,31 @@ class AES_EME {
         guard status == kCCSuccess else {
             return nil
         }
-        var ret: [UnsafeMutableBufferPointer<UInt8>] = (0..<m).map { _ in UnsafeMutableBufferPointer<UInt8>.allocate(capacity: outLength) }
+        var ret: [[UInt8]] = (0..<m).map { _ in [UInt8](repeating: 0, count: outLength) }
         var Li = Array(outBytes[0..<outLength])
         Li.withUnsafeMutableBufferPointer { LiBuf in
             for i in 0..<m {
-                MultByTwo(output: ret[i], input: UnsafeBufferPointer(LiBuf))
+                ret[i].withUnsafeMutableBufferPointer {
+                    MultByTwo(output: $0, input: UnsafeBufferPointer(LiBuf))
+                }
                 for j in 0..<16 {
                     LiBuf[j] = ret[i][j]
                 }
             }
         }
-        return ret.map { UnsafeBufferPointer<UInt8>($0) }
+        return ret
     }
 }
 
 class Poly1305 {
     static let TagSize = 16
+
+    class func poly1305(tag: inout [UInt8], msg: [UInt8], key: [UInt8]) {
+        poly1305(tag: &tag[0..<tag.count], msg: msg[0..<msg.count], key: key)
+    }
     
-    class func poly1305(tag: UnsafeMutableBufferPointer<UInt8>, msg: UnsafeBufferPointer<UInt8>, key: UnsafeBufferPointer<UInt8>) {
-        let len = msg.count
+    class func poly1305(tag: inout ArraySlice<UInt8>, msg: ArraySlice<UInt8>, key: [UInt8]) {
+        let len = msg.endIndex - msg.startIndex
         var h0, h1, h2, h3, h4: UInt32
         var r0, r1, r2, r3, r4: UInt64
         h0 = 0
@@ -1417,12 +1455,14 @@ class Poly1305 {
         r3 = 0
         r4 = 0
 
-        let keyPointer = UnsafeRawBufferPointer(key).baseAddress!
-        r0 = UInt64((keyPointer).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff)
-        r1 = UInt64(((keyPointer+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffff03)
-        r2 = UInt64(((keyPointer+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffc0ff)
-        r3 = UInt64(((keyPointer+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3f03fff)
-        r4 = UInt64(((keyPointer+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) & 0x00fffff)
+        key.withUnsafeBytes { kp in
+            let keyPointer = kp.baseAddress!
+            r0 = UInt64((keyPointer).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff)
+            r1 = UInt64(((keyPointer+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffff03)
+            r2 = UInt64(((keyPointer+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffc0ff)
+            r3 = UInt64(((keyPointer+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3f03fff)
+            r4 = UInt64(((keyPointer+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) & 0x00fffff)
+        }
         
         
         let R1 = r1 * 5
@@ -1433,11 +1473,14 @@ class Poly1305 {
         var offset = 0
         while len - offset >= TagSize {
             // h += msg
-            h0 += UnsafeRawPointer(msg.baseAddress!+offset).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
-            h1 += (UnsafeRawPointer(msg.baseAddress!+offset+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
-            h2 += (UnsafeRawPointer(msg.baseAddress!+offset+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
-            h3 += (UnsafeRawPointer(msg.baseAddress!+offset+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
-            h4 += (UnsafeRawPointer(msg.baseAddress!+offset+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) | (1 << 24)
+            msg.withUnsafeBytes { mp in
+                let msg_p = mp.baseAddress!
+                h0 += (msg_p+offset).load(as: UInt32.self) & 0x3ffffff
+                h1 += ((msg_p+offset+3).load(as: UInt32.self) >> 2) & 0x3ffffff
+                h2 += ((msg_p+offset+6).load(as: UInt32.self) >> 4) & 0x3ffffff
+                h3 += ((msg_p+offset+9).load(as: UInt32.self) >> 6) & 0x3ffffff
+                h4 += ((msg_p+offset+12).load(as: UInt32.self) >> 8) | (1 << 24)
+            }
             
             // h *= r
             let d0 = ((UInt64)(h0) * r0) + ((UInt64)(h1) * R4) + ((UInt64)(h2) * R3) + ((UInt64)(h3) * R2) + ((UInt64)(h4) * R1)
@@ -1459,18 +1502,19 @@ class Poly1305 {
             
             offset += TagSize
         }
-        if msg.count - offset > 0 {
+        if len - offset > 0 {
             var block = [UInt8](repeating: 0, count: TagSize)
-            block.replaceSubrange(0..<msg.count-offset, with: msg[offset..<msg.count])
-            block[msg.count-offset] = 0x01
+            block.replaceSubrange(0..<(len-offset), with: msg[msg.startIndex+offset..<msg.endIndex])
+            block[len-offset] = 0x01
             
             // h += msg
             block.withUnsafeBytes { u in
-                h0 += (u.baseAddress!).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
-                h1 += ((u.baseAddress!+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
-                h2 += ((u.baseAddress!+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
-                h3 += ((u.baseAddress!+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
-                h4 += ((u.baseAddress!+12).assumingMemoryBound(to: UInt32.self).pointee >> 8)
+                let up = u.baseAddress!
+                h0 += up.load(as: UInt32.self) & 0x3ffffff
+                h1 += ((up+3).load(as: UInt32.self) >> 2) & 0x3ffffff
+                h2 += ((up+6).load(as: UInt32.self) >> 4) & 0x3ffffff
+                h3 += ((up+9).load(as: UInt32.self) >> 6) & 0x3ffffff
+                h4 += (up+12).load(as: UInt32.self) >> 8
             }
             
             // h *= r
@@ -1532,20 +1576,26 @@ class Poly1305 {
 
         // s: the s part of the key
         // tag = (h + s) % (2^128)
-        var t = UInt64(h0)+UInt64((keyPointer+16).assumingMemoryBound(to: UInt32.self).pointee)
-        h0 = UInt32(t & 0xffffffff)
-        t = UInt64(h1) + UInt64((keyPointer+20).assumingMemoryBound(to: UInt32.self).pointee) + (t >> 32)
-        h1 = UInt32(t & 0xffffffff)
-        t = UInt64(h2) + UInt64((keyPointer+24).assumingMemoryBound(to: UInt32.self).pointee) + (t >> 32)
-        h2 = UInt32(t & 0xffffffff)
-        t = UInt64(h3) + UInt64((keyPointer+28).assumingMemoryBound(to: UInt32.self).pointee) + (t >> 32)
-        h3 = UInt32(t & 0xffffffff)
-
-        let retUInt32 = UnsafeMutableRawBufferPointer(tag).bindMemory(to: UInt32.self)
-        retUInt32[0] = h0
-        retUInt32[1] = h1
-        retUInt32[2] = h2
-        retUInt32[3] = h3
+        key.withUnsafeBytes { kp in
+            let keyPointer = kp.baseAddress!
+            
+            var t = UInt64(h0)+UInt64((keyPointer+16).load(as: UInt32.self))
+            h0 = UInt32(t & 0xffffffff)
+            t = UInt64(h1) + UInt64((keyPointer+20).load(as: UInt32.self)) + (t >> 32)
+            h1 = UInt32(t & 0xffffffff)
+            t = UInt64(h2) + UInt64((keyPointer+24).load(as: UInt32.self)) + (t >> 32)
+            h2 = UInt32(t & 0xffffffff)
+            t = UInt64(h3) + UInt64((keyPointer+28).load(as: UInt32.self)) + (t >> 32)
+            h3 = UInt32(t & 0xffffffff)
+        }
+        
+        tag.withUnsafeMutableBytes { tp in
+            let tagp = (tp.baseAddress!).bindMemory(to: UInt32.self, capacity: 4)
+            tagp[0] = h0
+            tagp[1] = h1
+            tagp[2] = h2
+            tagp[3] = h3
+        }
     }
     
     class func Verify(mac: [UInt8], msg: [UInt8], key: [UInt8]) -> Bool {
@@ -1556,27 +1606,7 @@ class Poly1305 {
             return false
         }
         var tag = [UInt8](repeating: 0, count: TagSize)
-        key.withUnsafeBufferPointer { keyBuf in
-            tag.withUnsafeMutableBufferPointer { tagBuf in
-                msg.withUnsafeBufferPointer { msgBuf in
-                    poly1305(tag: tagBuf, msg: msgBuf, key: keyBuf)
-                }
-            }
-        }
-        return tag.elementsEqual(mac)
-    }
-
-    class func Verify(mac: UnsafeBufferPointer<UInt8>, msg: UnsafeBufferPointer<UInt8>, key: UnsafeBufferPointer<UInt8>) -> Bool {
-        guard key.count == 32 else {
-            return false
-        }
-        guard mac.count == TagSize else {
-            return false
-        }
-        var tag = [UInt8](repeating: 0, count: TagSize)
-        tag.withUnsafeMutableBufferPointer { tagBuf in
-                poly1305(tag: tagBuf, msg: msg, key: key)
-        }
+        poly1305(tag: &tag, msg: msg, key: key)
         return tag.elementsEqual(mac)
     }
 }
@@ -2064,8 +2094,12 @@ class Secretbox {
         outtext[14] = x14
         outtext[15] = x15
     }
+
+    class func XORKeyStream(output: inout [UInt8], input: [UInt8], counter: [UInt8], key: [UInt8]) {
+        XORKeyStream(output: &output[0..<output.count], input: input[0..<input.count], counter: counter, key: key)
+    }
     
-    class func XORKeyStream(output: UnsafeMutableBufferPointer<UInt8>, input: UnsafeBufferPointer<UInt8>, counter: [UInt8], key: [UInt8]) {
+    class func XORKeyStream(output: inout ArraySlice<UInt8>, input: ArraySlice<UInt8>, counter: [UInt8], key: [UInt8]) {
         guard key.count == 32 else {
             return
         }
@@ -2075,12 +2109,13 @@ class Secretbox {
 
         var inCounter = counter
         var offset = 0
-        while input.count - offset >= 64 {
+        let inlen = input.endIndex - input.startIndex
+        while inlen - offset >= 64 {
             guard let block = SalaCore(input: inCounter, k: key, c: Sigma) else {
                 return
             }
             for i in 0..<64 {
-                output[offset+i] = block[i] ^ input[offset+i]
+                output[output.startIndex+offset+i] = block[i] ^ input[input.startIndex+offset+i]
             }
             
             var u: UInt32 = 1
@@ -2092,12 +2127,12 @@ class Secretbox {
             
             offset += 64
         }
-        if input.count - offset > 0 {
+        if inlen - offset > 0 {
             guard let block = SalaCore(input: inCounter, k: key, c: Sigma) else {
                 return
             }
-            for i in 0..<input.count - offset {
-                output[offset+i] = block[i] ^ input[offset+i]
+            for i in 0..<inlen - offset {
+                output[output.startIndex+offset+i] = block[i] ^ input[input.startIndex+offset+i]
             }
         }
     }
@@ -2134,36 +2169,30 @@ class Secretbox {
         let zeroInput = [UInt8](repeating: 0, count: 64)
         var firstBlock = [UInt8](repeating: 0, count: 64)
         var out = [UInt8](repeating: 0, count: Poly1305.TagSize+msg.count)
-        out.withUnsafeMutableBufferPointer { outBuf in
-            msg.withUnsafeBufferPointer { msgBuf in
-                firstBlock.withUnsafeMutableBufferPointer { firstBuf in
-                    zeroInput.withUnsafeBufferPointer { zeroBuf in
-                        XORKeyStream(output: firstBuf, input: zeroBuf, counter: counter, key: subkey)
-                        
-                        let poly1305Key = UnsafeBufferPointer(rebasing: firstBuf[0..<32])
-                        let firstMessageBlock: UnsafeBufferPointer<UInt8>
-                        if msgBuf.count < 32 {
-                            firstMessageBlock = msgBuf
-                        }
-                        else {
-                            firstMessageBlock = UnsafeBufferPointer(rebasing: msgBuf[0..<32])
-                        }
-                        
-                        for i in 0..<firstMessageBlock.count {
-                            outBuf[i+Poly1305.TagSize] = firstBuf[i+32] ^ firstMessageBlock[i]
-                        }
-
-                        if msgBuf.count > 32 {
-                            var counter2 = counter
-                            counter2[8] = 1
-                            XORKeyStream(output: UnsafeMutableBufferPointer(rebasing: outBuf[Poly1305.TagSize+firstMessageBlock.count..<outBuf.count]), input: UnsafeBufferPointer(rebasing: msgBuf[32..<message.count]), counter: counter2, key: subkey)
-                        }
-
-                        Poly1305.poly1305(tag: UnsafeMutableBufferPointer(rebasing: outBuf[0..<Poly1305.TagSize]), msg: UnsafeBufferPointer(rebasing: outBuf[Poly1305.TagSize..<outBuf.count]), key: poly1305Key)
-                    }
-                }
-            }
+        
+        XORKeyStream(output: &firstBlock, input: zeroInput, counter: counter, key: subkey)
+        
+        let poly1305Key = Array(firstBlock[0..<32])
+        let firstMessageBlock: [UInt8]
+        if msg.count < 32 {
+            firstMessageBlock = msg
         }
+        else {
+            firstMessageBlock = Array(msg[0..<32])
+        }
+        
+        for i in 0..<firstMessageBlock.count {
+            out[i+Poly1305.TagSize] = firstBlock[i+32] ^ firstMessageBlock[i]
+        }
+        
+        if msg.count > 32 {
+            var counter2 = counter
+            counter2[8] = 1
+            XORKeyStream(output: &out[Poly1305.TagSize+firstMessageBlock.count..<out.count], input: msg[32..<message.count], counter: counter2, key: subkey)
+        }
+        
+        Poly1305.poly1305(tag: &out[0..<Poly1305.TagSize], msg: out[Poly1305.TagSize..<out.count], key: poly1305Key)
+
         return Data(out)
     }
     
@@ -2186,44 +2215,34 @@ class Secretbox {
         let zeroInput = [UInt8](repeating: 0, count: 64)
         var firstBlock = [UInt8](repeating: 0, count: 64)
         var out = [UInt8](repeating: 0, count: boxmsg.count - Poly1305.TagSize)
-        guard out.withUnsafeMutableBufferPointer({ outBuf in
-            boxmsg.withUnsafeBufferPointer() { msgBuf in
-                firstBlock.withUnsafeMutableBufferPointer() { firstBuf in
-                    zeroInput.withUnsafeBufferPointer() { zeroBuf in
-                        XORKeyStream(output: firstBuf, input: zeroBuf, counter: counter, key: subkey)
-                        
-                        let poly1305Key = UnsafeBufferPointer(rebasing: firstBuf[0..<32])
-                        let tag = UnsafeBufferPointer(rebasing: msgBuf[0..<Poly1305.TagSize])
-                        let boxBody = UnsafeBufferPointer(rebasing: msgBuf[Poly1305.TagSize..<msgBuf.count])
-              
-                        guard Poly1305.Verify(mac: tag, msg: boxBody, key: poly1305Key) else {
-                            print("verify error")
-                            return false
-                        }
-                        
-                        let firstMessageBlock: UnsafeBufferPointer<UInt8>
-                        if msgBuf.count < 32 {
-                            firstMessageBlock = boxBody
-                        }
-                        else {
-                            firstMessageBlock = UnsafeBufferPointer(rebasing: boxBody[0..<32])
-                        }
 
-                        for i in 0..<firstMessageBlock.count {
-                            outBuf[i] = firstBuf[i+32] ^ firstMessageBlock[i]
-                        }
-                        
-                        if boxBody.count > 32 {
-                            var counter2 = counter
-                            counter2[8] = 1
-                            XORKeyStream(output: UnsafeMutableBufferPointer(rebasing: outBuf[firstMessageBlock.count..<outBuf.count]), input: UnsafeBufferPointer(rebasing: boxBody[32..<boxBody.count]), counter: counter2, key: subkey)
-                        }
-                        return true
-                    }
-                }
-            }
-        }) else {
+        XORKeyStream(output: &firstBlock, input: zeroInput, counter: counter, key: subkey)
+        
+        let poly1305Key = Array(firstBlock[0..<32])
+        let tag = Array(boxmsg[0..<Poly1305.TagSize])
+        let boxBody = Array(boxmsg[Poly1305.TagSize..<boxmsg.count])
+        
+        guard Poly1305.Verify(mac: tag, msg: boxBody, key: poly1305Key) else {
+            print("verify error")
             return nil
+        }
+        
+        let firstMessageBlock: [UInt8]
+        if boxmsg.count < 32 {
+            firstMessageBlock = boxBody
+        }
+        else {
+            firstMessageBlock = Array(boxBody[0..<32])
+        }
+        
+        for i in 0..<firstMessageBlock.count {
+            out[i] = firstBlock[i+32] ^ firstMessageBlock[i]
+        }
+        
+        if boxBody.count > 32 {
+            var counter2 = counter
+            counter2[8] = 1
+            XORKeyStream(output: &out[firstMessageBlock.count..<out.count], input: boxBody[32..<boxBody.count], counter: counter2, key: subkey)
         }
         return Data(out)
     }
@@ -2256,6 +2275,14 @@ class SCrypt {
         let scx = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: 16)
         let scy = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: Bs)
         let scz = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: Bs)
+        defer {
+            let _ = v.map( { $0.deallocate() } )
+            x.deallocate()
+            sc1.deallocate()
+            scx.deallocate()
+            scy.deallocate()
+            scz.deallocate()
+        }
         for j in 0..<Bs {
             x[j] = B[j]
         }
@@ -2345,7 +2372,7 @@ class SCrypt {
             var pos: UInt32 = 0
             while offset < len {
                 pos += 1
-                var buf = ComputeBlock(pos: pos)
+                let buf = ComputeBlock(pos: pos)
                 var l = len - offset
                 if l > buf.count {
                     l = buf.count

@@ -25,11 +25,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         service = CloudFactory.getServiceName(service: .GoogleDrive)
         storageName = name
         rootName = "root"
-        if refreshToken != "" {
-            refreshToken() { success in
-                // ignore error
-            }
-        }
     }
     
     override func isAuthorized(onFinish: ((Bool) -> Void)?) -> Void {
@@ -89,7 +84,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 onFinish?(false)
             }
         })
-        
+        if #available(iOS 13.0, *) {
+            self.webAuthSession?.presentationContextProvider = self
+        }
+
         self.webAuthSession?.start()
     }
     
@@ -103,7 +101,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         let callbackUrlScheme = SecretItems.Google.callbackUrlScheme
         let clientid = SecretItems.Google.client_id
         let post = "code=\(oauthToken)&redirect_uri=\(callbackUrlScheme):/oauth2redirect&client_id=\(clientid)&grant_type=authorization_code"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -152,7 +150,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         
         let clientid = SecretItems.Google.client_id
         let post = "refresh_token=\(refreshToken)&client_id=\(clientid)&grant_type=refresh_token"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -197,7 +195,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         
         let clientid = SecretItems.Google.client_id
         let post = "refresh_token=\(rToken)&client_id=\(clientid)&grant_type=refresh_token"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -289,6 +287,13 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                         throw RetryError.Retry
                     }
                     if let e = json["error"] {
+                        if let eobj = e as? [String: Any] {
+                            if let ecode = eobj["code"] as? Int, ecode == 401 {
+                                os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(self.storageName ?? ""))")
+                                self.cacheTokenDate = Date(timeIntervalSince1970: 0)
+                                self.tokenDate = Date(timeIntervalSince1970: 0)
+                            }
+                        }
                         print(e)
                         throw RetryError.Retry
                     }
@@ -317,6 +322,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                         }
                         return
                     }
+                    print("retry > 100")
                     onFinish?(nil)
                 } catch let e {
                     print(e)
@@ -397,6 +403,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                         }
                         return
                     }
+                    print("retry > 100")
                     onFinish?(nil)
                 } catch let e {
                     print(e)
@@ -469,7 +476,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 newitem.name = name
                 let comp = name.components(separatedBy: ".")
                 if comp.count >= 1 {
-                    newitem.ext = comp.last!
+                    newitem.ext = comp.last!.lowercased()
                 }
                 newitem.cdate = formatter.date(from: ctime)
                 newitem.mdate = formatter.date(from: mtime)
@@ -727,6 +734,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 if let l = length {
                     if data?.count ?? 0 != l {
                         if callCount > 50 {
+                            print("retry > 50")
                             onFinish?(data)
                             return
                         }
@@ -1568,7 +1576,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         return NetworkRemoteItem(path: path)
     }
     
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         if parentId == "teamdrives" {
             onFinish?(nil)
             return
@@ -1629,6 +1637,8 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                     let attr = try FileManager.default.attributesOfItem(atPath: target.path)
                     let fileSize = attr[.size] as! UInt64
 
+                    UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+                    
                     var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsTeamDrives=true")!)
                     request.httpMethod = "POST"
                     request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
@@ -1664,17 +1674,21 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                             
                             request2.setValue("bytes 0-\(len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
 
+                            #if !targetEnvironment(macCatalyst)
                             let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
                             config.isDiscretionary = true
                             config.sessionSendsLaunchEvents = true
+                            #else
+                            let config = URLSessionConfiguration.default
+                            #endif
                             let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
                             self.sessions += [session]
                             
-                            let task = session.uploadTask(with: request2, fromFile: tmpurl)
-                            let taskid = task.taskIdentifier
-                            self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": self.accessToken, "rToken": self.refreshToken, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target]
+                            let task2 = session.uploadTask(with: request2, fromFile: tmpurl)
+                            let taskid = task2.taskIdentifier
+                            self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": self.accessToken, "rToken": self.refreshToken, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                             self.onFinsh_upload[taskid] = onFinish
-                            task.resume()
+                            task2.resume()
                         }
                         catch {
                             targetStream.close()
@@ -1698,7 +1712,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
     var sessions = [URLSession]()
     
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        urlSessionDidFinishCallback?(session)
+        CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
     
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -1742,6 +1756,9 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             guard let aToken = taskdata["aToken"] as? String, let rToken = taskdata["rToken"] as? String else {
                 throw RetryError.Failed
             }
+            guard let sessionId = taskdata["session"] as? String else {
+                throw RetryError.Failed
+            }
             switch httpResponse.statusCode {
             case 200...201:
                 if let target = taskdata["target"] as? URL {
@@ -1773,6 +1790,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 let reqOffset = (Int(range.replacingOccurrences(of: #"bytes=\d+-(\d+)"#, with: "$1", options: .regularExpression)) ?? -1) + 1
 
                 print(reqOffset)
+                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: reqOffset)
                 
                 if offset != reqOffset {
                     guard let tstream = InputStream(url: target) else {
@@ -1811,7 +1829,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target]
+                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
 
@@ -1826,7 +1844,8 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 targetStream.open()
 
                 offset = 0
-                
+                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: 0)
+
                 var buf:[UInt8] = [UInt8](repeating: 0, count: 32*1024*1024)
                 let len = targetStream.read(&buf, maxLength: buf.count)
                 
@@ -1840,7 +1859,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target]
+                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
                 
@@ -1858,6 +1877,8 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                 targetStream = tstream
                 targetStream.open()
 
+                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: 0)
+
                 var request: URLRequest = URLRequest(url: uploadUrl)
                 request.httpMethod = "PUT"
                 request.setValue("bytes */\(fileSize)", forHTTPHeaderField: "Content-Range")
@@ -1867,7 +1888,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": 0, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target]
+                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": 0, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
                 
@@ -2113,7 +2134,7 @@ public class GoogleDriveStorageCustom: GoogleDriveStorage {
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "code=\(oauthToken)&redirect_uri=urn:ietf:wg:oauth:2.0:oob&client_id=\(clientid)&client_secret=\(secret)&grant_type=authorization_code&code_verifier=\(code_verifier)"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -2166,7 +2187,7 @@ public class GoogleDriveStorageCustom: GoogleDriveStorage {
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "refresh_token=\(refreshToken)&client_id=\(clientid)&client_secret=\(secret)&grant_type=refresh_token"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -2215,7 +2236,7 @@ public class GoogleDriveStorageCustom: GoogleDriveStorage {
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "refresh_token=\(rToken)&client_id=\(client_id)&client_secret=\(client_secret)&grant_type=refresh_token"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -2240,7 +2261,6 @@ class ViewControllerGoogleCode: UIViewController, UITextFieldDelegate {
         super.viewDidLoad()
         
         self.title = "Enter code"
-        view.backgroundColor = .white
         
         let stackView = UIStackView()
         stackView.axis = .vertical
@@ -2339,7 +2359,11 @@ class ViewControllerGoogleCustom: UIViewController, UITextFieldDelegate, UIPicke
         super.viewDidLoad()
         
         self.title = "Google ClientID"
-        view.backgroundColor = .white
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
         
         stackView = UIStackView()
         stackView.axis = .vertical
@@ -2502,5 +2526,12 @@ class ViewControllerGoogleCustom: UIViewController, UITextFieldDelegate, UIPicke
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         scope = scopes[row]
+    }
+}
+
+@available(iOS 13.0, *)
+extension GoogleDriveStorage: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return UIApplication.topViewController()!.view.window!
     }
 }

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 52;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -19,16 +19,11 @@
 		3C0D441D224C4949001FCAAC /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C0D441C224C4949001FCAAC /* AuthenticationServices.framework */; };
 		3C40091222401D020028A45A /* CustomPlayerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C40091122401D020028A45A /* CustomPlayerViewController.swift */; };
 		3C4009192240653C0028A45A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3C40091B2240653C0028A45A /* Localizable.strings */; };
-		3C4009782242DF990028A45A /* ffplayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009762242DF810028A45A /* ffplayer.framework */; };
-		3C4009792242DF990028A45A /* ffplayer.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009762242DF810028A45A /* ffplayer.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3C79B384225FE3DE0036E22F /* TableViewControllerPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C79B383225FE3DE0036E22F /* TableViewControllerPlaylist.swift */; };
 		3C79B38622608C4D0036E22F /* TableViewControllerPlayListFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C79B38522608C4D0036E22F /* TableViewControllerPlayListFolder.swift */; };
-		3CA2C9532234980C00481DB5 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CA2C9492234956100481DB5 /* RemoteCloud.framework */; };
-		3CA2C9542234980C00481DB5 /* RemoteCloud.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3CA2C9492234956100481DB5 /* RemoteCloud.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3CA2C9592234DE2D00481DB5 /* CollectionViewControllerCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C9582234DE2D00481DB5 /* CollectionViewControllerCloud.swift */; };
 		3CA2C9632235969900481DB5 /* TableViewControllerItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C9622235969900481DB5 /* TableViewControllerItems.swift */; };
 		3CBBC1812252F5C70014AB10 /* ViewControllerTutorialPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */; };
-		3CBBC18322532EC90014AB10 /* ViewControllerFFplayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBBC18222532EC90014AB10 /* ViewControllerFFplayer.swift */; };
 		3CC48515225719160003C44A /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CC48514225719160003C44A /* CloudKit.framework */; };
 		3CC4851D2258945B0003C44A /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 3CC4851C2258945B0003C44A /* Settings.bundle */; };
 		3CC48521225AC1690003C44A /* NavigationControllerHide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC48520225AC1690003C44A /* NavigationControllerHide.swift */; };
@@ -43,6 +38,33 @@
 		3CFCF6BC222F347B00843054 /* ccViewerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CFCF6BB222F347B00843054 /* ccViewerUITests.swift */; };
 		3CFCF6CA222F351900843054 /* TableViewControllerRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */; };
 		3CFCF6CD223059AF00843054 /* ViewControllerProtect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CFCF6CC223059AF00843054 /* ViewControllerProtect.swift */; };
+		3F19BBBA23241FA30040ED19 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBB923241FA30040ED19 /* Accelerate.framework */; };
+		3F19BBBC23241FAC0040ED19 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBBB23241FAC0040ED19 /* AudioToolbox.framework */; };
+		3F19BBBE23241FB60040ED19 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBBD23241FB50040ED19 /* AVFoundation.framework */; };
+		3F19BBC023241FBE0040ED19 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBBF23241FBE0040ED19 /* CFNetwork.framework */; };
+		3F19BBC423241FCF0040ED19 /* CoreData.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBC323241FCF0040ED19 /* CoreData.framework */; };
+		3F19BBC623241FD90040ED19 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBC523241FD90040ED19 /* CoreGraphics.framework */; };
+		3F19BBC823241FE10040ED19 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBC723241FE10040ED19 /* CoreMedia.framework */; };
+		3F19BBCA23241FE90040ED19 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBC923241FE90040ED19 /* CoreText.framework */; };
+		3F19BBCC23241FF20040ED19 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBCB23241FF20040ED19 /* Foundation.framework */; };
+		3F19BBD0232420180040ED19 /* MediaAccessibility.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBCF232420180040ED19 /* MediaAccessibility.framework */; };
+		3F19BBD2232420200040ED19 /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD1232420200040ED19 /* MediaPlayer.framework */; };
+		3F19BBD4232420280040ED19 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD3232420280040ED19 /* QuartzCore.framework */; };
+		3F19BBD62324202F0040ED19 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD52324202F0040ED19 /* Security.framework */; };
+		3F19BBD82324203C0040ED19 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */; };
+		3F19BBDA232420450040ED19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD9232420450040ED19 /* UIKit.framework */; };
+		3F19BBDC232420670040ED19 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBDB232420670040ED19 /* libc++.tbd */; };
+		3F19BC1C232455C80040ED19 /* ffconverter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1B232455C80040ED19 /* ffconverter.framework */; };
+		3F19BC1D232455C80040ED19 /* ffconverter.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1B232455C80040ED19 /* ffconverter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F19BC1F232455C80040ED19 /* ffplayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1E232455C80040ED19 /* ffplayer.framework */; };
+		3F19BC20232455C80040ED19 /* ffplayer.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1E232455C80040ED19 /* ffplayer.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; };
+		3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */; };
+		3F48A078237AFDFF008B6690 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; };
+		3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7022336B1F700D1FF9B /* Media.xcassets */; };
+		3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D52322EC22005B086A /* ViewControllerConvert.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,8 +91,10 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				3CA2C9542234980C00481DB5 /* RemoteCloud.framework in Embed Frameworks */,
-				3C4009792242DF990028A45A /* ffplayer.framework in Embed Frameworks */,
+				3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */,
+				3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */,
+				3F19BC20232455C80040ED19 /* ffplayer.framework in Embed Frameworks */,
+				3F19BC1D232455C80040ED19 /* ffconverter.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -95,15 +119,12 @@
 		3C400916224060CA0028A45A /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Main.strings; sourceTree = "<group>"; };
 		3C40091A2240653C0028A45A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3C40091C2240653F0028A45A /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3C4009762242DF810028A45A /* ffplayer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffplayer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C79B383225FE3DE0036E22F /* TableViewControllerPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerPlaylist.swift; sourceTree = "<group>"; };
 		3C79B38522608C4D0036E22F /* TableViewControllerPlayListFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerPlayListFolder.swift; sourceTree = "<group>"; };
-		3CA2C9492234956100481DB5 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CA2C9582234DE2D00481DB5 /* CollectionViewControllerCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionViewControllerCloud.swift; sourceTree = "<group>"; };
 		3CA2C96122355E9B00481DB5 /* ccViewer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ccViewer.entitlements; sourceTree = "<group>"; };
 		3CA2C9622235969900481DB5 /* TableViewControllerItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerItems.swift; sourceTree = "<group>"; };
 		3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerTutorialPage.swift; sourceTree = "<group>"; };
-		3CBBC18222532EC90014AB10 /* ViewControllerFFplayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerFFplayer.swift; sourceTree = "<group>"; };
 		3CC48514225719160003C44A /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		3CC4851C2258945B0003C44A /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		3CC48520225AC1690003C44A /* NavigationControllerHide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationControllerHide.swift; sourceTree = "<group>"; };
@@ -123,6 +144,45 @@
 		3CFCF6BD222F347B00843054 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerRoot.swift; sourceTree = "<group>"; };
 		3CFCF6CC223059AF00843054 /* ViewControllerProtect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerProtect.swift; sourceTree = "<group>"; };
+		3F19BBB923241FA30040ED19 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		3F19BBBB23241FAC0040ED19 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
+		3F19BBBD23241FB50040ED19 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		3F19BBBF23241FBE0040ED19 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
+		3F19BBC123241FC70040ED19 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
+		3F19BBC323241FCF0040ED19 /* CoreData.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreData.framework; path = System/Library/Frameworks/CoreData.framework; sourceTree = SDKROOT; };
+		3F19BBC523241FD90040ED19 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		3F19BBC723241FE10040ED19 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		3F19BBC923241FE90040ED19 /* CoreText.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreText.framework; path = System/Library/Frameworks/CoreText.framework; sourceTree = SDKROOT; };
+		3F19BBCB23241FF20040ED19 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		3F19BBCF232420180040ED19 /* MediaAccessibility.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaAccessibility.framework; path = System/Library/Frameworks/MediaAccessibility.framework; sourceTree = SDKROOT; };
+		3F19BBD1232420200040ED19 /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
+		3F19BBD3232420280040ED19 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		3F19BBD52324202F0040ED19 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		3F19BBD9232420450040ED19 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		3F19BBDB232420670040ED19 /* libc++.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
+		3F19BBE6232422390040ED19 /* strip_unused_archs.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = strip_unused_archs.sh; sourceTree = "<group>"; };
+		3F19BBE8232422390040ED19 /* utf.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = utf.html; sourceTree = "<group>"; };
+		3F19BBE9232422390040ED19 /* stl.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = stl.html; sourceTree = "<group>"; };
+		3F19BBEA232422390040ED19 /* libresample.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = libresample.html; sourceTree = "<group>"; };
+		3F19BBEB232422390040ED19 /* zlib.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = zlib.html; sourceTree = "<group>"; };
+		3F19BBEC232422390040ED19 /* dynamic_annotations.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = dynamic_annotations.html; sourceTree = "<group>"; };
+		3F19BBED232422390040ED19 /* tz.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = tz.html; sourceTree = "<group>"; };
+		3F19BBEE232422390040ED19 /* kissfft.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = kissfft.html; sourceTree = "<group>"; };
+		3F19BBEF232422390040ED19 /* oss_licenses_index.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = oss_licenses_index.txt; sourceTree = "<group>"; };
+		3F19BBF0232422390040ED19 /* pcre.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = pcre.html; sourceTree = "<group>"; };
+		3F19BBF1232422390040ED19 /* icu.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = icu.html; sourceTree = "<group>"; };
+		3F19BBF2232422390040ED19 /* eigen3.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = eigen3.html; sourceTree = "<group>"; };
+		3F19BBF3232422390040ED19 /* re2.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = re2.html; sourceTree = "<group>"; };
+		3F19BBF4232422390040ED19 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GoogleCast.framework; sourceTree = "<group>"; };
+		3F19BC1B232455C80040ED19 /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F19BC1E232455C80040ED19 /* ffplayer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffplayer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F19BC21232455C80040ED19 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimePickerKeyboard.swift; sourceTree = "<group>"; };
+		3F48A076237AFD99008B6690 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.6_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		3F9151D5236C191600E5EF65 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.5_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		3F92E7022336B1F700D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
+		3FA954D52322EC22005B086A /* ViewControllerConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerConvert.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,10 +190,28 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3F19BBDC232420670040ED19 /* libc++.tbd in Frameworks */,
+				3F19BC1C232455C80040ED19 /* ffconverter.framework in Frameworks */,
+				3F19BBDA232420450040ED19 /* UIKit.framework in Frameworks */,
+				3F19BBD82324203C0040ED19 /* SystemConfiguration.framework in Frameworks */,
+				3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */,
+				3F19BBD62324202F0040ED19 /* Security.framework in Frameworks */,
+				3F19BBD4232420280040ED19 /* QuartzCore.framework in Frameworks */,
+				3F19BC1F232455C80040ED19 /* ffplayer.framework in Frameworks */,
+				3F19BBD2232420200040ED19 /* MediaPlayer.framework in Frameworks */,
+				3F19BBD0232420180040ED19 /* MediaAccessibility.framework in Frameworks */,
+				3F19BBCC23241FF20040ED19 /* Foundation.framework in Frameworks */,
+				3F19BBCA23241FE90040ED19 /* CoreText.framework in Frameworks */,
+				3F19BBC823241FE10040ED19 /* CoreMedia.framework in Frameworks */,
+				3F19BBC623241FD90040ED19 /* CoreGraphics.framework in Frameworks */,
+				3F19BBC423241FCF0040ED19 /* CoreData.framework in Frameworks */,
+				3F19BBC023241FBE0040ED19 /* CFNetwork.framework in Frameworks */,
+				3F48A078237AFDFF008B6690 /* GoogleCast.framework in Frameworks */,
+				3F19BBBE23241FB60040ED19 /* AVFoundation.framework in Frameworks */,
+				3F19BBBC23241FAC0040ED19 /* AudioToolbox.framework in Frameworks */,
+				3F19BBBA23241FA30040ED19 /* Accelerate.framework in Frameworks */,
 				3CC48515225719160003C44A /* CloudKit.framework in Frameworks */,
 				3C0D441D224C4949001FCAAC /* AuthenticationServices.framework in Frameworks */,
-				3C4009782242DF990028A45A /* ffplayer.framework in Frameworks */,
-				3CA2C9532234980C00481DB5 /* RemoteCloud.framework in Frameworks */,
 				3C06934E2253E2610040DC0B /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -158,11 +236,28 @@
 		3CA2C9482234956100481DB5 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				3F9151D5236C191600E5EF65 /* GoogleCast.framework */,
+				3F19BBE4232422390040ED19 /* GoogleCastSDK-ios-4.4.4_dynamic */,
+				3F19BBDB232420670040ED19 /* libc++.tbd */,
+				3F19BBD9232420450040ED19 /* UIKit.framework */,
+				3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */,
+				3F19BBD52324202F0040ED19 /* Security.framework */,
+				3F19BBD3232420280040ED19 /* QuartzCore.framework */,
+				3F19BBD1232420200040ED19 /* MediaPlayer.framework */,
+				3F19BBCF232420180040ED19 /* MediaAccessibility.framework */,
+				3F19BBCB23241FF20040ED19 /* Foundation.framework */,
+				3F19BBC923241FE90040ED19 /* CoreText.framework */,
+				3F19BBC723241FE10040ED19 /* CoreMedia.framework */,
+				3F19BBC523241FD90040ED19 /* CoreGraphics.framework */,
+				3F19BBC323241FCF0040ED19 /* CoreData.framework */,
+				3F19BBC123241FC70040ED19 /* CoreBluetooth.framework */,
+				3F19BBBF23241FBE0040ED19 /* CFNetwork.framework */,
+				3F19BBBD23241FB50040ED19 /* AVFoundation.framework */,
+				3F19BBBB23241FAC0040ED19 /* AudioToolbox.framework */,
+				3F19BBB923241FA30040ED19 /* Accelerate.framework */,
 				3CC48514225719160003C44A /* CloudKit.framework */,
 				3C06934D2253E2610040DC0B /* StoreKit.framework */,
 				3C0D441C224C4949001FCAAC /* AuthenticationServices.framework */,
-				3C4009762242DF810028A45A /* ffplayer.framework */,
-				3CA2C9492234956100481DB5 /* RemoteCloud.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -170,6 +265,10 @@
 		3CFCF68C222F347900843054 = {
 			isa = PBXGroup;
 			children = (
+				3F48A076237AFD99008B6690 /* GoogleCast.framework */,
+				3F19BC21232455C80040ED19 /* RemoteCloud.framework */,
+				3F19BC1E232455C80040ED19 /* ffplayer.framework */,
+				3F19BC1B232455C80040ED19 /* ffconverter.framework */,
 				3CC4851C2258945B0003C44A /* Settings.bundle */,
 				3CFCF697222F347A00843054 /* ccViewer */,
 				3CFCF6AF222F347B00843054 /* ccViewerTests */,
@@ -212,7 +311,6 @@
 				3C79B38522608C4D0036E22F /* TableViewControllerPlayListFolder.swift */,
 				3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */,
 				3CF89CEF22333C14002FF0B5 /* TableViewControllerSetting.swift */,
-				3CBBC18222532EC90014AB10 /* ViewControllerFFplayer.swift */,
 				3C0654A6223978BF003BD932 /* ViewControllerFirst.swift */,
 				3C06549E22381567003BD932 /* ViewControllerImage.swift */,
 				3CEF9AC8223EE865008F90B5 /* ViewControllerPDF.swift */,
@@ -220,6 +318,9 @@
 				3CF15E7822370B9300328A90 /* ViewControllerText.swift */,
 				3C0654A822398041003BD932 /* ViewControllerTutorial.swift */,
 				3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */,
+				3FA954D52322EC22005B086A /* ViewControllerConvert.swift */,
+				3F92E7022336B1F700D1FF9B /* Media.xcassets */,
+				3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */,
 			);
 			path = ccViewer;
 			sourceTree = "<group>";
@@ -242,6 +343,44 @@
 			path = ccViewerUITests;
 			sourceTree = "<group>";
 		};
+		3F19BBE4232422390040ED19 /* GoogleCastSDK-ios-4.4.4_dynamic */ = {
+			isa = PBXGroup;
+			children = (
+				3F19BBE5232422390040ED19 /* Tools */,
+				3F19BBE7232422390040ED19 /* OpenSourceLicenses */,
+				3F19BBF4232422390040ED19 /* GoogleCast.framework */,
+			);
+			name = "GoogleCastSDK-ios-4.4.4_dynamic";
+			path = "../GoogleCastSDK-ios-4.4.4_dynamic";
+			sourceTree = "<group>";
+		};
+		3F19BBE5232422390040ED19 /* Tools */ = {
+			isa = PBXGroup;
+			children = (
+				3F19BBE6232422390040ED19 /* strip_unused_archs.sh */,
+			);
+			path = Tools;
+			sourceTree = "<group>";
+		};
+		3F19BBE7232422390040ED19 /* OpenSourceLicenses */ = {
+			isa = PBXGroup;
+			children = (
+				3F19BBE8232422390040ED19 /* utf.html */,
+				3F19BBE9232422390040ED19 /* stl.html */,
+				3F19BBEA232422390040ED19 /* libresample.html */,
+				3F19BBEB232422390040ED19 /* zlib.html */,
+				3F19BBEC232422390040ED19 /* dynamic_annotations.html */,
+				3F19BBED232422390040ED19 /* tz.html */,
+				3F19BBEE232422390040ED19 /* kissfft.html */,
+				3F19BBEF232422390040ED19 /* oss_licenses_index.txt */,
+				3F19BBF0232422390040ED19 /* pcre.html */,
+				3F19BBF1232422390040ED19 /* icu.html */,
+				3F19BBF2232422390040ED19 /* eigen3.html */,
+				3F19BBF3232422390040ED19 /* re2.html */,
+			);
+			path = OpenSourceLicenses;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -253,6 +392,8 @@
 				3CFCF692222F347A00843054 /* Frameworks */,
 				3CFCF693222F347A00843054 /* Resources */,
 				3CA2C9552234980C00481DB5 /* Embed Frameworks */,
+				3F9151E5236C463100E5EF65 /* ShellScript */,
+				3F1102F923704BAE00994810 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -306,13 +447,16 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1010;
-				LastUpgradeCheck = 1010;
+				LastUpgradeCheck = 1100;
 				ORGANIZATIONNAME = lithium03;
 				TargetAttributes = {
 					3CFCF694222F347A00843054 = {
 						CreatedOnToolsVersion = 10.1;
 						LastSwiftMigration = 1020;
 						SystemCapabilities = {
+							com.apple.AccessWiFi = {
+								enabled = 1;
+							};
 							com.apple.AutoFillCredentialProvider = {
 								enabled = 1;
 							};
@@ -379,6 +523,7 @@
 			files = (
 				3CFCF6A6222F347B00843054 /* LaunchScreen.storyboard in Resources */,
 				3C4009192240653C0028A45A /* Localizable.strings in Resources */,
+				3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */,
 				3CFCF6A3222F347B00843054 /* Assets.xcassets in Resources */,
 				3CFCF69E222F347A00843054 /* Main.storyboard in Resources */,
 				3CC4851D2258945B0003C44A /* Settings.bundle in Resources */,
@@ -402,6 +547,43 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		3F1102F923704BAE00994810 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nAPP_VERSION=$(/usr/libexec/PlistBuddy -c \"Print CFBundleShortVersionString\" $PRODUCT_SETTINGS_PATH)\n/usr/libexec/PlistBuddy -c \"Set :PreferenceSpecifiers:0:DefaultValue ${APP_VERSION}\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Settings.bundle/Root.plist\"\n";
+		};
+		3F9151E5236C463100E5EF65 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nif [ \"${PLATFORM_NAME}\" = \"iphoneos\" ]; then\n    ${SRCROOT}/../GoogleCastSDK/Tools/strip_unused_archs.sh\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		3CFCF691222F347A00843054 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -414,15 +596,16 @@
 				3C06934B2253DBD50040DC0B /* PurchaceManager.swift in Sources */,
 				3C40091222401D020028A45A /* CustomPlayerViewController.swift in Sources */,
 				3CF15E7922370B9300328A90 /* ViewControllerText.swift in Sources */,
+				3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */,
 				3C06934C2253DBD50040DC0B /* PurchaceViewController.swift in Sources */,
 				3CBBC1812252F5C70014AB10 /* ViewControllerTutorialPage.swift in Sources */,
 				3CEF9AC9223EE865008F90B5 /* ViewControllerPDF.swift in Sources */,
+				3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */,
 				3C79B38622608C4D0036E22F /* TableViewControllerPlayListFolder.swift in Sources */,
 				3C0654A7223978BF003BD932 /* ViewControllerFirst.swift in Sources */,
 				3CFCF6CD223059AF00843054 /* ViewControllerProtect.swift in Sources */,
 				3C06549F22381567003BD932 /* ViewControllerImage.swift in Sources */,
 				3C06934A2253DBD50040DC0B /* ProductManager.swift in Sources */,
-				3CBBC18322532EC90014AB10 /* ViewControllerFFplayer.swift in Sources */,
 				3CC48521225AC1690003C44A /* NavigationControllerHide.swift in Sources */,
 				3C0654A922398041003BD932 /* ViewControllerTutorial.swift in Sources */,
 				3C0D4419224B106C001FCAAC /* TableViewControllerItemsEdit.swift in Sources */,
@@ -626,7 +809,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 43;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GCC_OPTIMIZATION_LEVEL = fast;
 				INFOPLIST_FILE = ccViewer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
@@ -634,8 +823,13 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"-ObjC",
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -648,7 +842,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 43;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				GCC_OPTIMIZATION_LEVEL = fast;
 				INFOPLIST_FILE = ccViewer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
@@ -656,8 +856,13 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"-ObjC",
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

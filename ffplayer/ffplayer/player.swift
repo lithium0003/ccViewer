@@ -7,130 +7,130 @@
 //
 
 import Foundation
+import UIKit
 import AVFoundation
-import RemoteCloud
+import CoreGraphics
 import MediaPlayer
+import RemoteCloud
 
 public class Player {
-    static private var queue = DispatchQueue(label: "playerqueue")
-    static public private (set) var value: Int = 1
-    static public private (set) var initialized: Bool = false
-    
-    private class func increment() {
-        queue.sync {
-            value += 1
-        }
-    }
-
-    private class func initializedDone() -> Bool {
-        return queue.sync {
-            if initialized {
-                return true
-            }
-            initialized = true
-            return false
-        }
-    }
-    
-    private class func decrement() -> Bool {
-        return queue.sync {
-            if value > 0 {
-                value -= 1
-                return true
+    public class func play(parent: UIViewController, item: RemoteItem, start: Double?, onFinish: @escaping (Double?)->Void) {
+        DispatchQueue.main.async {
+            let bridge = StreamBridge(item: item, name: item.name, count: 1)
+            let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+            let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            if skip > 0 {
+                let skipd = Double(skip)
+                if stop > 0 {
+                    let stopd = Double(stop)
+                    if let s = start {
+                        if s < skipd {
+                            bridge.start = skipd
+                            bridge.durationLimit = stopd
+                        }
+                        else {
+                            if s > stopd {
+                                bridge.start = skipd
+                                bridge.durationLimit = stopd
+                            }
+                            else {
+                                bridge.start = s
+                                bridge.durationLimit = stopd - (s - skipd)
+                            }
+                        }
+                    }
+                    else {
+                        bridge.start = skipd
+                        bridge.durationLimit = stopd
+                    }
+                }
+                else {
+                    if let s = start {
+                        if s < skipd {
+                            bridge.start = skipd
+                        }
+                        else {
+                            bridge.start = s
+                        }
+                    }
+                    else {
+                        bridge.start = skipd
+                    }
+                }
             }
             else {
-                return false
+                if stop > 0 {
+                    let stopd = Double(stop)
+                    if let s = start {
+                        if s < stopd {
+                            bridge.start = s
+                            bridge.durationLimit = stopd - s
+                        }
+                        else {
+                            bridge.durationLimit = stopd
+                        }
+                    }
+                }
+                else {
+                    bridge.start = start
+                }
+            }
+            bridge.run(parent: parent) { ret, pos in
+                if ret >= 0 {
+                    onFinish(pos)
+                }
+                else {
+                    onFinish(nil)
+                }
             }
         }
     }
 
-    public class func SDLdidChangeStatusBarOrientation() {
-        if value == 0 {
-            didChangeStatusBarOrientation()
-        }
-    }
-    
-    public class func SDLapplicationWillTerminate() {
-        if value == 0 {
-            applicationWillTerminate()
-        }
-    }
-    
-    public class func SDLapplicationWillResignActive() {
-        if value == 0 {
-            applicationWillResignActive()
-        }
-    }
-    
-    public class func SDLapplicationDidEnterBackground() {
-        if value == 0 {
-            applicationDidEnterBackground()
-        }
-    }
-    
-    public class func SDLapplicationWillEnterForeground() {
-        if value == 0 {
-            applicationWillEnterForeground()
-        }
-    }
-    
-    public class func SDLapplicationDidBecomeActive() {
-        if value == 0 {
-            applicationDidBecomeActive()
-        }
-    }
-    
-    public class func play(item: RemoteItem, start: Double?, fontsize: Int, onFinish: @escaping (Double?)->Void) {
-        guard decrement() else {
-            onFinish(nil)
-            return
-        }
-        DispatchQueue.main.async {
-            sdlInit()
-            let bridge = StreamBridge(item: item, name: item.name, fontsize: fontsize)
-            bridge.start = start
-            bridge.run() { ret in
-                bridge.finishRemoteTransportControls()
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-                sdlDone()
-                increment()
-                onFinish(ret)
-            }
-        }
-    }
-
-    public class func play(items: [RemoteItem], shuffle: Bool, loop: Bool, fontsize: Int, onFinish: @escaping (Bool)->Void) {
-        guard decrement() else {
-            onFinish(false)
-            return
-        }
+    public class func play(parent: UIViewController, items: [RemoteItem], shuffle: Bool, loop: Bool, onFinish: @escaping (Bool)->Void) {
         var playItems = items;
         if shuffle {
             playItems.shuffle()
         }
         if let playItem = playItems.first {
             DispatchQueue.main.async {
-                sdlInit()
-                let bridge = StreamBridge(item: playItem, name: playItem.name, fontsize: fontsize)
-                bridge.run() { ret in
-                    bridge.finishRemoteTransportControls()
-                    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-                    sdlDone()
-                    increment()
-                    if ret ?? -1 == 0 {
-                        var remain = Array(playItems.dropFirst())
-                        if loop {
-                           remain += [playItem]
+                let group = DispatchGroup()
+                var cont = false
+                group.enter()
+                autoreleasepool {
+                    let bridge = StreamBridge(item: playItem, name: playItem.name, count: playItems.count)
+                    let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+                    if skip > 0 {
+                        bridge.start = Double(skip)
+                    }
+                    let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+                    if stop > 0 {
+                        bridge.durationLimit = Double(stop)
+                    }
+                    bridge.run(parent: parent) { ret, pos in
+                        defer {
+                            group.leave()
                         }
-                        if remain.count > 0 {
-                            play(items: remain, shuffle: shuffle, loop: loop, fontsize: fontsize, onFinish: onFinish)
+                        if ret >= 0 {
+                            var remain = Array(playItems.dropFirst())
+                            if loop {
+                               remain += [playItem]
+                            }
+                            playItems = remain
+                            if ret == 0 && remain.count > 0 {
+                                cont = true
+                            }
+                            else {
+                                onFinish(true)
+                            }
                         }
                         else {
-                            onFinish(true)
+                            onFinish(false)
                         }
                     }
-                    else {
-                        onFinish(false)
+                }
+                group.notify(queue: .main) {
+                    if cont {
+                        play(parent: parent, items: playItems, shuffle: shuffle, loop: loop, onFinish: onFinish)
                     }
                 }
             }
@@ -143,67 +143,83 @@ class StreamBridge {
     let stream: RemoteStream
     let name: String
     var start: Double?
-    var selfref: UnsafeMutableRawPointer!
+    var durationLimit: Double?
+    var count: Int
     var position: Int64
-    var ttfPath: String?
-    var image1Path: String?
-    var image2Path: String?
-    var image3Path: String?
-    var image4Path: String?
-    let fontsize: Int
-    let semaphore = DispatchSemaphore(value: 1)
-    var isCancel = false
-    var ret: Double?
-    var sdlparam: UnsafeMutableRawPointer!
-    var image: UIImage?
-    var media_pos = 0.0
-    var media_len = 0.0
-    var playing = false
+    var soundPTS: Double
+    var videoPTS: Double
+    var mediaDuration: Double
+
+    var selfref: UnsafeMutableRawPointer!
+    var player: FFPlayerViewController!
+    var sound: AudioQueuePlayer!
     
-    init(item: RemoteItem, name: String, fontsize: Int) {
-        self.remote = item
-        self.stream = item.open()
+    var isCancel = false
+    let semaphore = DispatchSemaphore(value: 1)
+    var param: UnsafeMutableRawPointer!
+    
+    var nameCStr: [CChar]? = nil
+
+    init(item: RemoteItem, name: String, count: Int) {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print(error)
+        }
+
+        remote = item
+        stream = item.open()
         self.name = name
-        self.position = 0
-        self.fontsize = fontsize
-        self.ret = -1
-        self.selfref = Unmanaged<StreamBridge>.passUnretained(self).toOpaque()
-        self.ttfPath = Bundle(for: type(of: self)).path(forResource: "ipamp", ofType: "ttf")
-        self.image1Path = Bundle(for: type(of: self)).path(forResource: "play", ofType: "bmp")
-        self.image2Path = Bundle(for: type(of: self)).path(forResource: "pause", ofType: "bmp")
-        self.image3Path = Bundle(for: type(of: self)).path(forResource: "back30", ofType: "bmp")
-        self.image4Path = Bundle(for: type(of: self)).path(forResource: "next30", ofType: "bmp")
+        position = 0
+        self.count = count
+        soundPTS = Double.nan
+        videoPTS = Double.nan
+        mediaDuration = 0
+
+        selfref = Unmanaged<StreamBridge>.passUnretained(self).toOpaque()
+        player = FFPlayerViewController()
+        player.modalPresentationStyle = .fullScreen
+        sound = AudioQueuePlayer()
     }
 
-    let update_info: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double) -> Void = {
-        (ref, play, pos, len) in
-        if let ref_unwrapped = ref, !pos.isNaN, !len.isNaN {
-            var stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
-            stream.media_pos = pos
-            stream.media_len = len
-            stream.playing = play == 1
-            
-            var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [String : Any]()
-            nowPlayingInfo[MPMediaItemPropertyTitle] = stream.remote.name
-            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = stream.media_pos
-            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = stream.media_len
-            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = stream.playing ? NSNumber(1.0) : NSNumber(0.0)
-            if nowPlayingInfo[MPMediaItemPropertyArtwork] == nil, let image = stream.image {
-                nowPlayingInfo[MPMediaItemPropertyArtwork] =
-                    MPMediaItemArtwork(boundsSize: image.size) { size in
-                        return image
-                }
-                if let png = image.pngData() {
-                    var buf = [UInt8](png)
-                    buf.withUnsafeMutableBufferPointer { p in
-                        set_image(stream.sdlparam, p.baseAddress, Int32(p.count))
-                    }
-                }
-            }
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    let getWidth: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = {
+        (ref) in
+        var width: Int32 = 0
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            width = Int32(stream.player.imageWidth)
+        }
+        return width
+    }
+
+    let getHeight: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = {
+        (ref) in
+        var height: Int32 = 0
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            height = Int32(stream.player.imageHeight)
+        }
+        return height
+    }
+
+    let setDuration: @convention(c) (UnsafeMutableRawPointer?, Double) -> Void = {
+        (ref, duration) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            stream.player.totalTime = duration
+            stream.mediaDuration = duration
         }
     }
-
+    
+    let setSoundOnly: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
+        (ref) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            stream.player.soundOnly = true
+        }
+    }
+    
     let cancel: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
         (ref) in
         if let ref_unwrapped = ref {
@@ -292,57 +308,259 @@ class StreamBridge {
         }
         return count
     }
-    
-    class params {
-        let itemname: UnsafeMutablePointer<Int8>!
-        let ttf_path: UnsafeMutablePointer<Int8>!
-        let image1_path: UnsafeMutablePointer<Int8>!
-        let image2_path: UnsafeMutablePointer<Int8>!
-        let image3_path: UnsafeMutablePointer<Int8>!
-        let image4_path: UnsafeMutablePointer<Int8>!
-        let sdlparam: UnsafeMutableRawPointer!
-        init(itemname: UnsafeMutablePointer<Int8>!,
-             ttf_path: UnsafeMutablePointer<Int8>!,
-             image1_path: UnsafeMutablePointer<Int8>!,
-             image2_path: UnsafeMutablePointer<Int8>!,
-             image3_path: UnsafeMutablePointer<Int8>!,
-             image4_path: UnsafeMutablePointer<Int8>!,
-             sdlparam: UnsafeMutableRawPointer!) {
-            self.itemname = itemname
-            self.ttf_path = ttf_path
-            self.image1_path = image1_path
-            self.image2_path = image2_path
-            self.image3_path = image3_path
-            self.image4_path = image4_path
-            self.sdlparam = sdlparam
-        }
-    }
-    var ttfCStr: [CChar]? = nil
-    var image1CStr: [CChar]? = nil
-    var nameCStr: [CChar]? = nil
-    var image2CStr: [CChar]? = nil
-    var image3CStr: [CChar]? = nil
-    var image4CStr: [CChar]? = nil
-    
-    var loop_result: Int32 = 0
-    func runloop(sdlparam: UnsafeMutableRawPointer?, group: DispatchGroup) {
-        DispatchQueue.main.async {
-            guard self.loop_result == 0 else {
+
+    let draw_pict: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<UInt8>?, Int32, Int32, Int32, Double) -> Void = {
+        (ref, image_buf, width, height, linesize, t) in
+        if let ref_unwrapped = ref, let image = image_buf {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            if stream.isCancel {
                 return
             }
-            self.loop_result = run_loop(sdlparam);
-            if (self.loop_result != 0) {
-                group.leave()
+            if t.isNaN {
+                return
             }
-            DispatchQueue.global().asyncAfter(deadline: .now()) {
-                guard self.loop_result == 0 else {
-                    return
-                }
-                self.runloop(sdlparam: sdlparam, group: group)
+            stream.videoPTS = t
+            guard let data = CFDataCreate(nil, image, Int(width * height * 4)) else {
+                return
+            }
+            guard let dataProvider = CGDataProvider(data: data) else {
+                return
+            }
+            
+            guard let cgimage = CGImage(width: Int(width), height: Int(height), bitsPerComponent: 8, bitsPerPixel: 8*4, bytesPerRow: Int(width)*4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: dataProvider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+                return
+            }
+            
+            let uiimage = UIImage(cgImage: cgimage)
+            DispatchQueue.main.async {
+                stream.player.displayImage(image: uiimage, t: t)
+                //print(t)
             }
         }
     }
 
+    let sound_play: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = {
+        (ref) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            if stream.isCancel {
+               return stream.sound.isPlay ? 1 : 0
+            }
+            print("sound_play")
+            var ret: Int32 = -1
+            let group = DispatchGroup()
+            group.enter()
+            DispatchQueue.main.async {
+                if UIApplication.shared.applicationState == .active {
+                    DispatchQueue.global().async {
+                        print("sound_play()")
+                        stream.sound.play()
+                        ret = stream.sound.isPlay ? 1 : 0
+                        group.leave()
+                    }
+                }
+                else {
+                    DispatchQueue.main.asyncAfter(deadline: .now()+1) {
+                        DispatchQueue.global().async {
+                            print("sound_play()")
+                            stream.sound.play()
+                            ret = stream.sound.isPlay ? 1 : 0
+                            group.leave()
+                        }
+                    }
+                }
+            }
+            group.wait()
+            return ret
+        }
+        return -1
+    }
+    
+    let sound_stop: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = {
+        (ref) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            print("sound_stop")
+            let group = DispatchGroup()
+            group.enter()
+            DispatchQueue.global().async {
+                stream.sound.stop()
+                group.leave()
+            }
+            group.wait()
+            return stream.sound.isPlay ? 1 : 0
+        }
+        return -1
+    }
+
+    let wait_stop: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
+        (ref) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            stream.player.waitStop()
+        }
+    }
+
+    let wait_start: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
+        (ref) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            stream.player.waitStart()
+        }
+    }
+
+    let cc_draw: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, Int32) -> Void = {
+        (ref, buf, tp) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            if let buf_unwrapped = buf {
+                let cc = String(cString: buf_unwrapped)
+                stream.player.displayCCtext(text: cc, ass: tp == 1)
+            }
+            else {
+                stream.player.displayCCtext(text: nil, ass: false)
+            }
+        }
+    }
+
+    let change_lang: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, Int32, Int32) -> Void = {
+        (ref, buf, tp, idx) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            if let buf_unwrapped = buf {
+                let lang = String(cString: buf_unwrapped)
+                stream.player.changeLanguage(lang: lang, media: Int(tp), idx: Int(idx))
+            }
+        }
+    }
+
+    func run(parent: UIViewController, onFinish: @escaping (Int, Double)->Void) {
+        var ret = -1
+        var userBreak = false
+        nameCStr = name.cString(using: .utf8)
+        var start_skip: Double = Double.nan
+        if let s = start {
+            start_skip = s
+        }
+        var stop_limit: Double = Double.nan
+        if let d = durationLimit {
+            stop_limit = d
+        }
+        player.video_title = name
+        player.onClose = { [weak self] interactive in
+            guard let self = self else {
+                return
+            }
+            userBreak = interactive
+            self.isCancel = true
+            self.stream.isLive = false
+            run_quit(self.param)
+            self.sound.stop()
+        }
+        player.onSeek = { [weak self] pos in
+            guard let self = self else {
+                return
+            }
+            let pos64: Int64 = Int64(pos * 1000000)
+            run_seek(self.param, pos64)
+        }
+        player.onSeekChapter = { [weak self] inc in
+            guard let self = self else {
+                return
+            }
+            run_seek_chapter(self.param, Int32(inc))
+        }
+        player.onPause = { [weak self] state in
+            guard let self = self else {
+                return
+            }
+            run_pause(self.param, state ? 1 : 0)
+        }
+        player.getPause = { [weak self] in
+            guard let self = self else {
+                return false
+            }
+            return get_pause(self.param) == 1
+        }
+        player.onCycleCh = { [weak self] t in
+            guard let self = self else {
+                return
+            }
+            run_cycle_ch(self.param, Int32(t))
+        }
+        sound.onLoadData = { [weak self] buffer, capacity in
+            guard let self = self else {
+                return Double.nan
+            }
+            let t = load_sound(self.param, buffer, Int32(capacity/2))
+            if !t.isNaN {
+                self.soundPTS = t
+                self.player.updatePosition(t: t)
+            }
+            return t
+        }
+        var timer1: Timer?
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = true
+            self.setObserver()
+            self.setupRemoteTransportControls()
+        }
+        parent.present(player, animated: true) {
+            let latency = AVAudioSession.sharedInstance().outputLatency
+            print(latency)
+            self.nameCStr?.withUnsafeMutableBufferPointer { itemname in
+                self.param = make_arg(
+                    itemname.baseAddress,
+                    latency,
+                    start_skip,
+                    stop_limit,
+                    Int32(self.count),
+                    self.selfref,
+                    self.read_packet,
+                    self.seek,
+                    self.cancel,
+                    self.getWidth,
+                    self.getHeight,
+                    self.draw_pict,
+                    self.setDuration,
+                    self.setSoundOnly,
+                    self.sound_play,
+                    self.sound_stop,
+                    self.wait_stop,
+                    self.wait_start,
+                    self.cc_draw,
+                    self.change_lang)
+                DispatchQueue.global().async {
+                    run_play(self.param)
+                    self.sound.play()
+                    DispatchQueue.main.async {
+                        timer1 = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { t in
+                            self.updateMediaInfo()
+                        }
+                    }
+                    ret = Int(run_finish(self.param))
+                    if userBreak {
+                        ret = 1
+                    }
+                    timer1?.invalidate()
+                    DispatchQueue.main.async {
+                        self.player.dismiss(animated: true, completion: nil)
+                        UIApplication.shared.isIdleTimerDisabled = false
+                        self.delObserver()
+                        self.finishRemoteTransportControls()
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                    }
+                    if self.player.possition >= self.player.totalTime - 1 {
+                        onFinish(ret, 0)
+                    }
+                    else {
+                        onFinish(ret, self.player.possition)
+                    }
+                }
+            }
+        }
+    }
+    
     func setObserver() {
         NotificationCenter.default.addObserver(self, selector: #selector(audioSessionRouteChangeObserver), name: AVAudioSession.routeChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(audioSessionInterruptionObserver), name: AVAudioSession.interruptionNotification, object: nil)
@@ -363,15 +581,15 @@ class StreamBridge {
                 case .newDeviceAvailable:
                     let latency = AVAudioSession.sharedInstance().outputLatency
                     print(latency)
-                    play_latency(sdlparam, latency)
+                    set_latency(param, latency)
                     break
                 case .oldDeviceUnavailable:
                     if audioSessionPortDescription?.portType == .headphones || audioSessionPortDescription?.portType == .bluetoothA2DP {
-                        play_pause(sdlparam, 1)
+                        run_pause(param, 1)
                     }
                     let latency = AVAudioSession.sharedInstance().outputLatency
                     print(latency)
-                    play_latency(sdlparam, latency)
+                    set_latency(param, latency)
                     break
                 default:
                     break
@@ -387,144 +605,121 @@ class StreamBridge {
                 
                 switch (audioSessionInterruptionType) {
                 case .began:
-                    play_pause(sdlparam, 1)
+                    guard let wasSuspendedKeyValue = userInfo[AVAudioSessionInterruptionWasSuspendedKey] as? NSNumber else {
+                        break
+                    }
+                    let wasSuspendedKey = wasSuspendedKeyValue.boolValue
+                    print(wasSuspendedKey)
+                    if !wasSuspendedKey {
+                        run_pause(param, 1)
+                    }
                 case .ended:
-                    play_pause(sdlparam, 0)
+                    guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
+                        break
+                    }
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) {
+                        run_pause(param, 0)
+                    }
                 default:
                     break
                 }
             }
         }
     }
-    
-    func run(onFinish: @escaping (Double?)->Void) {
-        setupRemoteTransportControls()
-        
-        
-        var basename = remote.name
-        var parentId = remote.parent
-        if let subid = remote.subid, let subbase = CloudFactory.shared[remote.storage]?.get(fileId: subid) {
-            basename = subbase.name
-            parentId = subbase.parent
-        }
-        var components = basename.components(separatedBy: ".")
-        if components.count > 1 {
-            components.removeLast()
-            basename = components.joined(separator: ".")
-        }
-        if let imageitem = CloudFactory.shared.data.getImage(storage: remote.storage, parentId: parentId, baseName: basename) {
-            if let imagestream = CloudFactory.shared[remote.storage]?.get(fileId: imageitem.id ?? "")?.open() {
-                imagestream.read(position: 0, length: Int(imageitem.size)) { data in
-                    if let data = data, let image = UIImage(data: data) {
-                        self.image = image
-                    }
-                }
-            }
-        }
-        if let ttfStr = ttfPath {
-            ttfCStr = ttfStr.cString(using: .utf8)
-        }
-        if let image1Str = image1Path {
-            image1CStr = image1Str.cString(using: .utf8)
-        }
-        if let image2Str = image2Path {
-            image2CStr = image2Str.cString(using: .utf8)
-        }
-        if let image3Str = image3Path {
-            image3CStr = image3Str.cString(using: .utf8)
-        }
-        if let image4Str = image4Path {
-            image4CStr = image4Str.cString(using: .utf8)
-        }
-        nameCStr = self.name.cString(using: .utf8)
-        ttfCStr?.withUnsafeMutableBufferPointer { ttf_path in
-            image1CStr?.withUnsafeMutableBufferPointer { image1_path in
-                image2CStr?.withUnsafeMutableBufferPointer { image2_path in
-                    image3CStr?.withUnsafeMutableBufferPointer { image3_path in
-                        image4CStr?.withUnsafeMutableBufferPointer { image4_path in
-                            nameCStr?.withUnsafeMutableBufferPointer { itemname in
-                                let latency = AVAudioSession.sharedInstance().outputLatency
-                                print(latency)
-                                sdlparam = make_arg(UIDevice.current.userInterfaceIdiom == .phone ? 1 : 0,
-                                                    (start == nil) ? Double.nan : start!,
-                                                    itemname.baseAddress, ttf_path.baseAddress,
-                                                    Int32(fontsize),
-                                                    image1_path.baseAddress,
-                                                    image2_path.baseAddress,
-                                                    image3_path.baseAddress,
-                                                    image4_path.baseAddress,
-                                                    latency, selfref, read_packet, seek, cancel, update_info)
-                                setObserver()
-                                let group = DispatchGroup()
-                                let group2 = DispatchGroup()
-                                group.enter()
-                                group2.enter()
-                                var failed = false
-                                DispatchQueue.main.async {
-                                    if run_play(self.sdlparam) != 0 {
-                                        failed = true
-                                    }
-                                    group.leave()
-                                }
-                                guard !failed else {
-                                    self.delObserver()
-                                    onFinish(nil)
-                                    return
-                                }
-                                group.notify(queue: .global()) {
-                                    self.runloop(sdlparam: self.sdlparam, group: group2)
-                                }
-                                DispatchQueue.global().async {
-                                    group2.notify(queue: .main) {
-                                        self.ret = run_finish(self.sdlparam);
-                                        self.delObserver()
-                                        onFinish(self.ret)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
+
     func setupRemoteTransportControls() {
         // Get the shared MPRemoteCommandCenter
         let commandCenter = MPRemoteCommandCenter.shared()
         
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            play_pause(self.sdlparam, self.playing ? 1 : 0)
+            DispatchQueue.global().async {
+                run_pause(self.param, get_pause(self.param) == 1 ? 0 : 1)
+                DispatchQueue.main.async {
+                    let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
+                    self.player.updatePosition(t: t)
+                }
+            }
             return .success
         }
 
-        commandCenter.skipForwardCommand.addTarget { [weak self] event in
+        commandCenter.pauseCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            guard let command = event.command as? MPSkipIntervalCommand else {
-                return .noSuchContent
+            if get_pause(self.param) == 1 {
+                return .commandFailed
             }
-            let interval = command.preferredIntervals[0]
-            play_seek(self.sdlparam, self.media_pos+Double(truncating: interval))
+            DispatchQueue.global().async {
+                run_pause(self.param, 1)
+                DispatchQueue.main.async {
+                    let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
+                    self.player.updatePosition(t: t)
+                }
+            }
             return .success
         }
-        commandCenter.skipForwardCommand.preferredIntervals = [15]
-        
-        commandCenter.skipBackwardCommand.addTarget { [weak self] event in
+
+        commandCenter.playCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            guard let command = event.command as? MPSkipIntervalCommand else {
-                return .noSuchContent
+            if get_pause(self.param) == 0 {
+                return .commandFailed
             }
-            let interval = command.preferredIntervals[0]
-            play_seek(self.sdlparam, self.media_pos-Double(truncating: interval))
+            DispatchQueue.global().async {
+                run_pause(self.param, 0)
+                DispatchQueue.main.async {
+                    let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
+                    self.player.updatePosition(t: t)
+                }
+            }
             return .success
         }
-        commandCenter.skipBackwardCommand.preferredIntervals = [15]
-        
+
+//        commandCenter.skipForwardCommand.addTarget { [weak self] event in
+//            guard let self = self else {return .commandFailed}
+//            guard let command = event.command as? MPSkipIntervalCommand else {
+//                return .noSuchContent
+//            }
+//            let interval = command.preferredIntervals[0]
+//            var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
+//            pos += Double(truncating: interval)
+//            let pos64: Int64 = Int64(pos * 1000000)
+//            run_seek(self.param, pos64)
+//            return .success
+//        }
+//        commandCenter.skipForwardCommand.preferredIntervals = [15]
+
+        commandCenter.nextTrackCommand.addTarget { [weak self] event in
+            guard let self = self else {return .commandFailed}
+            run_seek_chapter(self.param, Int32(1))
+            return .success
+        }
+
+//        commandCenter.skipBackwardCommand.addTarget { [weak self] event in
+//            guard let self = self else {return .commandFailed}
+//            guard let command = event.command as? MPSkipIntervalCommand else {
+//                return .noSuchContent
+//            }
+//            let interval = command.preferredIntervals[0]
+//            var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
+//            pos -= Double(truncating: interval)
+//            let pos64: Int64 = Int64(pos * 1000000)
+//            run_seek(self.param, pos64)
+//            return .success
+//        }
+//        commandCenter.skipBackwardCommand.preferredIntervals = [15]
+
+        commandCenter.previousTrackCommand.addTarget { [weak self] event in
+            guard let self = self else {return .commandFailed}
+            run_seek_chapter(self.param, Int32(-1))
+            return .success
+        }
+
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self](remoteEvent) -> MPRemoteCommandHandlerStatus in
             guard let self = self else {return .commandFailed}
             if let event = remoteEvent as? MPChangePlaybackPositionCommandEvent {
-                play_seek(self.sdlparam, event.positionTime)
+                let pos = event.positionTime
+                let pos64: Int64 = Int64(pos * 1000000)
+                run_seek(self.param, pos64)
                 return .success
             }
             return .commandFailed
@@ -534,10 +729,21 @@ class StreamBridge {
     func finishRemoteTransportControls() {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.togglePlayPauseCommand.removeTarget(nil)
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
         commandCenter.skipBackwardCommand.removeTarget(nil)
         commandCenter.skipForwardCommand.removeTarget(nil)
+        commandCenter.nextTrackCommand.removeTarget(nil)
+        commandCenter.previousTrackCommand.removeTarget(nil)
         commandCenter.changePlaybackPositionCommand.removeTarget(nil)
     }
-
+    
+    func updateMediaInfo() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+            MPMediaItemPropertyTitle: name,
+            MPNowPlayingInfoPropertyPlaybackRate: get_pause(param) == 1 ? 0.0: 1.0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
+            MPMediaItemPropertyPlaybackDuration: mediaDuration,
+        ]
+    }
 }
-

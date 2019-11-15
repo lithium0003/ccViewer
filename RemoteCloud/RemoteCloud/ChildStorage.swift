@@ -24,8 +24,8 @@ class ViewControllerRoot: UIViewController, UITableViewDelegate, UITableViewData
         self.title = "Select base path"
 
         tableView = UITableView()
-        tableView.frame = view.frame
-        tableView.backgroundColor = UIColor(red: 1.0, green: 0.9, blue: 0.9, alpha: 1.0)
+
+        tableView.backgroundColor = UIColor(named: "RootSelectColor")
 
         tableView.delegate = self
         tableView.dataSource = self
@@ -34,21 +34,34 @@ class ViewControllerRoot: UIViewController, UITableViewDelegate, UITableViewData
         tableView.tableFooterView = UIView(frame: .zero)
         
         view.addSubview(tableView)
-        
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor).isActive = true
+        tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor).isActive = true
+        tableView.topAnchor.constraint(equalTo: view.topAnchor).isActive = true
+        tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor).isActive = true
+
         let cancelButton = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelButtonDidTap))
         
         navigationItem.rightBarButtonItem = cancelButton
         
         activityIndicator = UIActivityIndicatorView()
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            // Fallback on earlier versions
+            activityIndicator.style = .whiteLarge
+        }
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
         
         navigationItem.hidesBackButton = true
     }
 
+    override func viewWillLayoutSubviews() {
+        tableView.frame = view.frame
+    }
+    
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return storages.count
     }
@@ -60,7 +73,7 @@ class ViewControllerRoot: UIViewController, UITableViewDelegate, UITableViewData
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
         cell.textLabel?.text = name
-        cell.backgroundColor = UIColor(red: 1.0, green: 0.9, blue: 0.9, alpha: 1.0)
+        cell.backgroundColor = UIColor(named: "RootSelectColor")
         if let service = CloudFactory.shared[name]?.getStorageType() {
             let image = CloudFactory.shared.getIcon(service: service)
             cell.imageView?.image = image
@@ -115,8 +128,7 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
         super.viewDidLoad()
         
         tableView = UITableView()
-        tableView.frame = view.frame
-        
+
         tableView.delegate = self
         tableView.dataSource = self
         
@@ -124,7 +136,12 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
         tableView.tableFooterView = UIView(frame: .zero)
         
         view.addSubview(tableView)
-        
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor).isActive = true
+        tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor).isActive = true
+        tableView.topAnchor.constraint(equalTo: view.topAnchor).isActive = true
+        tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor).isActive = true
+
         let cancelButton = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelButtonDidTap))
         let doneButton = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneButtonDidTap))
 
@@ -135,8 +152,12 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
         
         activityIndicator = UIActivityIndicatorView()
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            // Fallback on earlier versions
+            activityIndicator.style = .whiteLarge
+        }
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
 
@@ -152,7 +173,6 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
         }
     }
     
-
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         let result = CloudFactory.shared.data.listData(storage: storageName, parentID: rootFileId)
         return result.count
@@ -178,7 +198,7 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
             cell.detailTextLabel?.text = "\(tStr)\tfolder"
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "SelectFolderColor")
         }
         else {
             cell.accessoryType = .none
@@ -197,7 +217,7 @@ class ViewControllerItem: UIViewController, UITableViewDelegate, UITableViewData
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
             cell.detailTextLabel?.text = "\(tStr)\t\(sStr) bytes"
-            cell.backgroundColor = .white
+            cell.backgroundColor = nil
         }
         return cell
     }
@@ -387,7 +407,7 @@ public class ChildStorage: RemoteStorageBase {
                     newitem.name = newname
                     let comp = newname.components(separatedBy: ".")
                     if comp.count >= 1 {
-                        newitem.ext = comp.last!
+                        newitem.ext = comp.last!.lowercased()
                     }
                     newitem.cdate = newcdate
                     newitem.mdate = newmdate
@@ -472,7 +492,7 @@ public class ChildStorage: RemoteStorageBase {
                     newitem.name = newname
                     let comp = newname.components(separatedBy: ".")
                     if comp.count >= 1 {
-                        newitem.ext = comp.last!
+                        newitem.ext = comp.last!.lowercased()
                     }
                     newitem.cdate = newcdate
                     newitem.mdate = newmdate
@@ -634,7 +654,7 @@ public class ChildStorage: RemoteStorageBase {
                     newitem.name = newname
                     let comp = newname.components(separatedBy: ".")
                     if comp.count >= 1 {
-                        newitem.ext = comp.last!
+                        newitem.ext = comp.last!.lowercased()
                     }
                     newitem.cdate = newcdate
                     newitem.mdate = newmdate
@@ -746,7 +766,7 @@ public class ChildStorage: RemoteStorageBase {
                     newitem.name = newname
                     let comp = newname.components(separatedBy: ".")
                     if comp.count >= 1 {
-                        newitem.ext = comp.last!
+                        newitem.ext = comp.last!.lowercased()
                     }
                     newitem.cdate = newcdate
                     newitem.mdate = newmdate
@@ -870,7 +890,7 @@ public class ChildStorage: RemoteStorageBase {
                     newitem.name = newname
                     let comp = newname.components(separatedBy: ".")
                     if comp.count >= 1 {
-                        newitem.ext = comp.last!
+                        newitem.ext = comp.last!.lowercased()
                     }
                     newitem.cdate = newcdate
                     newitem.mdate = newmdate
@@ -895,7 +915,7 @@ public class ChildStorage: RemoteStorageBase {
         }
     }
     
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         os_log("%{public}@", log: log, type: .debug, "uploadFile(\(String(describing: type(of: self))):\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         let array = (parentId == "") ? [baseRootStorage, baseRootFileId] : parentId.components(separatedBy: .newlines)
@@ -921,7 +941,7 @@ public class ChildStorage: RemoteStorageBase {
         
         DispatchQueue.global().async {
             if let crypttarget = self.processFile(target: target) {
-                s.upload(parentId: baseFileId, uploadname: self.ConvertEncryptName(name: uploadname, folder: false), target: crypttarget) { newBaseId in
+                s.upload(parentId: baseFileId, sessionId: sessionId, uploadname: self.ConvertEncryptName(name: uploadname, folder: false), target: crypttarget) { newBaseId in
                     guard let newBaseId = newBaseId else {
                         try? FileManager.default.removeItem(at: target)
                         onFinish?(nil)
@@ -956,7 +976,7 @@ public class ChildStorage: RemoteStorageBase {
                                 newitem.name = newname
                                 let comp = newname.components(separatedBy: ".")
                                 if comp.count >= 1 {
-                                    newitem.ext = comp.last!
+                                    newitem.ext = comp.last!.lowercased()
                                 }
                                 newitem.cdate = newcdate
                                 newitem.mdate = newmdate

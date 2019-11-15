@@ -22,11 +22,6 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         self.init()
         service = CloudFactory.getServiceName(service: .OneDrive)
         storageName = name
-        if refreshToken != "" {
-            refreshToken() { success in
-                // ignore error
-            }
-        }
     }
 
     private let clientid = SecretItems.OneDrive.client_id
@@ -58,7 +53,11 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                 onFinish?(false)
             }
         })
-        
+        if #available(iOS 13.0, *) {
+            self.webAuthSession?.presentationContextProvider = self
+            self.webAuthSession?.prefersEphemeralWebBrowserSession = true
+        }
+
         self.webAuthSession?.start()
     }
 
@@ -70,7 +69,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "client_id=\(clientid)&redirect_uri=\(redirect)&code=\(oauthToken)&scope=\(scope)&grant_type=authorization_code"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -86,7 +85,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     onFinish?(false)
                     return
                 }
-                print(json)
+                //print(json)
                 guard let accessToken = json["access_token"] as? String else {
                     onFinish?(false)
                     return
@@ -119,7 +118,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         
         let post = "client_id=\(clientid)&redirect_uri=\(redirect)&refresh_token=\(refreshToken)&scope=\(scope)&grant_type=refresh_token"
-        var postData = post.data(using: .ascii, allowLossyConversion: false)!
+        let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
@@ -153,29 +152,6 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             }
         }
         task.resume()
-    }
-
-    override func revokeToken(token: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "revokeToken(onedrive:\(storageName ?? ""))")
-        
-        let url = "https://login.microsoftonline.com/common/oauth2/v2.0/logout?client_id=\(clientid)&redirect_uri=\(redirect)"
-        let authURL = URL(string: url);
-        let callbackUrlScheme = "info.lithium03.ccViewer.onedrive"
-        
-        self.webAuthSession = ASWebAuthenticationSession.init(url: authURL!, callbackURLScheme: callbackUrlScheme, completionHandler: { (callBack:URL?, error:Error?) in
-            
-            // handle auth response
-            guard error == nil, let successURL = callBack else {
-                onFinish?(false)
-                return
-            }
-
-            print(successURL)
-            os_log("%{public}@", log: self.log, type: .info, "revokeToken(onedrive:\(self.storageName ?? "")) success")
-            onFinish?(true)
-        })
-        
-        self.webAuthSession?.start()
     }
 
     override func isAuthorized(onFinish: ((Bool) -> Void)?) -> Void {
@@ -352,7 +328,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             newitem.name = name
             let comp = name.components(separatedBy: ".")
             if comp.count >= 1 {
-                newitem.ext = comp.last!
+                newitem.ext = comp.last!.lowercased()
             }
             if let d1 = formatter.date(from: ctime) {
                 newitem.cdate = d1
@@ -1003,7 +979,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         return NetworkRemoteItem(path: path)
     }
 
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         os_log("%{public}@", log: log, type: .debug, "uploadFile(onedrive:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         guard let targetStream = InputStream(url: target) else {
@@ -1045,6 +1021,8 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     let attr = try FileManager.default.attributesOfItem(atPath: target.path)
                     let fileSize = attr[.size] as! UInt64
                     
+                    UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+                    
                     let path = (parentId == "") ? "root" : "items/\(parentId)"
                     var allowedCharacterSet = CharacterSet.alphanumerics
                     allowedCharacterSet.insert(charactersIn: "-._~")
@@ -1085,15 +1063,19 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
 
                             request.setValue("bytes 0-\(len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
 
+                            #if !targetEnvironment(macCatalyst)
                             let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
                             config.isDiscretionary = true
                             config.sessionSendsLaunchEvents = true
+                            #else
+                            let config = URLSessionConfiguration.default
+                            #endif
                             let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
                             self.sessions += [session]
 
                             let task = session.uploadTask(with: request, fromFile: tmpurl)
                             let taskid = task.taskIdentifier
-                            self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target]
+                            self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                             self.onFinsh_upload[taskid] = onFinish
                             task.resume()
                         }
@@ -1119,7 +1101,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     var sessions = [URLSession]()
     
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        urlSessionDidFinishCallback?(session)
+        CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -1184,6 +1166,9 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                 print(httpResponse)
                 throw RetryError.Failed
             }
+            guard let sessionId = taskdata["session"] as? String else {
+                throw RetryError.Failed
+            }
             print(String(data: data, encoding: .utf8) ?? "")
             guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
                 throw RetryError.Failed
@@ -1200,7 +1185,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
 
                 let task = session.downloadTask(with: request)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "size": fileSize, "orgtarget": target]
+                self.task_upload[taskid] = ["upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "size": fileSize, "orgtarget": target, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
                 return
@@ -1220,7 +1205,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
                 let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target]
+                self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
             }
@@ -1277,6 +1262,9 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             guard let parentId = taskdata["parentId"] as? String, let parentPath = taskdata["parentPath"] as? String else {
                 throw RetryError.Failed
             }
+            guard let sessionId = taskdata["session"] as? String else {
+                throw RetryError.Failed
+            }
             let data = try Data(contentsOf: location)
             print(String(data: data, encoding: .utf8) ?? "")
             guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
@@ -1287,6 +1275,8 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             }
             let reqOffset = Int(nextExpectedRanges.first?.replacingOccurrences(of: #"(\d+)-\d+"#, with: "$1", options: .regularExpression) ?? "0") ?? 0
             
+            UploadManeger.shared.UploadProgress(identifier: sessionId, possition: reqOffset)
+
             guard let targetStream = InputStream(url: target) else {
                 return
             }
@@ -1321,7 +1311,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             
             let task = session.uploadTask(with: request, fromFile: tmpurl)
             let taskid = task.taskIdentifier
-            self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target]
+            self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
             self.onFinsh_upload[taskid] = onFinish
             task.resume()
         }
@@ -1332,3 +1322,9 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     }
 }
 
+@available(iOS 13.0, *)
+extension OneDriveStorage: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return UIApplication.topViewController()!.view.window!
+    }
+}

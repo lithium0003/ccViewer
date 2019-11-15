@@ -1,0 +1,12 @@
+--- GoogleCastSDK/Tools/strip_unused_archs.sh	2019-11-01 07:09:13.000000000 +0900
++++ GoogleCastSDK-ios-4.4.5_dynamic/Tools/strip_unused_archs.sh	2019-09-29 13:02:14.000000000 +0900
+@@ -15,6 +15,9 @@
+   framework_name=$(defaults read "${framework_dir}/Info.plist" CFBundleExecutable)
+   framework_path="${framework_dir}/${framework_name}"
+ 
++  if [ $framework_name != "GoogleCast" ]; then
++    continue
++  fi
+   echo "Removing unused architectures from framework: ${framework_name}"
+ 
+   slice_paths=()

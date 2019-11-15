@@ -33,6 +33,8 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
     let semaphore = DispatchSemaphore(value: 1)
     var gone = true
 
+    var player: CustomPlayerView?
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -49,10 +51,20 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
         uploadButton = UIBarButtonItem(image: UIImage(named: "up"), style: .plain, target: self, action: #selector(uploadButtonDidTap))
         
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
 
         let searchController = UISearchController(searchResultsController: nil)
         searchController.searchResultsUpdater = self
@@ -87,6 +99,15 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
         }
     }
 
+    override var prefersStatusBarHidden: Bool {
+        return false
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setNeedsStatusBarAppearanceUpdate()
+    }
+    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
@@ -179,35 +200,37 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
                 (item["result"] as? RemoteData)?.ext == "mov" || (item["result"] as? RemoteData)?.ext == "mp4" || (item["result"] as? RemoteData)?.ext == "mp3" || (item["result"] as? RemoteData)?.ext == "wav" || (item["result"] as? RemoteData)?.ext == "aac"
             }
         }
+        if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") {
+            media = false
+        }
         
         if media {
-            let next = CustomPlayerViewController()
-            next.playItems = listItem.enumerated().filter({ filtered.contains($0.offset) }).map({ $1 }).filter({ !($0["isFolder"] as? Bool ?? true)}).map({ $0["result"] as! RemoteData }).filter({ !$0.folder }).map({ item in
+            player = CustomPlayerView()
+            let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+            let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            player?.playItems = listItem.enumerated().filter({ filtered.contains($0.offset) }).map({ $1 }).filter({ !($0["isFolder"] as? Bool ?? true)}).map({ $0["result"] as! RemoteData }).filter({ !$0.folder }).map({ item in
                 let storage = item.storage ?? ""
                 let id = item.id ?? ""
-                let playitem: [String: Any] = ["storage": storage, "id": id]
+                var playitem: [String: Any] = ["storage": storage, "id": id]
+                if skip > 0 {
+                    playitem["start"] = Double(skip)
+                }
+                if stop > 0 {
+                    playitem["stop"] = Double(skip+stop)
+                }
                 return playitem
             })
-            next.shuffle = UserDefaults.standard.bool(forKey: "playshuffle")
-            next.loop = UserDefaults.standard.bool(forKey: "playloop")
-            
-            next.onFinish = { position in
-                DispatchQueue.main.asyncAfter(deadline: .now()) {
-                    self.navigationController?.popToViewController(self, animated: true)
-                }
+            player?.shuffle = UserDefaults.standard.bool(forKey: "playshuffle")
+            player?.loop = UserDefaults.standard.bool(forKey: "playloop")
+
+            player?.onFinish = { position in
             }
-            
-            if next.playItems.count > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now()) {
-                    self.navigationController?.pushViewController(next, animated: false)
-                }
+
+            if player?.playItems.count ?? 0 > 0 {
+                self.player?.play(parent: self)
             }
         }
         else {
-            let base = ViewControllerFFplayer()
-            base.view.backgroundColor = .black
-            navigationController?.pushViewController(base, animated: true)
-
             var playItems = [RemoteItem]()
             for aitem in listItem.enumerated().filter({ filtered.contains($0.offset) }).map({ $1 }).filter({ !($0["isFolder"] as? Bool ?? true)}).map({ $0["result"] as! RemoteData }).filter({ !$0.folder })
             {
@@ -217,9 +240,8 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
             }
 
             if playItems.count > 0 {
-                Player.play(items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop"), fontsize: 60) { finish in
+                Player.play(parent: self, items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop")) { finish in
                     DispatchQueue.main.async {
-                        self.navigationController?.popToViewController(self, animated: true)
                         self.tableView.reloadData()
                     }
                 }
@@ -514,17 +536,19 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
         cell.textLabel?.text = filterdItem[indexPath.row]["name"] as? String
         cell.detailTextLabel?.text = ""
 
+        cell.detailTextLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        guard let formatString = DateFormatter.dateFormat(fromTemplate: "yyyyMMdd", options: 0, locale: Locale.current) else { fatalError() }
+
         if filterdItem[indexPath.row]["isFolder"] as? Bool ?? false {
             cell.accessoryType = .disclosureIndicator
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "FolderColor")
         }
         else {
             cell.accessoryType = .none
             var tStr = ""
             if let mdate = (filterdItem[indexPath.row]["result"] as? RemoteData)?.mdate {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: mdate)
             }
             let formatter = NumberFormatter()
@@ -532,10 +556,18 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
             formatter.groupingSeparator = ","
             formatter.groupingSize = 3
             let sStr = formatter.string(from: (filterdItem[indexPath.row]["result"] as? RemoteData)?.size as NSNumber? ?? 0) ?? "0"
+            let formatter2 = ByteCountFormatter()
+            formatter2.allowedUnits = [.useAll]
+            formatter2.countStyle = .file
+            let sStr2 = formatter2.string(fromByteCount: Int64((filterdItem[indexPath.row]["result"] as? RemoteData)?.size ?? 0))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) bytes \t\((filterdItem[indexPath.row]["result"] as? RemoteData)?.subinfo ?? "")"
-            cell.backgroundColor = .white
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes) \t\((filterdItem[indexPath.row]["result"] as? RemoteData)?.subinfo ?? "")"
+            if #available(iOS 13.0, *) {
+                cell.backgroundColor = UIColor.systemBackground
+            } else {
+                cell.backgroundColor = UIColor.white
+            }
         }
         return cell
     }
@@ -658,10 +690,7 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
     }
 
     func playFFmpeg(item: RemoteItem, onFinish: @escaping (Bool)->Void) {
-        let base = ViewControllerFFplayer()
-        base.view.backgroundColor = .black
-        navigationController?.pushViewController(base, animated: true)
-        Player.play(item: item, start: nil, fontsize: 60) { position in
+        Player.play(parent: self, item: item, start: nil) { position in
             DispatchQueue.main.async {
                 self.navigationController?.popToViewController(self, animated: true)
                 onFinish(position != nil)
@@ -709,14 +738,11 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
     }
     
     func displayMediaViewer(item: RemoteItem, fallback: Bool) {
-        let next = CustomPlayerViewController()
-        
+        player = CustomPlayerView()
+
         let playitem: [String: Any] = ["storage": item.storage, "id": item.id]
-        next.playItems = [playitem]
-        next.onFinish = { position in
-            DispatchQueue.main.asyncAfter(deadline: .now()) {
-                self.navigationController?.popToViewController(self, animated: true)
-            }
+        player?.playItems = [playitem]
+        player?.onFinish = { position in
             if position == nil && fallback {
                 self.semaphore.wait()
                 self.activityIndicator.startAnimating()
@@ -726,11 +752,9 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
                 }
             }
         }
-        
+
         semaphore.signal()
-        DispatchQueue.main.asyncAfter(deadline: .now()) {
-            self.navigationController?.pushViewController(next, animated: false)
-        }
+        self.player?.play(parent: self)
     }
 
     /*

@@ -32,7 +32,7 @@ public class LocalStorage: RemoteStorageBase {
         var targetURL = documentsURL
         
         if fileId != "" {
-            targetURL = documentsURL.appendingPathComponent(fileId)
+            targetURL = targetURL.appendingPathComponent(fileId)
         }
         
         guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: targetURL, includingPropertiesForKeys: nil) else {
@@ -73,6 +73,9 @@ public class LocalStorage: RemoteStorageBase {
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
         group?.enter()
         DispatchQueue.main.async {
+            defer {
+                group?.leave()
+            }
             let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
             
             var prevParent: String?
@@ -92,13 +95,19 @@ public class LocalStorage: RemoteStorageBase {
                 }
             }
             
+            guard let t = attr[.type] as? FileAttributeType else {
+                return
+            }
+            guard t == .typeRegular || t == .typeDirectory else {
+                return
+            }
             let newitem = RemoteData(context: viewContext)
             newitem.storage = self.storageName
             newitem.id = id
             newitem.name = name
             let comp = name.components(separatedBy: ".")
             if comp.count >= 1 {
-                newitem.ext = comp.last!
+                newitem.ext = comp.last!.lowercased()
             }
             newitem.cdate = attr[.creationDate] as? Date
             newitem.mdate = attr[.modificationDate] as? Date
@@ -114,13 +123,13 @@ public class LocalStorage: RemoteStorageBase {
                     newitem.path = "\(path)/\(name)"
                 }
             }
-            group?.leave()
         }
     }
     
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let targetURL = documentsURL.appendingPathComponent(fileId)
+        print(targetURL)
 
         guard let attr = try? FileManager.default.attributesOfItem(atPath: targetURL.path) else {
             return
@@ -380,7 +389,7 @@ public class LocalStorage: RemoteStorageBase {
         return NetworkRemoteItem(path: path)
     }
     
-    override func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var newURL = documentsURL
         if parentId != "" {

@@ -24,8 +24,12 @@ class ViewControllerPasswordCarot: UIViewController, UITextFieldDelegate, UIPick
         super.viewDidLoad()
         
         self.title = "CryptCarotDAV password"
-        view.backgroundColor = .white
-        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
         stackView = UIStackView()
         stackView.axis = .vertical
         stackView.alignment = .center
@@ -160,19 +164,23 @@ class ViewControllerPasswordCarot: UIViewController, UITextFieldDelegate, UIPick
 }
 
 extension UIApplication {
-    class func topViewController(controller: UIViewController? = UIApplication.shared.keyWindow?.rootViewController) -> UIViewController? {
-        if let navigationController = controller as? UINavigationController {
+    class func topViewController(controller: UIViewController? = nil) -> UIViewController? {
+        var controller2 = controller
+        if controller2 == nil {
+            controller2 = UIApplication.shared.windows.first { $0.isKeyWindow }?.rootViewController
+        }
+        if let navigationController = controller2 as? UINavigationController {
             return topViewController(controller: navigationController.visibleViewController)
         }
-        if let tabController = controller as? UITabBarController {
+        if let tabController = controller2 as? UITabBarController {
             if let selected = tabController.selectedViewController {
                 return topViewController(controller: selected)
             }
         }
-        if let presented = controller?.presentedViewController {
+        if let presented = controller2?.presentedViewController {
             return topViewController(controller: presented)
         }
-        return controller
+        return controller2
     }
 }
 
@@ -665,14 +673,16 @@ public class RemoteCryptCarotDAVStream: SlotStream {
                     }
                     if let data = data {
                         DispatchQueue.global().async {
-                            if let plain = self.decode(input: data, IV: self.IV) {
-                                self.queue_buf.async {
-                                    self.buffer[pos1] = plain
+                            autoreleasepool {
+                                if let plain = self.decode(input: data, IV: self.IV) {
+                                    self.queue_buf.async {
+                                        self.buffer[pos1] = plain
+                                    }
                                 }
-                            }
-                            else {
-                                print("error on decode1")
-                                self.error = true
+                                else {
+                                    print("error on decode1")
+                                    self.error = true
+                                }
                             }
                         }
                     }

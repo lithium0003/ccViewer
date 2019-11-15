@@ -20,7 +20,8 @@
 "Use Image viewer" = "画像で使用";
 "Use PDF viewer" = "PDFで使用";
 "Use Media viewer" = "メディアで使用";
-"Lock rotation in Media viewer" = "メディア:画面回転をロックする";
+"Lock rotation" = "画面回転をロックする";
+"Force landscape" = "強制的に横画面にする";
 "Software decode" = "ソフトウエア デコーダー";
 "Use FFmpeg Media viewer" = "FFmpegプレーヤーを使用する";
 "Prior Media viewer is FFmpeg" = "優先してFFmpegを使用する";
@@ -65,3 +66,14 @@
 
 "Select 'Just hide on menu' / 'Log out'" = "隠すのみ か ログアウト を選択";
 "Just hide on manu" = "隠すのみ";
+
+"Partial Play" = "一部のみ再生";
+"Start skip" = "最初を飛ばす";
+"Stop after specified duration" = "指定の長さで終了";
+
+"Video" = "映像";
+"Subtitle" = "字幕";
+
+"Player control" = "再生コントロール";
+"Skip foward (sec)" = "早送り (秒)";
+"Skip backward (sec)" = "巻戻し (秒)";

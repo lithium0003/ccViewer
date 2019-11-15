@@ -10,7 +10,7 @@
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>FFmpeg version 4.2</string>
+            <string>FFmpeg version 4.2.1</string>
             <key>FooterText</key>
             <string>
 GNU LESSER GENERAL PUBLIC LICENSE
@@ -26,94 +26,13 @@ of this license document, but changing it is not allowed.
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>SDL (13027:69cc269eec53)</string>
+            <string>Google Cast SDK (iOS Sender v4.4.5)</string>
             <key>FooterText</key>
             <string>
-Simple DirectMedia Layer
-Copyright (C) 1997-2019 Sam Lantinga slouken@libsdl.org
+Google Cast SDK Additional Developer Terms of Service
+https://developers.google.com/cast/docs/terms
 
-This software is provided 'as-is', without any express or implied
-warranty.  In no event will the authors be held liable for any damages
-arising from the use of this software.
-
-Permission is granted to anyone to use this software for any purpose,
-including commercial applications, and to alter it and redistribute it
-freely, subject to the following restrictions:
-
-1. The origin of this software must not be misrepresented; you must not
-claim that you wrote the original software. If you use this software
-in a product, an acknowledgment in the product documentation would be
-appreciated but is not required.
-2. Altered source versions must be plainly marked as such, and must not be
-misrepresented as being the original software.
-3. This notice may not be removed or altered from any source distribution.
-            </string>
-        </dict>
-        <dict>
-            <key>Type</key>
-            <string>PSGroupSpecifier</string>
-            <key>Title</key>
-            <string>SDL_ttf (407:35cc24e43356)</string>
-            <key>FooterText</key>
-            <string>
-SDL_ttf:  A companion library to SDL for working with TrueType (tm) fonts
-Copyright (C) 1997-2019 Sam Lantinga slouken@libsdl.org
-
-This software is provided 'as-is', without any express or implied
-warranty.  In no event will the authors be held liable for any damages
-arising from the use of this software.
-
-Permission is granted to anyone to use this software for any purpose,
-including commercial applications, and to alter it and redistribute it
-freely, subject to the following restrictions:
-
-1. The origin of this software must not be misrepresented; you must not
-claim that you wrote the original software. If you use this software
-in a product, an acknowledgment in the product documentation would be
-appreciated but is not required.
-2. Altered source versions must be plainly marked as such, and must not be
-misrepresented as being the original software.
-3. This notice may not be removed or altered from any source distribution.
-            </string>
-        </dict>
-        <dict>
-            <key>Type</key>
-            <string>PSGroupSpecifier</string>
-            <key>Title</key>
-            <string>SDL_image (692:245a91afa28b)</string>
-            <key>FooterText</key>
-            <string>
-SDL_image:  An example image loading library for use with SDL
-Copyright (C) 1997-2019 Sam Lantinga slouken@libsdl.org
-
-This software is provided 'as-is', without any express or implied
-warranty.  In no event will the authors be held liable for any damages
-arising from the use of this software.
-
-Permission is granted to anyone to use this software for any purpose,
-including commercial applications, and to alter it and redistribute it
-freely, subject to the following restrictions:
-
-1. The origin of this software must not be misrepresented; you must not
-claim that you wrote the original software. If you use this software
-in a product, an acknowledgment in the product documentation would be
-appreciated but is not required.
-2. Altered source versions must be plainly marked as such, and must not be
-misrepresented as being the original software.
-3. This notice may not be removed or altered from any source distribution.
-            </string>
-        </dict>
-        <dict>
-            <key>Type</key>
-            <string>PSGroupSpecifier</string>
-            <key>Title</key>
-            <string>IPA Font (IPAPMincho) (Ver.003.03)</string>
-            <key>FooterText</key>
-            <string>
-IPA Fonts are JIS X 0213:2004 compliant TrueType based OpenType format outline fonts.
-
-In using IPA fonts, please comply with the terms and conditions set out in "IPA Font License Agreement v1.0" included in this package.
-Any use, reproduction or distribution of the IPA Font or any exercise of rights under "IPA Font License Agreement v1.0" by a Recipient constitutes the Recipient's acceptance of the License Agreement.
+Chrome Sender, Media Player Library and Receiver use the Closure library, which is licensed under the Apache 2.0 License, and the lit-html library, which is licensed under the BSD 3-Clause License.
             </string>
         </dict>
     </array>

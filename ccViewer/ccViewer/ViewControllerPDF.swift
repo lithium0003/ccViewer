@@ -59,19 +59,46 @@ class ViewControllerPDF: UIViewController, UITableViewDelegate, UITableViewDataS
         let gestureRecognizerDown = UISwipeGestureRecognizer(target: self, action: #selector(downSwipe))
         gestureRecognizerDown.direction = .down
         pdfView.addGestureRecognizer(gestureRecognizerDown)
+
+        let close_image = UIImage(named: "close")
+        let button_close = UIButton()
+        button_close.setImage(close_image, for: .normal)
+        button_close.backgroundColor = UIColor(white: 0, alpha: 0.5)
+        button_close.layer.cornerRadius = 10
+        button_close.addTarget(self, action: #selector(closebuttonEvent), for: .touchUpInside)
+        pdfView.addSubview(button_close)
+                
+        button_close.translatesAutoresizingMaskIntoConstraints = false
+        button_close.topAnchor.constraint(equalTo: pdfView.safeAreaLayoutGuide.topAnchor, constant: 10).isActive = true
+        button_close.leftAnchor.constraint(equalTo: pdfView.safeAreaLayoutGuide.leftAnchor, constant: 10).isActive = true
+        button_close.widthAnchor.constraint(equalToConstant: 50).isActive = true;
+        button_close.heightAnchor.constraint(equalToConstant: 50).isActive = true;
+
+        let gear_image = UIImage(named: "gear")?.withRenderingMode(.alwaysTemplate)
+        let button_config = UIButton()
+        button_config.setImage(gear_image, for: .normal)
+        button_config.tintColor = .white
+        button_config.backgroundColor = UIColor(white: 0, alpha: 0.5)
+        button_config.layer.cornerRadius = 10
+        button_config.addTarget(self, action: #selector(configbuttonEvent), for: .touchUpInside)
+        pdfView.addSubview(button_config)
+                
+        button_config.translatesAutoresizingMaskIntoConstraints = false
+        button_config.topAnchor.constraint(equalTo: pdfView.safeAreaLayoutGuide.topAnchor, constant: 10).isActive = true
+        button_config.rightAnchor.constraint(equalTo: pdfView.safeAreaLayoutGuide.rightAnchor, constant: -10).isActive = true
+        button_config.widthAnchor.constraint(equalToConstant: 50).isActive = true;
+        button_config.heightAnchor.constraint(equalToConstant: 50).isActive = true;
         
         pdfView.goToFirstPage(nil)
     }
-    
-    @IBAction func dismiss(_ sender: Any) {
-        let transition: CATransition = CATransition()
-        transition.duration = 0.05
-        transition.type = .push
-        transition.subtype = .fromLeft
-        view.window?.layer.add(transition, forKey: "transition")
-        dismiss(animated: false, completion: nil)
+        
+    override open var shouldAutorotate: Bool {
+        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
+            return false
+        }
+        return true
     }
-    
+
     func changeSettings() {
         if UserDefaults.standard.bool(forKey: "PDF_continuous") {
             if UserDefaults.standard.bool(forKey: "PDF_twoUp") {
@@ -96,12 +123,12 @@ class ViewControllerPDF: UIViewController, UITableViewDelegate, UITableViewDataS
     @objc func rightSwipe(_ sender: Any) {
         if !UserDefaults.standard.bool(forKey: "PDF_continuous") {
             if UserDefaults.standard.bool(forKey: "PDF_RTL") {
-                if pdfView.canGoToNextPage() {
+                if pdfView.canGoToNextPage {
                     pdfView.goToNextPage(nil)
                 }
             }
             else {
-                if pdfView.canGoToPreviousPage() {
+                if pdfView.canGoToPreviousPage {
                     pdfView.goToPreviousPage(nil)
                 }
             }
@@ -111,12 +138,12 @@ class ViewControllerPDF: UIViewController, UITableViewDelegate, UITableViewDataS
     @objc func leftSwipe(_ sender: Any) {
         if !UserDefaults.standard.bool(forKey: "PDF_continuous") {
             if UserDefaults.standard.bool(forKey: "PDF_RTL") {
-                if pdfView.canGoToPreviousPage() {
+                if pdfView.canGoToPreviousPage {
                     pdfView.goToPreviousPage(nil)
                 }
             }
             else {
-                if pdfView.canGoToNextPage() {
+                if pdfView.canGoToNextPage {
                     pdfView.goToNextPage(nil)
                 }
             }
@@ -137,8 +164,21 @@ class ViewControllerPDF: UIViewController, UITableViewDelegate, UITableViewDataS
         }
     }
 
+    @objc func configbuttonEvent(_ sender: UIButton) {
+        if thumbnailView.isHidden {
+            thumbnailView.isHidden = false
+        }
+        else {
+            settingView.isHidden = !settingView.isHidden
+        }
+    }
+
     @objc func downSwipe(_ sender: Any) {
-        thumbnailView.isHidden = !thumbnailView.isHidden
+        thumbnailView.isHidden = true
+    }
+
+    @objc func closebuttonEvent(_ sender: UIButton) {
+        dismiss(animated: true, completion: nil)
     }
 
     var settings = [NSLocalizedString("scroll", comment: ""),

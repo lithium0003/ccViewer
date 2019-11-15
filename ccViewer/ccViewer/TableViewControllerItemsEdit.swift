@@ -11,6 +11,62 @@ import Photos
 
 import RemoteCloud
 
+extension TableViewControllerItemsEdit: SortItemsDelegate {
+    func DoSort() {
+        let order = UserDefaults.standard.integer(forKey: "ItemSortOrder")
+        switch order {
+        case 0:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "") < (in2.name  ?? "")} )
+        case 1:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "") > (in2.name  ?? "")} )
+        case 2:
+            result_base = result_base.sorted(by: { in1, in2 in in1.size < in2.size } )
+        case 3:
+            result_base = result_base.sorted(by: { in1, in2 in in1.size > in2.size } )
+        case 4:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.mdate ?? Date(timeIntervalSince1970: 0)) < (in2.mdate ?? Date(timeIntervalSince1970: 0)) } )
+        case 5:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.mdate ?? Date(timeIntervalSince1970: 0)) > (in2.mdate ?? Date(timeIntervalSince1970: 0)) } )
+        default:
+            result_base = result_base.sorted(by: { in1, in2 in (in1.name ?? "") < (in2.name  ?? "")} )
+        }
+        let folders = result_base.filter({ $0.folder })
+        let files = result_base.filter({ !$0.folder })
+        result_base = folders
+        result_base += files
+
+        // filter
+        let text = navigationItem.searchController?.searchBar.text ?? ""
+        if text.isEmpty {
+            result = result_base
+        } else {
+            result = result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+        }
+        
+        tableView.reloadData()
+    }
+}
+
+extension TableViewControllerItemsEdit: UploadManagerDelegate {
+    func didRefreshItems() {
+        if var buttons = navigationItem.rightBarButtonItems {
+            if UploadManeger.shared.uploadCount > 0, !buttons.contains(UploadManeger.shared.UploadCountButton) {
+                buttons += [UploadManeger.shared.UploadCountButton]
+                navigationItem.rightBarButtonItems = buttons
+            }
+            if UploadManeger.shared.uploadCount == 0, let i = buttons.firstIndex(of: UploadManeger.shared.UploadCountButton) {
+                buttons.remove(at: i)
+                navigationItem.rightBarButtonItems = buttons
+            }
+        }
+    }
+    
+    // for iPhone
+    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+        return .none
+    }
+}
+
 class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdating, UIDocumentPickerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     var rootPath: String = ""
     var rootFileId: String = ""
@@ -81,19 +137,29 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
         let settingButton = UIBarButtonItem(image: UIImage(named: "gear"), style: .plain, target: self, action: #selector(settingButtonDidTap))
         
         navigationItem.rightBarButtonItem = settingButton
-        navigationController?.navigationBar.barTintColor = UIColor(red: 0.9, green: 1, blue: 0.9, alpha: 1)
+        navigationController?.navigationBar.barTintColor = UIColor(named: "NavigationEditColor")
 
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(refresh), for: .valueChanged)
         
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
+        activityIndicator.layer.cornerRadius = 10
+        activityIndicator.color = .white
+        activityIndicator.backgroundColor = UIColor(white: 0, alpha: 0.8)
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
-        
-        self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-        self.result_base = self.result
+
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
+
+        self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+        self.DoSort()
         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
             CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                 DispatchQueue.main.async {
@@ -106,7 +172,6 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
         navigationItem.searchController = searchController
-        
         definesPresentationContext = true
 
         let headerCell: UITableViewCell = tableView.dequeueReusableCell(withIdentifier: "header")!
@@ -152,6 +217,11 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
     }
 
     override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        
+        UploadManeger.shared.delegate = self
+        didRefreshItems()
+
         navigationController?.isToolbarHidden = true
     }
     
@@ -170,15 +240,8 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
     func checkDupName(testName: String, onFinish: ((Bool)->Void)?) {
         CloudFactory.shared[storageName]?.list(fileId: rootFileId) {
             DispatchQueue.main.async {
-                self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                self.result_base = self.result
-                let text = self.navigationItem.searchController?.searchBar.text ?? ""
-                if text.isEmpty {
-                    self.result = self.result_base
-                } else {
-                    self.result = self.result_base
-                    self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
-                }
+                self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                self.DoSort()
                 
                 for item in self.result {
                     if item.name == testName {
@@ -200,15 +263,8 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
         self.tableView.reloadData()
         CloudFactory.shared[storageName]?.list(fileId: rootFileId) {
             DispatchQueue.main.async {
-                self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                self.result_base = self.result
-                let text = self.navigationItem.searchController?.searchBar.text ?? ""
-                if text.isEmpty {
-                    self.result = self.result_base
-                } else {
-                    self.result = self.result_base
-                    self.result = self.result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
-                }
+                self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                self.DoSort()
                 if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                     CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                         DispatchQueue.main.async {
@@ -248,8 +304,7 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
         if text.isEmpty {
             result = result_base
         } else {
-            result = result_base
-            result = result.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+            result = result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
         }
         tableView.reloadData()
     }
@@ -354,26 +409,34 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                         guard success else {
                                                             return
                                                         }
+                                                        let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+                                                        let sessionId = UUID().uuidString
+                                                        UploadManeger.shared.UploadStart(identifier: sessionId, filename: newname)
 
                                                         DispatchQueue.global().async {
-                                                            CFURLStartAccessingSecurityScopedResource(url as CFURL)
-                                                            defer {
-                                                                CFURLStopAccessingSecurityScopedResource(url as CFURL)
-                                                            }
-                                                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                                                             do {
-                                                                if FileManager.default.fileExists(atPath: tmpurl.path) {
-                                                                    try FileManager.default.removeItem(at: tmpurl)
+                                                                CFURLStartAccessingSecurityScopedResource(url as CFURL)
+                                                                defer {
+                                                                    CFURLStopAccessingSecurityScopedResource(url as CFURL)
                                                                 }
-                                                                try FileManager.default.copyItem(at: url, to: tmpurl)
-                                                            } catch {
-                                                                return
+                                                                do {
+                                                                    if FileManager.default.fileExists(atPath: tmpurl.path) {
+                                                                        try FileManager.default.removeItem(at: tmpurl)
+                                                                    }
+                                                                    try FileManager.default.copyItem(at: url, to: tmpurl)
+                                                                } catch let error {
+                                                                    UploadManeger.shared.UploadFailed(identifier: sessionId, errorStr: error.localizedDescription)
+
+                                                                    return
+                                                                }
                                                             }
-                                                            service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
+                                                            service.upload(parentId: self.rootFileId, sessionId: sessionId, uploadname: newname, target: tmpurl) { id in
+                                                                UploadManeger.shared.UploadDone(identifier: sessionId)
+
                                                                 guard id != nil, self.gone else {
                                                                     return
                                                                 }
-                                                                DispatchQueue.main.asyncAfter(deadline: .now()) {
+                                                                   DispatchQueue.main.asyncAfter(deadline: .now()) {
                                                                     self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
                                                                     self.result_base = self.result
                                                                     self.tableView.reloadData()
@@ -424,29 +487,39 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                                                         guard success else {
                                                             return
                                                         }
+                                                        let sessionId = UUID().uuidString
+                                                        let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+                                                        UploadManeger.shared.UploadStart(identifier: sessionId, filename: newname)
+
                                                         DispatchQueue.global().async {
-                                                            guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
-                                                                return
-                                                            }
-                                                            defer {
-                                                                CFURLStopAccessingSecurityScopedResource(url as CFURL)
-                                                            }
-                                                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                                                             do {
-                                                                if FileManager.default.fileExists(atPath: tmpurl.path) {
-                                                                    try FileManager.default.removeItem(at: tmpurl)
+                                                                guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
+                                                                    UploadManeger.shared.UploadFailed(identifier: sessionId, errorStr: "CFURLStartAccessingSecurityScopedResource")
+                                                                    
+                                                                    return
                                                                 }
-                                                                try FileManager.default.copyItem(at: url, to: tmpurl)
+                                                                defer {
+                                                                    CFURLStopAccessingSecurityScopedResource(url as CFURL)
+                                                                }
+                                                                do {
+                                                                    if FileManager.default.fileExists(atPath: tmpurl.path) {
+                                                                        try FileManager.default.removeItem(at: tmpurl)
+                                                                    }
+                                                                    try FileManager.default.copyItem(at: url, to: tmpurl)
+                                                                }
+                                                                catch let error {
+                                                                    print(error)
+                                                                    UploadManeger.shared.UploadFailed(identifier: sessionId, errorStr: error.localizedDescription)
+                                                                    return
+                                                                }
                                                             }
-                                                            catch let error {
-                                                                print(error)
-                                                                return
-                                                            }
-                                                            service.upload(parentId: self.rootFileId, uploadname: newname, target: tmpurl) { id in
+                                                            service.upload(parentId: self.rootFileId, sessionId: sessionId, uploadname: newname, target: tmpurl) { id in
+                                                                UploadManeger.shared.UploadDone(identifier: sessionId)
+                                                                
                                                                 guard id != nil, self.gone else {
                                                                     return
                                                                 }
-                                                                DispatchQueue.main.asyncAfter(deadline: .now()) {
+                                                                   DispatchQueue.main.asyncAfter(deadline: .now()) {
                                                                     self.result = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
                                                                     self.result_base = self.result
                                                                     self.tableView.reloadData()
@@ -780,7 +853,7 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
             cell.detailTextLabel?.text = "\(tStr) \tfolder"
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "FolderColor")
         }
         else {
             if selection.contains(result[indexPath.row].id ?? "") {
@@ -801,16 +874,20 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
             formatter.groupingSeparator = ","
             formatter.groupingSize = 3
             let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter2 = ByteCountFormatter()
+            formatter2.allowedUnits = [.useAll]
+            formatter2.countStyle = .file
+            let sStr2 = formatter2.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr) \t\(sStr) bytes"
+            cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes)"
             if let storage = result[indexPath.row].storage, let id = result[indexPath.row].id {
                 let localpos = CloudFactory.shared.data.getMark(storage: storage, targetID: id)
                 if localpos != nil {
-                    cell.backgroundColor = UIColor.init(red: 0.95, green: 0.95, blue: 0.95, alpha: 1.0)
+                    cell.backgroundColor = UIColor(named: "DidPlayColor")
                 }
                 else {
-                    cell.backgroundColor = .white
+                    cell.backgroundColor = nil
                 }
             }
         }
@@ -880,8 +957,11 @@ class ViewControllerPathSelect: UIViewController, UITableViewDelegate, UITableVi
         
         activityIndicator = UIActivityIndicatorView()
         activityIndicator.center = tableView.center
-        activityIndicator.style = .whiteLarge
-        activityIndicator.color = .black
+        if #available(iOS 13.0, *) {
+            activityIndicator.style = .large
+        } else {
+            activityIndicator.style = .whiteLarge
+        }
         activityIndicator.hidesWhenStopped = true
         view.addSubview(activityIndicator)
         
@@ -920,25 +1000,26 @@ class ViewControllerPathSelect: UIViewController, UITableViewDelegate, UITableVi
         cell.textLabel?.lineBreakMode = .byWordWrapping
         cell.textLabel?.text = result[indexPath.row].name
         
+        cell.detailTextLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        guard let formatString = DateFormatter.dateFormat(fromTemplate: "yyyyMMdd", options: 0, locale: Locale.current) else { fatalError() }
+
         if result[indexPath.row].folder {
             cell.accessoryType = .disclosureIndicator
             var tStr = ""
             if result[indexPath.row].mdate != nil {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
             cell.detailTextLabel?.text = "\(tStr)\tfolder"
-            cell.backgroundColor = UIColor.init(red: 1.0, green: 1.0, blue: 0.9, alpha: 1.0)
+            cell.backgroundColor = UIColor(named: "FolderColor")
         }
         else {
             cell.accessoryType = .none
             var tStr = ""
             if result[indexPath.row].mdate != nil {
                 let f = DateFormatter()
-                f.dateStyle = .medium
-                f.timeStyle = .medium
+                f.dateFormat = formatString + " HH:mm:ss"
                 tStr = f.string(from: result[indexPath.row].mdate!)
             }
             let formatter = NumberFormatter()
@@ -946,10 +1027,18 @@ class ViewControllerPathSelect: UIViewController, UITableViewDelegate, UITableVi
             formatter.groupingSeparator = ","
             formatter.groupingSize = 3
             let sStr = formatter.string(from: result[indexPath.row].size as NSNumber) ?? "0"
+            let formatter2 = ByteCountFormatter()
+            formatter2.allowedUnits = [.useAll]
+            formatter2.countStyle = .file
+            let sStr2 = formatter2.string(fromByteCount: Int64(result[indexPath.row].size))
             cell.detailTextLabel?.numberOfLines = 0
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
-            cell.detailTextLabel?.text = "\(tStr)\t\(sStr) bytes"
-            cell.backgroundColor = .white
+            cell.detailTextLabel?.text = "\(tStr)\t\(sStr2) (\(sStr) bytes)"
+            if #available(iOS 13.0, *) {
+                cell.backgroundColor = UIColor.systemBackground
+            } else {
+                cell.backgroundColor = UIColor.white
+            }
         }
         return cell
     }

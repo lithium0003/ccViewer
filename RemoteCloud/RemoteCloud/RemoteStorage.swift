@@ -36,7 +36,7 @@ public protocol RemoteStorage {
     func chagetime(fileId: String, newdate: Date, onFinish: ((String?)->Void)?)
     func move(fileId: String, fromParent: String, toParent: String, onFinish: ((String?)->Void)?)
 
-    func upload(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?)
+    func upload(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?)
     
     func get(fileId: String) -> RemoteItem?
     func get(path: String) -> RemoteItem?
@@ -46,7 +46,6 @@ public protocol RemoteStorage {
     
     func cancel()
     
-    var urlSessionDidFinishCallback: ((URLSession)->Void)? { get set }
     var rootName: String { get }
 }
 
@@ -173,13 +172,13 @@ public class RemoteStream {
         self.size = size
     }
     
-    public func read(position: Int64, length: Int) -> Data? {
+    public func read(position: Int64, length: Int, onProgress: ((Int)->Bool)? = nil) -> Data? {
         return nil
     }
-    public func read(position: Int64, length: Int, onFinish: @escaping (Data?) -> Void) {
+    public func read(position: Int64, length: Int, onProgress: ((Int)->Bool)? = nil, onFinish: @escaping (Data?) -> Void) {
         read_queue.async {
             let fixlen = (Int64(length) + position >= self.size) ? Int(self.size - position) : length
-            onFinish(self.read(position: position, length: fixlen))
+            onFinish(self.read(position: position, length: fixlen, onProgress: onProgress))
         }
     }
     
@@ -317,8 +316,7 @@ public class CloudFactory {
         if let p = self[tagname] {
             return p
         }
-        var newInstance = CloudFactory.createInstance(service: service, tagname: tagname)
-        newInstance.urlSessionDidFinishCallback = urlSessionDidFinishCallback
+        let newInstance = CloudFactory.createInstance(service: service, tagname: tagname)
         storageList[tagname] = newInstance
         saveConfig()
         return newInstance
@@ -512,17 +510,16 @@ public class CloudFactory {
 }
 
 public class RemoteStorageBase: NSObject, RemoteStorage {
-
+    static let semaphore_key = DispatchSemaphore(value: 1)
+    
     public var rootName: String = ""
     
-    public var urlSessionDidFinishCallback: ((URLSession) -> Void)?
-
     public func read(fileId: String, start: Int64?, length: Int64?, onFinish: ((Data?) -> Void)?) {
         readFile(fileId: fileId, start: start, length: length, onFinish: onFinish)
     }
     
-    public func upload(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
-        uploadFile(parentId: parentId, uploadname: uploadname, target: target, onFinish: onFinish)
+    public func upload(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+        uploadFile(parentId: parentId, sessionId: sessionId, uploadname: uploadname, target: target, onFinish: onFinish)
     }
     
     public func move(fileId: String, fromParent: String, toParent: String, onFinish: ((String?) -> Void)?) {
@@ -789,7 +786,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         onFinish?(nil)
     }
     
-    func uploadFile(parentId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
         onFinish?(nil)
     }
     
@@ -798,6 +795,10 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
                                   kSecAttrAccount as String: key,
                                   kSecReturnData as String: kCFBooleanTrue as Any]
         
+        RemoteStorageBase.semaphore_key.wait()
+        defer {
+            RemoteStorageBase.semaphore_key.signal()
+        }
         var data: AnyObject?
         let matchingStatus = withUnsafeMutablePointer(to: &data){
             SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
@@ -818,6 +819,10 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrAccount as String: key]
         
+        RemoteStorageBase.semaphore_key.wait()
+        defer {
+            RemoteStorageBase.semaphore_key.signal()
+        }
         if SecItemDelete(dic as CFDictionary) == errSecSuccess {
             return true
         } else {
@@ -836,6 +841,10 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
                                   kSecAttrAccount as String: key,
                                   kSecValueData as String: _data]
         
+        RemoteStorageBase.semaphore_key.wait()
+        defer {
+            RemoteStorageBase.semaphore_key.signal()
+        }
         var itemAddStatus: OSStatus?
         let matchingStatus = SecItemCopyMatching(dic as CFDictionary, nil)
         
