@@ -24,7 +24,7 @@ cd work
 ```
 
 ### open with Xcode and compile
-1. open workspace "ccViewer.xcodeproj"
+1. open workspace "ccViewer.xcworkspace"
 2. select scheme "ccViewer" and build
 
 If you want to use, fix a file "RemoteCloud/RemoteCloud/Secret.swift" for your own client_id and secret.
