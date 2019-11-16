@@ -5,6 +5,8 @@ https://itunes.apple.com/us/app/cryptcloudviewer/id1458528598?mt=8
 ## description
 This app is iOS cloud viewer with keeping encrypted. Supported storages: Google Drive, Dropbox, OneDrive, pCloud and Document folder. Available encryption: rclone, CarotDAV. This app can play media files with keeping encrypted. In addition, this app can play non-native media files (ex. mpeg2) with software decoder. You can edit your cloud storages: upload, make folder, rename, move, delete items.
 
+In version 1.4.0, Chromecast support added. Please keep the app foreground and not lock the device while casting to Chromecast.
+
 ## how to compile
 if you did not set up, run these commands.
 
