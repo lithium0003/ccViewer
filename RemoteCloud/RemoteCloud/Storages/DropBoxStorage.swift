@@ -360,8 +360,12 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
 
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 self.callSemaphore.signal()
+                var waittime = self.callWait
                 if let error = error {
                     print(error)
+                    if (error as NSError).code == -1009 {
+                        waittime += 30
+                    }
                 }
                 if let l = length {
                     if data?.count ?? 0 != l {
@@ -369,7 +373,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
                             onFinish?(data)
                             return
                         }
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<0.5)) {
+                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<waittime)) {
                             self.readFile(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
                         }
                         return

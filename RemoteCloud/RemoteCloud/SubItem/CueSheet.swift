@@ -73,7 +73,7 @@ public class CueSheetRemoteItem: RemoteItem {
 
 public class CueSheetStream: SlotStream {
     let remote: CueSheetRemoteItem
-    var header: Data!
+    var header: Data?
     var wavOffset: Int = -1
     
     init(remote: CueSheetRemoteItem) {
@@ -100,10 +100,14 @@ public class CueSheetStream: SlotStream {
             }
             stream.isLive = false
             self.header = wavfile.getHeader(frames: frames)
+            guard let header = self.header else {
+                self.error = true
+                return
+            }
             let bytesPerSec = wavfile.wavFormat.BitsPerSample/8 * wavfile.wavFormat.SampleRate * wavfile.wavFormat.NumChannels
             let bytesPerFrame = bytesPerSec / 75
 
-            self.size = Int64(bytesPerFrame * Int(frames) + self.header.count)
+            self.size = Int64(bytesPerFrame * Int(frames) + header.count)
             
             self.wavOffset = wavfile.wavOffset + Int(self.remote.substart) * bytesPerFrame
         }
@@ -117,6 +121,11 @@ public class CueSheetStream: SlotStream {
         }
         if !dataAvailable(pos: pos1) && isLive {
             let len = (pos1 + bufSize < size) ? bufSize : size - pos1
+            guard let header = self.header else {
+                self.error = true
+                onFinish()
+                return
+            }
             if pos1 == 0 {
                 
                 remote.read(start: Int64(wavOffset), length: len-Int64(header.count)) { data in
@@ -125,7 +134,7 @@ public class CueSheetStream: SlotStream {
                     }
                     if let data = data {
                         var result = Data()
-                        result += self.header
+                        result += header
                         result += data
 
                         self.queue_buf.async {
@@ -184,7 +193,9 @@ class RemoteWaveFile {
         self.size = size
         group.enter()
         load()
-        group.wait()
+        guard group.wait(timeout: .now()+10) == .success else {
+            return nil
+        }
         guard wavFormat != nil, wavSize > 0, wavOffset > 0 else {
             return nil
         }

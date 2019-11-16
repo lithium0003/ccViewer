@@ -402,6 +402,13 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 self.callSemaphore.signal()
+                var waittime = self.callWait
+                if let error = error {
+                    print(error)
+                    if (error as NSError).code == -1009 {
+                        waittime += 30
+                    }
+                }
                 do {
                     guard let data = data else {
                         throw RetryError.Retry
@@ -429,7 +436,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 }
                 catch RetryError.Retry {
                     if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
+                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<waittime)) {
                             self.getLink(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
                         }
                         return
@@ -467,13 +474,17 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 self.callSemaphore.signal()
+                var waittime = self.callWait
                 if let error = error {
                     print(error)
+                    if (error as NSError).code == -1009 {
+                        waittime += 30
+                    }
                 }
                 if let l = length {
                     if data?.count ?? 0 != l {
                         if callCount < 50 {
-                            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
+                            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<waittime)) {
                                 self.getBody(downLink: downLink, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
                             }
                             return

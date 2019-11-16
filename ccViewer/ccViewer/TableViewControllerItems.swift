@@ -976,22 +976,6 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     semaphore.signal()
                     self.displayRawViewer(item: item)
                 }
-                else if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") &&
-                    !Converter.IsCasting() {
-                    semaphore.signal()
-                    playFFmpeg(item: item) { finish in
-                        if finish {
-                            return
-                        }
-                        DispatchQueue.main.async {
-                            self.activityIndicator.startAnimating()
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now()+2) {
-                            self.activityIndicator.stopAnimating()
-                            self.autoDetectRun(item: item)
-                        }
-                    }
-                }
                 else {
                     autoDetectRun(item: item)
                 }
@@ -1013,6 +997,22 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else if Converter.IsCasting() {
             semaphore.signal()
             playConverter(item: item) { fin in
+            }
+        }
+        else if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") &&
+            !Converter.IsCasting() {
+            semaphore.signal()
+            playFFmpeg(item: item) { finish in
+                if finish {
+                    return
+                }
+                DispatchQueue.main.async {
+                    self.activityIndicator.startAnimating()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now()+2) {
+                    self.activityIndicator.stopAnimating()
+                    self.autoDetectRun(item: item)
+                }
             }
         }
         else if UserDefaults.standard.bool(forKey: "MediaViewer") && media_exts.contains(item.ext)  {

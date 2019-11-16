@@ -728,8 +728,12 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
 
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 self.callSemaphore.signal()
+                var waittime = self.callWait
                 if let error = error {
                     print(error)
+                    if (error as NSError).code == -1009 {
+                        waittime += 30
+                    }
                 }
                 if let l = length {
                     if data?.count ?? 0 != l {
@@ -738,7 +742,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                             onFinish?(data)
                             return
                         }
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
+                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<waittime)) {
                             self.readFile(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
                         }
                         return
