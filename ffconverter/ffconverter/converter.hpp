@@ -86,7 +86,8 @@ public:
         audio_eof_enum  audio_eof = playing;
         AudioParams audio_filter_src = {};
         std::shared_ptr<AVCodecContext> audio_ctx;
-        int64_t         audio_last_pts = AV_NOPTS_VALUE;
+        int64_t         audio_last_pts_t = AV_NOPTS_VALUE;
+        double          audio_last_pts = NAN;
         double          audio_clock_start = NAN;
         int64_t         audio_start_pts = AV_NOPTS_VALUE;
         uint64_t        frame_count = 0;

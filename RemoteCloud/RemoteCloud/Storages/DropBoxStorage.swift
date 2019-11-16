@@ -1055,7 +1055,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionD
 
             #if !targetEnvironment(macCatalyst)
             let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
-            config.isDiscretionary = true
+            //config.isDiscretionary = true
             config.sessionSendsLaunchEvents = true
             #else
             let config = URLSessionConfiguration.default
