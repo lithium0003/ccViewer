@@ -8,6 +8,10 @@
 	<string></string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleHelpBookFolder</key>
+	<string>ccViewer.help</string>
+	<key>CFBundleHelpBookName</key>
+	<string>maccatalyst.info.lithium03.ccViewer.help</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>

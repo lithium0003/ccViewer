@@ -368,7 +368,18 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
                              0xd3, 0x90, 0x19, 0x8e, 0xb8, 0x12, 0x8a, 0xfb,
                              0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95, 0xf6, 0x38,]
         var ciphertext_stdbase64 = ciphertext.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        ciphertext_stdbase64.append(contentsOf: String(repeating: "=", count: 4 - ciphertext_stdbase64.count % 4))
+        switch ciphertext_stdbase64.count % 4 {
+        case 0:
+            break
+        case 1:
+            return nil
+        case 2:
+            ciphertext_stdbase64.append(contentsOf: String(repeating: "=", count: 2))
+        case 3:
+            ciphertext_stdbase64.append(contentsOf: String(repeating: "=", count: 1))
+        default:
+            break
+        }
         //print(ciphertext_stdbase64)
         guard let cipher = Data(base64Encoded: ciphertext_stdbase64) else {
             return nil
@@ -689,18 +700,14 @@ public class CryptRclone: ChildStorage {
                 {
                 case 1:
                     c = 4
-                    break
                 case 3:
                     c = 3
-                    break
                 case 4:
                     c = 2
-                    break
                 case 6:
                     c = 1
-                    break
                 default:
-                    break;
+                    break
                 }
             }
 

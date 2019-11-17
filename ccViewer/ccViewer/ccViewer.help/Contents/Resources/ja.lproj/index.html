@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <title>CryptCloudViewer Help</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  </head>
+  <body>
+
+<h1>CryptCloudViewer</h1>
+<p>
+<p>
+CryptCloudViewer(ccViewer) は、クラウドストレージを暗号化したまま閲覧できるソフトです。
+<a href="http://rei.to/carotdav.html">CarotDAV</a>、<a href="https://rclone.org/">rclone</a>、
+<a href="https://cryptomator.org/">Cryptomator</a>
+の暗号化に対応しています。現在対応済みのクラウドストレージは、
+<a href="https://www.dropbox.com/ja/">Dropbox</a>、
+<a href="https://www.google.com/drive/">Google Drive</a>、
+<a href="https://onedrive.live.com/about/ja-jp/">OneDrive</a>、
+<a href="https://www.pcloud.com/">pCloud</a>
+となっています。
+</p>
+<h2>使い方</h2>
+<p>
+使用を始めるには、クラウドストレージを選びログインしてください。
+暗号化ストレージを利用するには、基準フォルダを含むクラウドストレージをまず追加します。
+</p>
+<h3>対応済みのストレージ</h3>
+<ul>
+	<li><a href="https://www.dropbox.com/ja/">Dropbox</a></li>
+	<li><a href="https://www.google.com/drive/">Google Drive</a></li>
+	<li><a href="https://onedrive.live.com/about/ja-jp/">OneDrive</a></li>
+	<li><a href="https://www.pcloud.com/">pCloud</a></li>
+	<li><a href="http://rei.to/carotdav.html">CarotDAV</a></li>
+	<li><a href="https://rclone.org/">rclone</a></li>
+	<li><a href="https://cryptomator.org/">Cryptomator</a></li>
+</ul>
+<h3>クラウドストレージの追加方法</h3>
+<ol>
+	<li>root画面で+ボタンをタップし、追加したいアイコンを選びます</li>
+	<li>ローカルで管理する名前を入力します</li>
+	<li>サービス提供者のログイン画面に遷移します</li>
+	<li>指示に従ってログインを済ませます</li>
+	<li>追加が成功するとroot画面に戻ります</li>
+</ol>
+<h3>暗号化ストレージの追加方法</h3>
+<ol>
+	<li>追加したい基準フォルダを事前に追加しておきます</li>
+	<li>root画面で+ボタンをタップし、追加したいアイコンを選びます</li>
+	<li>ローカルで管理する名前を入力します</li>
+	<li>暗号化の基準フォルダを選び、'完了'をタップします</li>
+	<li>暗号化の解除に必要なパスワード等の情報を入力します</li>
+	<li>追加が成功するとroot画面に戻ります</li>
+</ol>
+<p>
+暗号化フォルダのパスワードはテストされません。
+正しくないパスワードを与えた場合はデータが復号できず正しく表示できませんが、エラーは表示されません。
+</p>
+<h3>対応済みのデータフォーマット</h3>
+<ul>
+	<li>iOSで対応している画像</li>
+	<li>iOSで対応している動画</li>
+	<li>pdf書類</li>
+	<li>FFmpegでデコード可能なメディア</li>
+</ul>
+<p>
+未対応のフォーマットは、テキストおよびバイナリ表示されます。
+設定から対応済みのデータフォーマットの自動起動を切り替えることができます。
+</p>
+<p>
+FFmpegによるソフトウエアデコーダーは、iOSで未対応のフォーマット(ex. MPEG2)を再生できます。
+ハードウェアによる支援がないので非常に高負荷ですので、旧世代のデバイスでは速度が足りない場合があります。
+</p>
+<h3>Cast機能</h3>
+<p>
+iOSで未対応の動画を標準プレーヤー(Picure in Picture)で再生する場合や、ChromeCastに動画を転送する場合に、
+端末で変換処理をしながら見ることができます。
+</p>
+<p>
+右下のキャストボタンから、キャストしたい端末を選んでから動画を選択してください。
+</p>
+<h3>再生位置の記録</h3>
+<p>
+再生済みのファイルにマークをつけることができます。
+設定により、再生済みの位置を記録して続きから再生することができます。
+iCloudを利用して、デバイス間で再生済みアイテムとその位置を共有できます。
+</p>
+<h3>ソフトウエアプレーヤーの操作</h3>
+<p>
+FFmpegによるソフトウエアデコーダープレーヤーは、画面をタップすることによりコントローラの表示を切り替えることができます。
+左端のアイコンをタップすることにより、字幕、動画、音声のチャンネルが複数ある場合切り替えることができます。
+</p>
+<h3>起動時保護</h3>
+<p>
+起動時にパスワード及びTouch ID/Face IDで保護できます。
+設定で何かパスワードを入力すると有効になります。
+空にして決定すると次回起動時に無効になります。
+利便性のため、タスク切り替え時の保護は有効にしていません。
+保護したい場合はバックグラウンドに放置せず、タスクキルしてください。
+</p>
+<h3>クラウド編集機能</h3>
+<p>
+簡単なクラウド編集機能が利用可能です。アップロード、フォルダの作成、
+名前の変更、更新時刻の変更(対応クラウドのみ)、移動、削除が可能です。
+</p>
+<p>
+右上の編集ボタンから、編集モードに入ります。
+</p>
+<p>
+アップロード、フォルダの作成は、編集モードに入ったフォルダに対して作成されます。
+その他の機能は、タップしてチェックマークをつけたアイテムに対して機能します。
+名前の変更は、ひとつずつしか行えません。
+</p>
+<h2>アプリ内購入アイテムについて</h2>
+<p>
+このアプリは、無料で全機能が利用できます。アプリ内購入アイテムは、純粋に作者への寄付とお考えください。購入した場合、シークレット画像が開放されます。
+</p>
+
+<hr>
+<p>
+連絡先 <a href="mailto:contact@lithium03.info">contact@lithium03.info</a>
+</p>
+
+  </body>
+</html>

@@ -76,7 +76,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     NSLocalizedString("PlayList", comment: ""),         //5
                     NSLocalizedString("Partial Play", comment: ""),     //6
                     NSLocalizedString("Player control", comment: ""),   //7
-                    NSLocalizedString("Help", comment: "")              //8
+                    NSLocalizedString("Cast converter", comment: ""),   //8
+                    NSLocalizedString("Help", comment: "")              //9
                     ]
     let settings = [["Password"],
                     [NSLocalizedString("Run one more", comment: "")],
@@ -95,6 +96,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                      NSLocalizedString("Stop after specified duration", comment: "")],
                     [NSLocalizedString("Skip foward (sec)", comment: ""),
                      NSLocalizedString("Skip backward (sec)", comment: "")],
+                    [NSLocalizedString("Ignore overlay subtiles", comment: ""),
+                     NSLocalizedString("Auto select streams", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
                      NSLocalizedString("Version", comment: "")]
@@ -251,6 +254,20 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                 break
             }
         case 8:
+            let aSwitch = UISwitch()
+            aSwitch.addTarget(self, action: #selector(switchChanged), for: .valueChanged)
+            switch indexPath.row {
+            case 0:
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "noOverlaySubtitles")
+                aSwitch.tag = 12
+            case 1:
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "autoSelectStreams")
+                aSwitch.tag = 13
+            default:
+                break
+            }
+            cell.accessoryView = aSwitch
+        case 9:
             switch indexPath.row {
             case 0...1:
                 cell.accessoryType = .detailButton
@@ -301,6 +318,10 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             present(v, animated: false) {
                 v.dismiss(animated: false, completion: nil)
             }
+        case 12:
+            UserDefaults.standard.set(value, forKey: "noOverlaySubtitles")
+        case 13:
+            UserDefaults.standard.set(value, forKey: "autoSelectStreams")
         default:
             break
         }
@@ -322,7 +343,7 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             default:
                 break
             }
-        case 8:
+        case 9:
             switch indexPath.row {
             case 0:
                 let url = URL(string: NSLocalizedString("Online help URL", comment: ""))!

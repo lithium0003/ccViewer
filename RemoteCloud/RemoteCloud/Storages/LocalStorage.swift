@@ -417,7 +417,15 @@ public class LocalStorage: RemoteStorageBase {
         }
 
         do {
+            let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+            let fileSize = attr[.size] as! UInt64
+
+            UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+            
             try FileManager.default.moveItem(at: target, to: newURL)
+            
+            UploadManeger.shared.UploadProgress(identifier: sessionId, possition: Int(fileSize))
+            
             let group2 = DispatchGroup()
             group1.notify(queue: .global()) {
                 self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, group: group2)

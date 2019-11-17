@@ -549,12 +549,20 @@ class StreamBridgeConvert {
             info.mainVideo = Int(result[0])
             info.mainSubtitle = Int(result[1])
             if info.mainSubtitle < 0 {
-               info.mainSubtitle = -1
+                info.mainSubtitle = -1
             }
-            result.assign(repeating: -1)
-            if let (v_idx, s_idx) = stream.onSelect?(info) {
-                result[0] = Int32(v_idx)
-                result[1] = Int32(s_idx)
+            if UserDefaults.standard.bool(forKey: "noOverlaySubtitles") {
+                info.mainSubtitle = -1
+            }
+            if UserDefaults.standard.bool(forKey: "autoSelectStreams") {
+                result[1] = Int32(info.mainSubtitle)
+            }
+            else {
+                result.assign(repeating: -1)
+                if let (v_idx, s_idx) = stream.onSelect?(info) {
+                    result[0] = Int32(v_idx)
+                    result[1] = Int32(s_idx)
+                }
             }
         }
     }

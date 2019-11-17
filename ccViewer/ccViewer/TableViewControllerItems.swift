@@ -694,7 +694,9 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
 
                                                 })
             alert.addAction(cancelAction)
+            #if !targetEnvironment(macCatalyst)
             alert.addAction(defaultAction)
+            #endif
             alert.addAction(defaultAction2)
             alert.addAction(defaultAction4)
             alert.addAction(defaultAction5)

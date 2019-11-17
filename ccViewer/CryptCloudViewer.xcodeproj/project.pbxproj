@@ -65,6 +65,7 @@
 		3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7022336B1F700D1FF9B /* Media.xcassets */; };
 		3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D52322EC22005B086A /* ViewControllerConvert.swift */; };
+		3FC2F2392381355800EB747C /* ccViewer.help in Resources */ = {isa = PBXBuildFile; fileRef = 3FC2F2382381355800EB747C /* ccViewer.help */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -131,15 +132,15 @@
 		3CEF9AC8223EE865008F90B5 /* ViewControllerPDF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerPDF.swift; sourceTree = "<group>"; };
 		3CF15E7822370B9300328A90 /* ViewControllerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerText.swift; sourceTree = "<group>"; };
 		3CF89CEF22333C14002FF0B5 /* TableViewControllerSetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerSetting.swift; sourceTree = "<group>"; };
-		3CFCF695222F347A00843054 /* ccViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ccViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CFCF695222F347A00843054 /* CryptCloudViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CryptCloudViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CFCF698222F347A00843054 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		3CFCF69D222F347A00843054 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		3CFCF6A2222F347B00843054 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3CFCF6A5222F347B00843054 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		3CFCF6AC222F347B00843054 /* ccViewerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ccViewerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CFCF6AC222F347B00843054 /* CryptCloudViewerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CryptCloudViewerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CFCF6B0222F347B00843054 /* ccViewerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ccViewerTests.swift; sourceTree = "<group>"; };
 		3CFCF6B2222F347B00843054 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3CFCF6B7222F347B00843054 /* ccViewerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ccViewerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CFCF6B7222F347B00843054 /* CryptCloudViewerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CryptCloudViewerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CFCF6BB222F347B00843054 /* ccViewerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ccViewerUITests.swift; sourceTree = "<group>"; };
 		3CFCF6BD222F347B00843054 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerRoot.swift; sourceTree = "<group>"; };
@@ -183,6 +184,7 @@
 		3F9151D5236C191600E5EF65 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.5_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
 		3F92E7022336B1F700D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3FA954D52322EC22005B086A /* ViewControllerConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerConvert.swift; sourceTree = "<group>"; };
+		3FC2F2382381355800EB747C /* ccViewer.help */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ccViewer.help; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -281,9 +283,9 @@
 		3CFCF696222F347A00843054 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3CFCF695222F347A00843054 /* ccViewer.app */,
-				3CFCF6AC222F347B00843054 /* ccViewerTests.xctest */,
-				3CFCF6B7222F347B00843054 /* ccViewerUITests.xctest */,
+				3CFCF695222F347A00843054 /* CryptCloudViewer.app */,
+				3CFCF6AC222F347B00843054 /* CryptCloudViewerTests.xctest */,
+				3CFCF6B7222F347B00843054 /* CryptCloudViewerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -291,6 +293,7 @@
 		3CFCF697222F347A00843054 /* ccViewer */ = {
 			isa = PBXGroup;
 			children = (
+				3FC2F2382381355800EB747C /* ccViewer.help */,
 				3CFCF698222F347A00843054 /* AppDelegate.swift */,
 				3CFCF6A2222F347B00843054 /* Assets.xcassets */,
 				3CA2C96122355E9B00481DB5 /* ccViewer.entitlements */,
@@ -384,9 +387,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3CFCF694222F347A00843054 /* ccViewer */ = {
+		3CFCF694222F347A00843054 /* CryptCloudViewer */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3CFCF6C0222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewer" */;
+			buildConfigurationList = 3CFCF6C0222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewer" */;
 			buildPhases = (
 				3CFCF691222F347A00843054 /* Sources */,
 				3CFCF692222F347A00843054 /* Frameworks */,
@@ -399,14 +402,14 @@
 			);
 			dependencies = (
 			);
-			name = ccViewer;
+			name = CryptCloudViewer;
 			productName = ccViewer;
-			productReference = 3CFCF695222F347A00843054 /* ccViewer.app */;
+			productReference = 3CFCF695222F347A00843054 /* CryptCloudViewer.app */;
 			productType = "com.apple.product-type.application";
 		};
-		3CFCF6AB222F347B00843054 /* ccViewerTests */ = {
+		3CFCF6AB222F347B00843054 /* CryptCloudViewerTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3CFCF6C3222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewerTests" */;
+			buildConfigurationList = 3CFCF6C3222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewerTests" */;
 			buildPhases = (
 				3CFCF6A8222F347B00843054 /* Sources */,
 				3CFCF6A9222F347B00843054 /* Frameworks */,
@@ -417,14 +420,14 @@
 			dependencies = (
 				3CFCF6AE222F347B00843054 /* PBXTargetDependency */,
 			);
-			name = ccViewerTests;
+			name = CryptCloudViewerTests;
 			productName = ccViewerTests;
-			productReference = 3CFCF6AC222F347B00843054 /* ccViewerTests.xctest */;
+			productReference = 3CFCF6AC222F347B00843054 /* CryptCloudViewerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		3CFCF6B6222F347B00843054 /* ccViewerUITests */ = {
+		3CFCF6B6222F347B00843054 /* CryptCloudViewerUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3CFCF6C6222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewerUITests" */;
+			buildConfigurationList = 3CFCF6C6222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewerUITests" */;
 			buildPhases = (
 				3CFCF6B3222F347B00843054 /* Sources */,
 				3CFCF6B4222F347B00843054 /* Frameworks */,
@@ -435,9 +438,9 @@
 			dependencies = (
 				3CFCF6B9222F347B00843054 /* PBXTargetDependency */,
 			);
-			name = ccViewerUITests;
+			name = CryptCloudViewerUITests;
 			productName = ccViewerUITests;
-			productReference = 3CFCF6B7222F347B00843054 /* ccViewerUITests.xctest */;
+			productReference = 3CFCF6B7222F347B00843054 /* CryptCloudViewerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -495,7 +498,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 3CFCF690222F347900843054 /* Build configuration list for PBXProject "ccViewer" */;
+			buildConfigurationList = 3CFCF690222F347900843054 /* Build configuration list for PBXProject "CryptCloudViewer" */;
 			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -509,9 +512,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				3CFCF694222F347A00843054 /* ccViewer */,
-				3CFCF6AB222F347B00843054 /* ccViewerTests */,
-				3CFCF6B6222F347B00843054 /* ccViewerUITests */,
+				3CFCF694222F347A00843054 /* CryptCloudViewer */,
+				3CFCF6AB222F347B00843054 /* CryptCloudViewerTests */,
+				3CFCF6B6222F347B00843054 /* CryptCloudViewerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -525,6 +528,7 @@
 				3C4009192240653C0028A45A /* Localizable.strings in Resources */,
 				3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */,
 				3CFCF6A3222F347B00843054 /* Assets.xcassets in Resources */,
+				3FC2F2392381355800EB747C /* ccViewer.help in Resources */,
 				3CFCF69E222F347A00843054 /* Main.storyboard in Resources */,
 				3CC4851D2258945B0003C44A /* Settings.bundle in Resources */,
 				3C0693432253D1EC0040DC0B /* InfoPlist.strings in Resources */,
@@ -635,12 +639,12 @@
 /* Begin PBXTargetDependency section */
 		3CFCF6AE222F347B00843054 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 3CFCF694222F347A00843054 /* ccViewer */;
+			target = 3CFCF694222F347A00843054 /* CryptCloudViewer */;
 			targetProxy = 3CFCF6AD222F347B00843054 /* PBXContainerItemProxy */;
 		};
 		3CFCF6B9222F347B00843054 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 3CFCF694222F347A00843054 /* ccViewer */;
+			target = 3CFCF694222F347A00843054 /* CryptCloudViewer */;
 			targetProxy = 3CFCF6B8222F347B00843054 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -809,9 +813,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 47;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
@@ -842,9 +847,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 47;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
@@ -886,7 +892,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ccViewer.app/ccViewer";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CryptCloudViewer.app/CryptCloudViewer";
 			};
 			name = Debug;
 		};
@@ -907,7 +913,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ccViewer.app/ccViewer";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CryptCloudViewer.app/CryptCloudViewer";
 			};
 			name = Release;
 		};
@@ -954,7 +960,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3CFCF690222F347900843054 /* Build configuration list for PBXProject "ccViewer" */ = {
+		3CFCF690222F347900843054 /* Build configuration list for PBXProject "CryptCloudViewer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3CFCF6BE222F347B00843054 /* Debug */,
@@ -963,7 +969,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3CFCF6C0222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewer" */ = {
+		3CFCF6C0222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3CFCF6C1222F347B00843054 /* Debug */,
@@ -972,7 +978,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3CFCF6C3222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewerTests" */ = {
+		3CFCF6C3222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3CFCF6C4222F347B00843054 /* Debug */,
@@ -981,7 +987,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3CFCF6C6222F347B00843054 /* Build configuration list for PBXNativeTarget "ccViewerUITests" */ = {
+		3CFCF6C6222F347B00843054 /* Build configuration list for PBXNativeTarget "CryptCloudViewerUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3CFCF6C7222F347B00843054 /* Debug */,
