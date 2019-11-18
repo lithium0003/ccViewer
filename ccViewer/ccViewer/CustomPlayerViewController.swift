@@ -414,15 +414,15 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     func nextTrack() {
         let url = prevURL
         var reload = UserDefaults.standard.bool(forKey: "keepOpenWhenDone")
+        if reload && player.items().count > 1 {
+            reload = false
+        }
         if player.items().count <= 2 {
             if loop {
                 reload = false
                 loopSetup()
             }
             if reload {
-                if player.items().count > 1 {
-                    reload = false
-                }
                 loopSetup()
             }
         }
