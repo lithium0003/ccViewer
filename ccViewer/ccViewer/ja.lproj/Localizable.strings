@@ -77,7 +77,9 @@
 "Player control" = "再生コントロール";
 "Skip foward (sec)" = "早送り (秒)";
 "Skip backward (sec)" = "巻戻し (秒)";
+"Keep open when done" = "再生終了後に閉じない";
 
 "Cast converter" = "Cast時の変換設定";
 "Ignore overlay subtiles" = "焼き込み字幕を入れない";
 "Auto select streams" = "自動で映像と焼き込み字幕を選択する";
+

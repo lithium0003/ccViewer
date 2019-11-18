@@ -128,6 +128,18 @@ void Player::Quit()
         std::unique_lock<std::mutex> lk(video.pictq_mutex);
         video.pictq_cond.notify_one();
     }
+    if (video.videoStream >= 0) {
+        av_log(NULL, AV_LOG_INFO, "video abort.\n");
+        video.videoq.AbortQueue();
+    }
+    if (audio.audioStream >= 0) {
+        av_log(NULL, AV_LOG_INFO, "audio abort.\n");
+        audio.audioq.AbortQueue();
+    }
+    if (subtitle.subtitleStream >= 0) {
+        av_log(NULL, AV_LOG_INFO, "subtitle abort.\n");
+        subtitle.subtitleq.AbortQueue();
+    }
     av_usleep(100*1000);
 }
 

@@ -95,7 +95,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     [NSLocalizedString("Start skip", comment: ""),
                      NSLocalizedString("Stop after specified duration", comment: "")],
                     [NSLocalizedString("Skip foward (sec)", comment: ""),
-                     NSLocalizedString("Skip backward (sec)", comment: "")],
+                     NSLocalizedString("Skip backward (sec)", comment: ""),
+                     NSLocalizedString("Keep open when done", comment: "")],
                     [NSLocalizedString("Ignore overlay subtiles", comment: ""),
                      NSLocalizedString("Auto select streams", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
@@ -250,6 +251,12 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     UserDefaults.standard.set(value, forKey: "playSkipBackwardSec")
                 }
                 cell.accessoryView = picker
+            case 2:
+                let aSwitch = UISwitch()
+                aSwitch.addTarget(self, action: #selector(switchChanged), for: .valueChanged)
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "keepOpenWhenDone")
+                aSwitch.tag = 14
+                cell.accessoryView = aSwitch
             default:
                 break
             }
@@ -322,6 +329,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             UserDefaults.standard.set(value, forKey: "noOverlaySubtitles")
         case 13:
             UserDefaults.standard.set(value, forKey: "autoSelectStreams")
+        case 14:
+            UserDefaults.standard.set(value, forKey: "keepOpenWhenDone")
         default:
             break
         }

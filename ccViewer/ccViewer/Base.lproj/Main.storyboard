@@ -13,7 +13,7 @@
         <!--Table View Controller Root-->
         <scene sceneID="UHY-y9-zXS">
             <objects>
-                <tableViewController storyboardIdentifier="Root" id="3wc-gt-xfx" customClass="TableViewControllerRoot" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="Root" id="3wc-gt-xfx" customClass="TableViewControllerRoot" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="JgV-Bf-Q2k">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -42,7 +42,7 @@
         <!--Table View Controller Setting-->
         <scene sceneID="2ap-ra-evy">
             <objects>
-                <tableViewController storyboardIdentifier="Setting" id="L0j-pj-LvG" customClass="TableViewControllerSetting" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="Setting" id="L0j-pj-LvG" customClass="TableViewControllerSetting" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="grouped" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="18" sectionFooterHeight="18" id="kb2-IZ-yPO">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -86,7 +86,7 @@
         <!--Collection View Controller Cloud-->
         <scene sceneID="upA-1C-VLi">
             <objects>
-                <collectionViewController storyboardIdentifier="AddCloud" id="AXf-ti-ef6" customClass="CollectionViewControllerCloud" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <collectionViewController storyboardIdentifier="AddCloud" id="AXf-ti-ef6" customClass="CollectionViewControllerCloud" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" dataMode="prototypes" id="DA9-wh-bzp">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -143,7 +143,7 @@
         <!--View Controller First-->
         <scene sceneID="dGh-wz-EIs">
             <objects>
-                <viewController id="4BZ-i6-bLn" customClass="ViewControllerFirst" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController id="4BZ-i6-bLn" customClass="ViewControllerFirst" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="KW3-z4-Fd5">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -157,7 +157,7 @@
         <!--View Controller Tutorial-->
         <scene sceneID="5Ca-98-Ds0">
             <objects>
-                <pageViewController storyboardIdentifier="Tutorial" autoresizesArchivedViewToFullSize="NO" transitionStyle="scroll" navigationOrientation="horizontal" spineLocation="none" id="Yny-6C-VQJ" customClass="ViewControllerTutorial" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController"/>
+                <pageViewController storyboardIdentifier="Tutorial" autoresizesArchivedViewToFullSize="NO" transitionStyle="scroll" navigationOrientation="horizontal" spineLocation="none" id="Yny-6C-VQJ" customClass="ViewControllerTutorial" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController"/>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="srf-8m-9Sz" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="-418" y="974"/>
@@ -165,7 +165,7 @@
         <!--View Controller Tutorial Page-->
         <scene sceneID="6aE-wQ-Gvy">
             <objects>
-                <viewController storyboardIdentifier="Tutorial1" id="518-ig-TKI" customClass="ViewControllerTutorialPage" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="Tutorial1" id="518-ig-TKI" customClass="ViewControllerTutorialPage" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="pSW-s4-GT2">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -230,7 +230,7 @@
         <!--View Controller Protect-->
         <scene sceneID="ZOw-Tz-ghO">
             <objects>
-                <viewController storyboardIdentifier="Protect" id="HNc-4p-4Wv" customClass="ViewControllerProtect" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="Protect" id="HNc-4p-4Wv" customClass="ViewControllerProtect" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="DxT-Ge-C5r">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -247,7 +247,7 @@
                                     <textField opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="center" borderStyle="roundedRect" placeholder="Password" textAlignment="natural" minimumFontSize="17" clearButtonMode="whileEditing" translatesAutoresizingMaskIntoConstraints="NO" id="vYd-Bl-apn">
                                         <rect key="frame" x="0.0" y="20.333333333333314" width="108" height="34"/>
                                         <fontDescription key="fontDescription" type="system" pointSize="14"/>
-                                        <textInputTraits key="textInputTraits" returnKeyType="done" enablesReturnKeyAutomatically="YES" secureTextEntry="YES" textContentType="password"/>
+                                        <textInputTraits key="textInputTraits" returnKeyType="done" enablesReturnKeyAutomatically="YES" secureTextEntry="YES" textContentType="one-time-code"/>
                                     </textField>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="HNb-8g-NRc">
                                         <rect key="frame" x="0.0" y="54.333333333333314" width="108" height="30"/>
@@ -280,7 +280,7 @@
         <!--Table View Controller Items-->
         <scene sceneID="v0C-ui-8x7">
             <objects>
-                <tableViewController storyboardIdentifier="Main" id="rsd-pN-15f" customClass="TableViewControllerItems" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="Main" id="rsd-pN-15f" customClass="TableViewControllerItems" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" allowsSelectionDuringEditing="YES" allowsMultipleSelectionDuringEditing="YES" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="3RF-jz-S87">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -332,7 +332,7 @@
         <!--View Controller Text-->
         <scene sceneID="72g-0N-8Z6">
             <objects>
-                <viewController storyboardIdentifier="TextView" id="Jvn-K0-UIh" customClass="ViewControllerText" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="TextView" id="Jvn-K0-UIh" customClass="ViewControllerText" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="nuP-UV-Slz">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -417,7 +417,7 @@
         <!--View Controller Image-->
         <scene sceneID="HRq-5H-80U">
             <objects>
-                <viewController storyboardIdentifier="ImageView" id="b60-o2-cRI" customClass="ViewControllerImage" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="ImageView" id="b60-o2-cRI" customClass="ViewControllerImage" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="pBc-O1-St0">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -481,7 +481,7 @@
         <!--View ControllerPDF-->
         <scene sceneID="QJ6-WL-syy">
             <objects>
-                <viewController storyboardIdentifier="PDFView" id="Ea7-an-Sz8" customClass="ViewControllerPDF" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="PDFView" id="Ea7-an-Sz8" customClass="ViewControllerPDF" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="b2l-Pe-2J2">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -544,7 +544,7 @@
         <!--View Controller Tutorial Page-->
         <scene sceneID="lyI-6u-7zo">
             <objects>
-                <viewController storyboardIdentifier="Tutorial2" id="yQd-g5-EGY" customClass="ViewControllerTutorialPage" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="Tutorial2" id="yQd-g5-EGY" customClass="ViewControllerTutorialPage" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="RXp-hv-WYs">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -602,7 +602,7 @@
         <!--View Controller Tutorial Page-->
         <scene sceneID="sp4-lz-xuw">
             <objects>
-                <viewController storyboardIdentifier="Tutorial3" id="bkp-d9-fHR" customClass="ViewControllerTutorialPage" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="Tutorial3" id="bkp-d9-fHR" customClass="ViewControllerTutorialPage" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="wfg-z2-EJR">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -683,7 +683,7 @@
         <!--Table View Controller Items Edit-->
         <scene sceneID="T6f-pc-ETY">
             <objects>
-                <tableViewController storyboardIdentifier="MainEdit" id="q7w-cg-SmL" customClass="TableViewControllerItemsEdit" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="MainEdit" id="q7w-cg-SmL" customClass="TableViewControllerItemsEdit" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="Ari-BA-TbE">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -814,7 +814,7 @@
         <!--Purchase-->
         <scene sceneID="6Hc-DI-tWu">
             <objects>
-                <viewController storyboardIdentifier="Purchase" id="WUS-IM-ct7" customClass="PurchaceViewController" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="Purchase" id="WUS-IM-ct7" customClass="PurchaceViewController" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="aTW-KR-lxL">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -930,7 +930,7 @@
         <!--Navigation Controller Hide-->
         <scene sceneID="WUP-k6-SUp">
             <objects>
-                <navigationController storyboardIdentifier="MainNavigation" automaticallyAdjustsScrollViewInsets="NO" hidesBottomBarWhenPushed="YES" toolbarHidden="NO" id="nNe-VW-ucB" customClass="NavigationControllerHide" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <navigationController storyboardIdentifier="MainNavigation" automaticallyAdjustsScrollViewInsets="NO" hidesBottomBarWhenPushed="YES" toolbarHidden="NO" id="nNe-VW-ucB" customClass="NavigationControllerHide" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <toolbarItems/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" id="OeH-rZ-NEt">
                         <rect key="frame" x="0.0" y="44" width="414" height="44"/>
@@ -952,7 +952,7 @@
         <!--Table View Controller Playlist-->
         <scene sceneID="hfe-Cc-CL3">
             <objects>
-                <tableViewController storyboardIdentifier="PlayList" id="iCl-do-Iz3" customClass="TableViewControllerPlaylist" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="PlayList" id="iCl-do-Iz3" customClass="TableViewControllerPlaylist" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" allowsSelectionDuringEditing="YES" allowsMultipleSelectionDuringEditing="YES" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="PgJ-th-TM4">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -998,7 +998,7 @@
         <!--Table View Controller Play List Folder-->
         <scene sceneID="Mqt-tj-MHO">
             <objects>
-                <tableViewController storyboardIdentifier="PlayListFolder" id="7hv-PP-wjr" customClass="TableViewControllerPlayListFolder" customModule="ccViewer" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController storyboardIdentifier="PlayListFolder" id="7hv-PP-wjr" customClass="TableViewControllerPlayListFolder" customModule="CryptCloudViewer" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="gxQ-ja-lHO">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>

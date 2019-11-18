@@ -111,7 +111,6 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         return viewController
     }()
     
-    var finish = false
     var iscancel = false
     var isVideo = false
     
@@ -414,8 +413,16 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     
     func nextTrack() {
         let url = prevURL
+        var reload = UserDefaults.standard.bool(forKey: "keepOpenWhenDone")
         if player.items().count <= 2 {
             if loop {
+                reload = false
+                loopSetup()
+            }
+            if reload {
+                if player.items().count > 1 {
+                    reload = false
+                }
                 loopSetup()
             }
         }
@@ -447,6 +454,9 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
                 }
             }
         }
+        if reload {
+            player.pause()
+        }
     }
     
     @objc func didPlayToEndTime(_ notification: Notification) {
@@ -461,18 +471,19 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     
     func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         
-        if let currentViewController = UIApplication.topViewController() {
+        if let currentViewController = UIApplication.topViewController(), !iscancel {
             currentViewController.present(playerViewController, animated: true) {
                 completionHandler(true)
             }
+        }
+        else {
+            finishDisplay()
+            completionHandler(true)
         }
     }
     
     func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
         CustomPlayerView.pipVideo = false
-        if playerViewController.player?.rate ?? 0 == 0 {
-            finishDisplay()
-        }
     }
         
     func finishDisplay() {
