@@ -84,7 +84,12 @@ class TimePickerKeyboard: UIControl {
     
     func localinit() {
         textStore = UILabel()
-        textStore.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
+        if #available(iOS 13.0, *) {
+            textStore.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
+        }
+        else {
+            textStore.font = .monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+        }
         addTarget(self, action: #selector(didTap), for: .touchUpInside)
         addSubview(textStore)
         textStore.translatesAutoresizingMaskIntoConstraints = false
@@ -231,7 +236,12 @@ extension TimePickerKeyboard: UIPickerViewDelegate, UIPickerViewDataSource {
         }
         pickerLabel.textAlignment = .center
         if component % 2 == 0 {
-            pickerLabel.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+            if #available(iOS 13.0, *) {
+                pickerLabel.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+            }
+            else {
+                pickerLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .regular)
+            }
         }
         else {
             pickerLabel.font = .systemFont(ofSize: 16)
@@ -325,7 +335,12 @@ class SecPickerKeyboard: UIControl {
     
     func localinit() {
         textStore = UILabel()
-        textStore.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
+        if #available(iOS 13.0, *) {
+            textStore.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
+        }
+        else {
+            textStore.font = .monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+        }
         addTarget(self, action: #selector(didTap), for: .touchUpInside)
         addSubview(textStore)
         textStore.translatesAutoresizingMaskIntoConstraints = false
@@ -451,7 +466,12 @@ extension SecPickerKeyboard: UIPickerViewDelegate, UIPickerViewDataSource {
         }
         pickerLabel.textAlignment = .center
         if component % 2 == 0 {
-            pickerLabel.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+            if #available(iOS 13.0, *) {
+                pickerLabel.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+            }
+            else {
+                pickerLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .regular)
+            }
         }
         else {
             pickerLabel.font = .systemFont(ofSize: 16)

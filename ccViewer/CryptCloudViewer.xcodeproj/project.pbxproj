@@ -293,17 +293,12 @@
 		3CFCF697222F347A00843054 /* ccViewer */ = {
 			isa = PBXGroup;
 			children = (
-				3FC2F2382381355800EB747C /* ccViewer.help */,
-				3CFCF698222F347A00843054 /* AppDelegate.swift */,
-				3CFCF6A2222F347B00843054 /* Assets.xcassets */,
 				3CA2C96122355E9B00481DB5 /* ccViewer.entitlements */,
+				3FC2F2382381355800EB747C /* ccViewer.help */,
+				3C0693342253CCD40040DC0B /* Info.plist */,
+				3CFCF698222F347A00843054 /* AppDelegate.swift */,
 				3CA2C9582234DE2D00481DB5 /* CollectionViewControllerCloud.swift */,
 				3C40091122401D020028A45A /* CustomPlayerViewController.swift */,
-				3C0693342253CCD40040DC0B /* Info.plist */,
-				3C0693452253D1EC0040DC0B /* InfoPlist.strings */,
-				3CFCF6A4222F347B00843054 /* LaunchScreen.storyboard */,
-				3C40091B2240653C0028A45A /* Localizable.strings */,
-				3CFCF69C222F347A00843054 /* Main.storyboard */,
 				3CC48520225AC1690003C44A /* NavigationControllerHide.swift */,
 				3C0693472253DBD40040DC0B /* ProductManager.swift */,
 				3C0693482253DBD50040DC0B /* PurchaceManager.swift */,
@@ -314,6 +309,8 @@
 				3C79B38522608C4D0036E22F /* TableViewControllerPlayListFolder.swift */,
 				3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */,
 				3CF89CEF22333C14002FF0B5 /* TableViewControllerSetting.swift */,
+				3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */,
+				3FA954D52322EC22005B086A /* ViewControllerConvert.swift */,
 				3C0654A6223978BF003BD932 /* ViewControllerFirst.swift */,
 				3C06549E22381567003BD932 /* ViewControllerImage.swift */,
 				3CEF9AC8223EE865008F90B5 /* ViewControllerPDF.swift */,
@@ -321,9 +318,12 @@
 				3CF15E7822370B9300328A90 /* ViewControllerText.swift */,
 				3C0654A822398041003BD932 /* ViewControllerTutorial.swift */,
 				3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */,
-				3FA954D52322EC22005B086A /* ViewControllerConvert.swift */,
+				3CFCF6A2222F347B00843054 /* Assets.xcassets */,
 				3F92E7022336B1F700D1FF9B /* Media.xcassets */,
-				3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */,
+				3C0693452253D1EC0040DC0B /* InfoPlist.strings */,
+				3CFCF6A4222F347B00843054 /* LaunchScreen.storyboard */,
+				3C40091B2240653C0028A45A /* Localizable.strings */,
+				3CFCF69C222F347A00843054 /* Main.storyboard */,
 			);
 			path = ccViewer;
 			sourceTree = "<group>";
@@ -567,7 +567,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nAPP_VERSION=$(/usr/libexec/PlistBuddy -c \"Print CFBundleShortVersionString\" $PRODUCT_SETTINGS_PATH)\n/usr/libexec/PlistBuddy -c \"Set :PreferenceSpecifiers:0:DefaultValue ${APP_VERSION}\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Settings.bundle/Root.plist\"\n";
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nbuildPlist=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n\necho $buildPlist\nAPP_VERSION=$(/usr/libexec/PlistBuddy -c \"Print CFBundleShortVersionString\" $buildPlist)\n/usr/libexec/PlistBuddy -c \"Set :PreferenceSpecifiers:0:DefaultValue ${APP_VERSION}\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Settings.bundle/Root.plist\"\n";
 		};
 		3F9151E5236C463100E5EF65 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -813,7 +813,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 49;
+				CURRENT_PROJECT_VERSION = 51;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -848,7 +848,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 49;
+				CURRENT_PROJECT_VERSION = 51;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;

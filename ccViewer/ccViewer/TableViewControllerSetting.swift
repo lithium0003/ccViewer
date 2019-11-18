@@ -240,13 +240,13 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         case 7:
             switch indexPath.row {
             case 0:
-                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 30, height: 28))
+                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 40, height: 28))
                 picker.setValue(time: UserDefaults.standard.integer(forKey: "playSkipForwardSec")) { value in
                     UserDefaults.standard.set(value, forKey: "playSkipForwardSec")
                 }
                 cell.accessoryView = picker
             case 1:
-                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 30, height: 28))
+                let picker = SecPickerKeyboard(frame: CGRect(x: 0, y: 0, width: 40, height: 28))
                 picker.setValue(time: UserDefaults.standard.integer(forKey: "playSkipBackwardSec")) { value in
                     UserDefaults.standard.set(value, forKey: "playSkipBackwardSec")
                 }
