@@ -50,6 +50,7 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     var customDelegate = [URL: [CustomAVARLDelegate]]()
     var infoItems = [URL: [String: Any]]()
     var image: MPMediaItemArtwork?
+    var playCount = -1
     
     func getURL(storage: String, fileId: String) -> URL {
         var allowedCharacterSet = CharacterSet.alphanumerics
@@ -100,6 +101,9 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
             }
             return playitem
         })
+        if !self.loop {
+            playCount = items.count
+        }
         var player = AVQueuePlayer(items: items)
         return player
     }()
@@ -181,10 +185,12 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     }
     
     func skipNextTrack() {
-        let url = (player.currentItem?.asset as? AVURLAsset)?.url
+        print("skipNextTrack ", playCount)
+        print(player.items())
+        let url = prevURL
         player.pause()
         if player.items().count <= 2 {
-            if loop {
+            if loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
                 loopSetup()
             }
         }
@@ -216,7 +222,15 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
                     customDelegate.removeValue(forKey: url)
                 }
             }
-            player.play()
+            if playCount <= 1 {
+                playCount = playItems.count
+            }
+            else {
+                player.play()
+                if playCount > 0 {
+                    playCount -= 1
+                }
+            }
         }
     }
     
@@ -275,6 +289,13 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     }
     
     func play(parent: UIViewController) {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print(error)
+        }
+
         playerViewController.player = player
         playerViewController.updatesNowPlayingInfoCenter = false
         
@@ -412,17 +433,14 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     }
     
     func nextTrack() {
-        let url = prevURL
-        var reload = UserDefaults.standard.bool(forKey: "keepOpenWhenDone")
-        if reload && player.items().count > 1 {
-            reload = false
+        print("nextTrack ", playCount)
+        print(player.items())
+        if playCount > 0 {
+            playCount -= 1
         }
+        let url = prevURL
         if player.items().count <= 2 {
-            if loop {
-                reload = false
-                loopSetup()
-            }
-            if reload {
+            if loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
                 loopSetup()
             }
         }
@@ -454,8 +472,9 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
                 }
             }
         }
-        if reload {
+        if playCount == 0 {
             player.pause()
+            playCount = playItems.count
         }
     }
     
