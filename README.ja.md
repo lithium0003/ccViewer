@@ -1,4 +1,4 @@
-# ccViewer
+# CryptCloudViewer
 iOSアプリ"CryptCloudViewer"のソースコードのレポジトリです。
 
 アプリはこちらからダウンロードできます。
@@ -33,7 +33,7 @@ cd work
 
 ### Xcodeでのコンパイル
 1. workspace "ccViewer.xcworkspace" を開きます。
-2. scheme "ccViewer" を選択し build します。
+2. scheme "CryptCloudViewer" を選択し build します。
 
 実際に使用したい場合は、"RemoteCloud/RemoteCloud/Secret.swift" のファイルを修正し、
 あなた自身で取得した、それぞれのサービスでの client_id と secret に置き換えてください。
