@@ -1,4 +1,4 @@
-# ccViewer
+# CryptCloudViewer
 This repository is source code of iOS app "CryptCloudViewer"
 https://itunes.apple.com/us/app/cryptcloudviewer/id1458528598?mt=8
 
@@ -27,6 +27,6 @@ cd work
 
 ### open with Xcode and compile
 1. open workspace "ccViewer.xcworkspace"
-2. select scheme "ccViewer" and build
+2. select scheme "CryptCloudViewer" and build
 
 If you want to use, fix a file "RemoteCloud/RemoteCloud/Secret.swift" for your own client_id and secret.
