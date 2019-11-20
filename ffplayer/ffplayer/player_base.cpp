@@ -339,7 +339,7 @@ int decode_thread(struct stream_param *stream)
             // if no chapter, skip to start
             if(!player->pFormatCtx->nb_chapters) {
                 av_log(NULL, AV_LOG_INFO, "go back to start\n");
-                player->seek_pos = player->start_time_org;
+                player->seek_pos = (player->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : player->pFormatCtx->start_time;
                 player->seek_req_type = Player::seek_type_pos;
                 continue;
             }
@@ -358,7 +358,7 @@ int decode_thread(struct stream_param *stream)
             i--;
             if(i < 0) {
                 av_log(NULL, AV_LOG_INFO, "go back to start\n");
-                player->seek_pos = player->start_time_org;
+                player->seek_pos = (player->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : player->pFormatCtx->start_time;
                 player->seek_req_type = Player::seek_type_pos;
             }
             else {
@@ -452,16 +452,10 @@ int decode_thread(struct stream_param *stream)
             continue;
         }
         error = false;
-        if (player->start_time_org == AV_NOPTS_VALUE) {
-            if(player->pFormatCtx->start_time != AV_NOPTS_VALUE)
-                player->start_time_org = player->pFormatCtx->start_time;
-            else
-                player->start_time_org = 0;
-        }
         if (isnan(player->master_clock_offset)) {
             player->master_clock_start = av_gettime();
             AVRational timebase = { 1, AV_TIME_BASE };
-            player->master_clock_offset = packet.pts * av_q2d(player->pFormatCtx->streams[packet.stream_index]->time_base) - player->start_time_org * av_q2d(timebase);
+            player->master_clock_offset = packet.pts * av_q2d(player->pFormatCtx->streams[packet.stream_index]->time_base) - ((player->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : player->pFormatCtx->start_time) * av_q2d(timebase);
         }
 
         if (packet.stream_index == player->video.videoStream) {
@@ -913,7 +907,7 @@ int video_thread(Player *is)
                     int64_t pts_t;
                     if ((pts_t = frame.best_effort_timestamp) != AV_NOPTS_VALUE) {
                         pts = pts_t * av_q2d(is->video.video_st->time_base);
-                        pts -= av_q2d(AV_TIME_BASE_Q) * is->start_time_org;
+                        pts -= av_q2d(AV_TIME_BASE_Q) * ((is->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : is->pFormatCtx->start_time);
                         //av_log(NULL, AV_LOG_INFO, "video clock %f\n", pts);
                         
                         if (isnan(is->video.video_clock_start)) {
@@ -1161,7 +1155,11 @@ void Player::video_display(VideoPicture *vp)
     if (vp->allocated) {
         subtitle_display(vp);
         struct stream_param *stream = (struct stream_param *)param;
-        stream->draw_pict(stream->stream, vp->bmp.data[0], vp->width, vp->height, vp->bmp.linesize[0], get_master_clock());
+        double clock = get_master_clock();
+        while (clock > 0x1FFFFFFFF / 90000.0) {
+            clock -= 0x1FFFFFFFF / 90000.0;
+        }
+        stream->draw_pict(stream->stream, vp->bmp.data[0], vp->width, vp->height, vp->bmp.linesize[0], clock);
     }
 }
 
@@ -1242,7 +1240,11 @@ double Player::load_sound(float *buffer, int num_packet)
         memset(buffer, 0, sizeof(float)*num_packet*ch);
         audio_last_call = av_gettime();
         audio_clock_base = audio.pts_base - (double)(audio.write_idx - audio.read_idx) / audio.sample_rate;
-        return audio_clock_base;
+        double clock = audio_clock_base;
+        while (clock > 0x1FFFFFFFF / 90000.0) {
+            clock -= 0x1FFFFFFFF / 90000.0;
+        }
+        return clock;
     }
 
     int offset = audio.read_idx % audio.buf_length;
@@ -1265,6 +1267,10 @@ double Player::load_sound(float *buffer, int num_packet)
         audio_last_call = av_gettime();
         audio_clock_base = audio.pts_base - (double)(audio.write_idx - audio.read_idx) / audio.sample_rate;
     }
+    double clock = audio_clock_base;
+    while (clock > 0x1FFFFFFFF / 90000.0) {
+        clock -= 0x1FFFFFFFF / 90000.0;
+    }
 
     struct stream_param *stream = (struct stream_param *)param;
     if (!isnan(stream->play_duration)) {
@@ -1272,12 +1278,12 @@ double Player::load_sound(float *buffer, int num_packet)
         if (!isnan(stream->start_skip)) {
             s = stream->start_skip;
         }
-        if (audio_clock_base - s > stream->play_duration) {
+        if (clock - s > stream->play_duration) {
             Quit();
         }
     }
     
-    return audio_clock_base;
+    return clock;
 }
 
 static inline
@@ -1398,7 +1404,7 @@ void audio_thread(Player *is)
                     double pts = NAN;
                     if (pts_t != AV_NOPTS_VALUE) {
                         pts = av_q2d(is->audio.audio_st->time_base)*pts_t;
-                        pts -= av_q2d(AV_TIME_BASE_Q) * is->start_time_org;
+                        pts -= av_q2d(AV_TIME_BASE_Q) * ((is->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : is->pFormatCtx->start_time);
                     }
                     //av_log(NULL, AV_LOG_INFO, "audio pts %f\n", pts);
 
@@ -1527,10 +1533,7 @@ void Player::clear_soundbufer()
 
 void Player::seek(int64_t pos)
 {
-    if(start_time_org == AV_NOPTS_VALUE)
-        return;
-    
-    seek_pos = pos + start_time_org;
+    seek_pos = pos + ((pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : pFormatCtx->start_time);
     seek_req_type = seek_type_pos;
 }
 

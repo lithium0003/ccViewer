@@ -686,6 +686,13 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
     }
     
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
+        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+            if let data = try? Data(contentsOf: cache) {
+                os_log("%{public}@", log: log, type: .debug, "hit cache(google:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+                onFinish?(data)
+                return
+            }
+        }
         if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
             if cancelTime.timeIntervalSinceNow > 0 {
                 cancelTime = Date(timeIntervalSinceNow: 0.5)
@@ -747,6 +754,9 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
                         }
                         return
                     }
+                }
+                if let d = data {
+                    CloudFactory.shared.cache.saveCache(storage: self.storageName!, id: fileId, offset: start ?? 0, data: d)
                 }
                 onFinish?(data)
             }

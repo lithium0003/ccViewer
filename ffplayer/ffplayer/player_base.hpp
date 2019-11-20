@@ -161,7 +161,6 @@ public:
     } VideoInfo;
     VideoInfo video;
 
-    int64_t         start_time_org = AV_NOPTS_VALUE;
     enum seek_type {
         seek_type_none,
         seek_type_pos,

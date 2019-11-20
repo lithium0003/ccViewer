@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="15508" systemVersion="19B88" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="FileCacheItem" representedClassName="FileCacheItem" syncable="YES" codeGenerationType="class">
+        <attribute name="chunkOffset" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="chunkSize" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="filename" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="mdate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="orgSize" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="rdate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="storage" optional="YES" attributeType="String"/>
+    </entity>
+    <elements>
+        <element name="FileCacheItem" positionX="-63" positionY="-18" width="128" height="163"/>
+    </elements>
+</model>

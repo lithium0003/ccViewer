@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import RemoteCloud
 
 class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
 
@@ -77,7 +78,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     NSLocalizedString("Partial Play", comment: ""),     //6
                     NSLocalizedString("Player control", comment: ""),   //7
                     NSLocalizedString("Cast converter", comment: ""),   //8
-                    NSLocalizedString("Help", comment: "")              //9
+                    NSLocalizedString("Network cache", comment: ""),    //9
+                    NSLocalizedString("Help", comment: "")              //10
                     ]
     let settings = [["Password"],
                     [NSLocalizedString("Run one more", comment: "")],
@@ -99,6 +101,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                      NSLocalizedString("Keep open when done", comment: "")],
                     [NSLocalizedString("Ignore overlay subtiles", comment: ""),
                      NSLocalizedString("Auto select streams", comment: "")],
+                    [NSLocalizedString("Current cache size", comment: ""),
+                     NSLocalizedString("Cache limit", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
                      NSLocalizedString("Version", comment: "")]
@@ -276,6 +280,30 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             cell.accessoryView = aSwitch
         case 9:
             switch indexPath.row {
+            case 0:
+                let formatter2 = ByteCountFormatter()
+                formatter2.allowedUnits = [.useAll]
+                formatter2.countStyle = .file
+                let s2 = formatter2.string(fromByteCount: Int64(CloudFactory.shared.cache.getCacheSize()))
+                cell.detailTextLabel?.text = s2
+            case 1:
+                let limit = CloudFactory.shared.cache.cacheMaxSize
+                if limit > 0 {
+                    let formatter2 = ByteCountFormatter()
+                    formatter2.allowedUnits = [.useAll]
+                    formatter2.countStyle = .file
+                    let s2 = formatter2.string(fromByteCount: Int64(limit))
+                    cell.detailTextLabel?.text = s2
+                }
+                else {
+                    cell.detailTextLabel?.text = NSLocalizedString("Not use", comment: "")
+                }
+                cell.accessoryType = .disclosureIndicator
+            default:
+                break
+            }
+        case 10:
+            switch indexPath.row {
             case 0...1:
                 cell.accessoryType = .detailButton
             case 2:
@@ -339,6 +367,35 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         self.tableView.deselectRow(at: indexPath, animated: true)
         self.view.endEditing(true)
+
+        switch indexPath.section {
+            case 9:
+                switch indexPath.row {
+                case 1:
+                    let contentVC = SizePickerViewController()
+                    contentVC.modalPresentationStyle = .popover
+                    contentVC.preferredContentSize = CGSize(width: 300, height: 200)
+                    var rect = tableView.rectForRow(at: indexPath)
+                    rect = CGRect(x: view.frame.width - 30, y: rect.minY, width: 30, height: rect.height)
+                    contentVC.popoverPresentationController?.sourceRect = rect
+                    contentVC.popoverPresentationController?.sourceView = view
+                    contentVC.popoverPresentationController?.permittedArrowDirections = .any
+                    contentVC.popoverPresentationController?.delegate = self
+                    contentVC.initalValue = CloudFactory.shared.cache.cacheMaxSize
+                    contentVC.onSelect = { size in
+                        CloudFactory.shared.cache.cacheMaxSize = size
+                        CloudFactory.shared.cache.increseFreeSpace()
+                        DispatchQueue.main.asyncAfter(deadline: .now()+2) {
+                            self.tableView.reloadData()
+                        }
+                    }
+                    present(contentVC, animated: true, completion: nil)
+                default:
+                    break
+                }
+        default:
+            break
+        }
     }
 
     override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) {
@@ -352,7 +409,7 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             default:
                 break
             }
-        case 9:
+        case 10:
             switch indexPath.row {
             case 0:
                 let url = URL(string: NSLocalizedString("Online help URL", comment: ""))!
@@ -391,5 +448,101 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         // Pass the selected object to the new view controller.
     }
     */
-
 }
+
+extension TableViewControllerSetting: UIPopoverPresentationControllerDelegate {
+
+    // for iPhone
+    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+        return .none
+    }
+}
+
+class SizePickerViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSource {
+    
+    let sizeKey = [
+        0: NSLocalizedString("Not use", comment: ""),
+        1*1000*1000: "1 MB",
+        5*1000*1000: "5 MB",
+        10*1000*1000: "10 MB",
+        50*1000*1000: "50 MB",
+        100*1000*1000: "100 MB",
+        200*1000*1000: "200 MB",
+        500*1000*1000: "500 MB",
+        1000*1000*1000: "1 GB",
+        2*1000*1000*1000: "2 GB",
+        3*1000*1000*1000: "3 GB",
+        5*1000*1000*1000: "5 GB",
+        10*1000*1000*1000: "10 GB",
+        15*1000*1000*1000: "15 GB",
+        20*1000*1000*1000: "20 GB",
+        25*1000*1000*1000: "25 GB",
+        30*1000*1000*1000: "30 GB",
+        40*1000*1000*1000: "40 GB",
+        50*1000*1000*1000: "50 GB",
+    ]
+    
+    var initalValue = 0
+    var onSelect: ((Int)->Void)?
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        if #available(iOS 13.0, *) {
+            view.backgroundColor = .systemBackground
+        } else {
+            view.backgroundColor = .white
+        }
+
+        let pickerView = UIPickerView()
+        pickerView.delegate = self
+        pickerView.dataSource = self
+        view.addSubview(pickerView)
+        
+        pickerView.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor).isActive = true
+        pickerView.heightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.heightAnchor).isActive = true
+        pickerView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor).isActive = true
+        pickerView.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor).isActive = true
+        
+        let val = sizeKey.keys.sorted()
+        if let idx = val.firstIndex(where: { $0 >= initalValue }) {
+            pickerView.selectRow(idx, inComponent: 0, animated: false)
+        }
+    }
+
+    func numberOfComponents(in pickerView: UIPickerView) -> Int {
+        return 1
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        return sizeKey.count
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, viewForRow row: Int, forComponent component: Int, reusing view: UIView?) -> UIView {
+
+        let pickerLabel: UILabel
+        if let v = view as? UILabel {
+            pickerLabel = v
+        }
+        else {
+            pickerLabel = UILabel()
+        }
+        pickerLabel.textAlignment = .center
+        if #available(iOS 13.0, *) {
+            pickerLabel.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+        }
+        else {
+            pickerLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .regular)
+        }
+        let key = sizeKey.keys.sorted()[row]
+        pickerLabel.text = sizeKey[key]
+        return pickerLabel
+    }
+    
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        let val = sizeKey.keys.sorted()[row]
+        onSelect?(val)
+    }
+}
+
+

@@ -233,6 +233,7 @@ public class CloudFactory {
     }
     
     public let data = dataItems()
+    public let cache = FileCache()
     
     public func getIcon(service: CloudStorages) -> UIImage? {
         switch service {

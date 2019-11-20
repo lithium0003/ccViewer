@@ -306,7 +306,7 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSTemporaryDirectory()) else {
             return
         }
-        let freesize = (attributes[FileAttributeKey.systemFreeSize] as? NSNumber)?.int64Value ?? 0
+        let freesize = (attributes[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
         
         if items[itemIdx].size >= freesize {
             let alart = UIAlertController(title: "No storage", message: "item is too big", preferredStyle: .alert)

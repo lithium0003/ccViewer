@@ -28,6 +28,8 @@
 		3F3ABABD2273119D002A8D16 /* pCloudStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */; };
 		3F92E7052336BFBA00D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7042336BFBA00D1FF9B /* Media.xcassets */; };
 		3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F987DEB2277608A0020A796 /* Cryptomator.swift */; };
+		3FA46CE223849615007ACC82 /* FileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE123849615007ACC82 /* FileCache.swift */; };
+		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
 		3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE23B1E2340B96200916DA6 /* UploadManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +68,8 @@
 		3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = pCloudStorage.swift; sourceTree = "<group>"; };
 		3F92E7042336BFBA00D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3F987DEB2277608A0020A796 /* Cryptomator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cryptomator.swift; sourceTree = "<group>"; };
+		3FA46CE123849615007ACC82 /* FileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCache.swift; sourceTree = "<group>"; };
+		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		3FE23B1E2340B96200916DA6 /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -131,6 +135,8 @@
 				3F3ABABA2272C707002A8D16 /* Secret.swift */,
 				3F92E7042336BFBA00D1FF9B /* Media.xcassets */,
 				3FE23B1E2340B96200916DA6 /* UploadManager.swift */,
+				3FA46CE123849615007ACC82 /* FileCache.swift */,
+				3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */,
 			);
 			path = RemoteCloud;
 			sourceTree = "<group>";
@@ -275,6 +281,7 @@
 				3CA2C95E2235569800481DB5 /* cloud.xcdatamodeld in Sources */,
 				3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */,
 				3CF14614223B29360025081A /* CryptRclone.swift in Sources */,
+				3FA46CE223849615007ACC82 /* FileCache.swift in Sources */,
 				3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */,
 				3C14C452225CE19E0044E4A7 /* CueSheet.swift in Sources */,
 				3C0654A122384BED003BD932 /* CryptCarotDAV.swift in Sources */,
@@ -287,6 +294,7 @@
 				3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */,
 				3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */,
 				3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */,
+				3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */,
 				3C400922224190920028A45A /* OneDriveStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -566,6 +574,16 @@
 			);
 			currentVersion = 3CA2C95D2235569800481DB5 /* cloud.xcdatamodel */;
 			path = cloud.xcdatamodeld;
+			sourceTree = "<group>";
+			versionGroupType = wrapper.xcdatamodel;
+		};
+		3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */ = {
+			isa = XCVersionGroup;
+			children = (
+				3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */,
+			);
+			currentVersion = 3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */;
+			path = cache.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
 		};

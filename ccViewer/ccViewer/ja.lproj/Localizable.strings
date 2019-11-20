@@ -83,3 +83,7 @@
 "Ignore overlay subtiles" = "焼き込み字幕を入れない";
 "Auto select streams" = "自動で映像と焼き込み字幕を選択する";
 
+"Network cache" = "通信キャッシュ設定";
+"Not use" = "使用しない";
+"Current cache size" = "使用キャッシュ量";
+"Cache limit" = "最大キャッシュサイズ";
