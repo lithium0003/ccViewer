@@ -27,6 +27,7 @@ public class FFPlayerViewController: UIViewController {
     var progressView: UIProgressView!
     var slider: UISlider!
     var imageView: UIImageView!
+    var artworkView: UIImageView!
     var button_close: UIButton!
     var play_image: UIImage!
     var pause_image: UIImage!
@@ -80,7 +81,17 @@ public class FFPlayerViewController: UIViewController {
         if bsec > 0 {
             skip_prevsec = bsec
         }
-        
+
+        artworkView = UIImageView()
+        artworkView.contentMode = .scaleAspectFit
+        view.addSubview(artworkView)
+
+        artworkView.translatesAutoresizingMaskIntoConstraints = false
+        artworkView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        artworkView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+        artworkView.widthAnchor.constraint(equalTo: view.widthAnchor).isActive = true
+        artworkView.heightAnchor.constraint(equalTo: view.heightAnchor).isActive = true
+
         imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
         view.addSubview(imageView)

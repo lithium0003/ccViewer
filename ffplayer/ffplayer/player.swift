@@ -149,7 +149,8 @@ class StreamBridge {
     var soundPTS: Double
     var videoPTS: Double
     var mediaDuration: Double
-
+    var image: MPMediaItemArtwork?
+    
     var selfref: UnsafeMutableRawPointer!
     var player: FFPlayerViewController!
     var sound: AudioQueuePlayer!
@@ -434,6 +435,35 @@ class StreamBridge {
         }
     }
 
+    func setupArtwork() {
+        var basename = remote.name
+        var parentId = remote.parent
+        if let subid = remote.subid, let subbase = CloudFactory.shared[remote.storage]?.get(fileId: subid) {
+            basename = subbase.name
+            parentId = subbase.parent
+        }
+        var components = basename.components(separatedBy: ".")
+        if components.count > 1 {
+            components.removeLast()
+            basename = components.joined(separator: ".")
+        }
+        
+        if let imageitem = CloudFactory.shared.data.getImage(storage: remote.storage, parentId: parentId, baseName: basename) {
+            if let imagestream = CloudFactory.shared[remote.storage]?.get(fileId: imageitem.id ?? "")?.open() {
+                imagestream.read(position: 0, length: Int(imageitem.size)) { data in
+                    if let data = data, let image = UIImage(data: data) {
+                        self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
+                            return image
+                        }
+                        DispatchQueue.main.async {
+                            self.player.artworkView.image = image
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     func run(parent: UIViewController, onFinish: @escaping (Int, Double)->Void) {
         var ret = -1
         var userBreak = false
@@ -499,6 +529,7 @@ class StreamBridge {
             }
             return t
         }
+        setupArtwork()
         var timer1: Timer?
         DispatchQueue.main.async {
             UIApplication.shared.isIdleTimerDisabled = true
@@ -739,11 +770,22 @@ class StreamBridge {
     }
     
     func updateMediaInfo() {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-            MPMediaItemPropertyTitle: name,
-            MPNowPlayingInfoPropertyPlaybackRate: get_pause(param) == 1 ? 0.0: 1.0,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
-            MPMediaItemPropertyPlaybackDuration: mediaDuration,
-        ]
+        if let image = image {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: name,
+                MPMediaItemPropertyArtwork: image,
+                MPNowPlayingInfoPropertyPlaybackRate: get_pause(param) == 1 ? 0.0: 1.0,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
+                MPMediaItemPropertyPlaybackDuration: mediaDuration,
+            ]
+        }
+        else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: name,
+                MPNowPlayingInfoPropertyPlaybackRate: get_pause(param) == 1 ? 0.0: 1.0,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
+                MPMediaItemPropertyPlaybackDuration: mediaDuration,
+            ]
+        }
     }
 }
