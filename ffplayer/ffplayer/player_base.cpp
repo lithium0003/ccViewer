@@ -378,7 +378,7 @@ int decode_thread(struct stream_param *stream)
                 char buf[AV_ERROR_MAX_STRING_SIZE];
                 char *errstr = av_make_error_string(buf, AV_ERROR_MAX_STRING_SIZE, ret1);
                 av_log(NULL, AV_LOG_ERROR, "error avformat_seek_file() %d %s\n", ret1, errstr);
-                error = true;
+                //error = true;
             }
             if (ret1 >=0) {
                 player->video.pictq_active_serial = player->subtitle.subpictq_active_serial = av_gettime();

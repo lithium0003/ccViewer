@@ -507,10 +507,17 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         
     func finishDisplay() {
         var ret = 0.0
-        if let len = playerViewController.player?.currentItem?.asset.duration.seconds,
-            let pos = playerViewController.player?.currentTime().seconds,
-            pos < len - 2 {
-            ret = pos
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            defer {
+                group.leave()
+            }
+            if let len = self.playerViewController.player?.currentItem?.asset.duration.seconds,
+                let pos = self.playerViewController.player?.currentTime().seconds,
+                pos < len - 2 {
+                ret = pos
+            }
         }
         playerViewController.player?.pause()
         iscancel = true
@@ -524,7 +531,9 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
             }
         }
         self.customDelegate.removeAll()
-        self.onFinish?(ret)
+        group.notify(queue: .main) {
+            self.onFinish?(ret)
+        }
     }
 }
 
