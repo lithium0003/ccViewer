@@ -99,15 +99,6 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
         }
     }
 
-    override var prefersStatusBarHidden: Bool {
-        return false
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        setNeedsStatusBarAppearanceUpdate()
-    }
-    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 

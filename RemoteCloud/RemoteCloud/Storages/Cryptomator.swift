@@ -595,8 +595,8 @@ public class Cryptomator: ChildStorage {
     func findParentStorage(baseId: String = "", onFinish: @escaping ([RemoteData])->Void){
         let fixId = baseId == "" ? baseRootFileId: baseId
         CloudFactory.shared[baseRootStorage]?.list(fileId: fixId) {
-            DispatchQueue.main.async {
-                let result = CloudFactory.shared.data.listData(storage: self.baseRootStorage, parentID: fixId)
+            let result = CloudFactory.shared.data.listData(storage: self.baseRootStorage, parentID: fixId)
+            DispatchQueue.global().async {
                 onFinish(result)
             }
         }
@@ -726,16 +726,10 @@ public class Cryptomator: ChildStorage {
         }
     }
 
-    func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, group: DispatchGroup) {
+    func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, context: NSManagedObjectContext) {
         os_log("%{public}@", log: log, type: .debug, "storeItem(cryptomator:\(storageName ?? "")) \(name)")
         
-        group.enter()
-        DispatchQueue.main.async {
-            defer {
-                group.leave()
-            }
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-
+        context.perform {
             let newid = "\(dirId)/\(deflatedName)"
             let newname = name
             let newcdate = item.cDate
@@ -745,13 +739,13 @@ public class Cryptomator: ChildStorage {
 
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? context.fetch(fetchRequest) {
                 for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+                    context.delete(object as! NSManagedObject)
                 }
             }
             
-            let newitem = RemoteData(context: viewContext)
+            let newitem = RemoteData(context: context)
             newitem.storage = self.storageName
             newitem.id = newid
             newitem.name = newname
@@ -771,7 +765,7 @@ public class Cryptomator: ChildStorage {
             else {
                 newitem.path = "\(path)/\(newname)"
             }
-            try? viewContext.save()
+            try? context.save()
         }
     }
     
@@ -780,14 +774,14 @@ public class Cryptomator: ChildStorage {
             onFinish?()
             return
         }
-
         let group = DispatchGroup()
-        group.enter()
         
+        group.enter()
         findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) { items in
             defer {
                 group.leave()
             }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             for item in items {
                 if item.name.hasSuffix(self.LONG_NAME_FILE_EXT) {
                     // long name
@@ -807,10 +801,14 @@ public class Cryptomator: ChildStorage {
                             return
                         }
                         if t == .directory {
-                            self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, group: group)
+                            self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
                         }
                         else if t == .regular {
-                            self.storeItem(parentId: fileId,item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, group: group)
+                            self.storeItem(parentId: fileId,item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
+                        }
+                        group.enter()
+                        backgroundContext.perform {
+                            group.leave()
                         }
                     }
                 }
@@ -823,15 +821,18 @@ public class Cryptomator: ChildStorage {
                         continue
                     }
                     if t == .directory {
-                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, group: group)
+                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
                     }
                     else if t == .regular {
-                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, group: group)
+                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
+                    }
+                    group.enter()
+                    backgroundContext.perform {
+                        group.leave()
                     }
                 }
             }
         }
-        
         group.notify(queue: .global()) {
             onFinish?()
         }
@@ -1135,12 +1136,12 @@ public class Cryptomator: ChildStorage {
                             return
                         }
                         
-                        DispatchQueue.main.async {
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                        CloudFactory.shared.data.persistentContainer.performBackgroundTask {
+                            context in
                             var ret: String?
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, self.baseRootStorage)
-                            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                                 if let item = items.first {
                                     let newid = "\(parentDirId)/\(deflatedName ?? encDirname)"
                                     let newcdate = item.cdate
@@ -1148,13 +1149,13 @@ public class Cryptomator: ChildStorage {
                                     
                                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                                    if let result = try? viewContext.fetch(fetchRequest) {
+                                    if let result = try? context.fetch(fetchRequest) {
                                         for object in result {
-                                            viewContext.delete(object as! NSManagedObject)
+                                            context.delete(object as! NSManagedObject)
                                         }
                                     }
 
-                                    let newitem = RemoteData(context: viewContext)
+                                    let newitem = RemoteData(context: context)
                                     newitem.storage = self.storageName
                                     newitem.id = newid
                                     newitem.name = newname
@@ -1175,7 +1176,7 @@ public class Cryptomator: ChildStorage {
                                         newitem.path = "\(parentPath)/\(newname)"
                                     }
                                     ret = newid
-                                    try? viewContext.save()
+                                    try? context.save()
                                 }
                             }
                             
@@ -1315,14 +1316,14 @@ public class Cryptomator: ChildStorage {
                                                                 ret = false
                                                                 return
                                                             }
-                                                            DispatchQueue.main.async {
-                                                                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                                                            CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                                                                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                                                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName!)
-                                                                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                                                                if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                                                                     for item in items {
-                                                                        viewContext.delete(item)
+                                                                        context.delete(item)
                                                                     }
+                                                                    try? context.save()
                                                                 }
                                                             }
                                                         }
@@ -1359,14 +1360,14 @@ public class Cryptomator: ChildStorage {
                                             ret = false
                                             return
                                         }
-                                        DispatchQueue.main.async {
-                                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                                        CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName!)
-                                            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                                            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                                                 for item in items {
-                                                    viewContext.delete(item)
+                                                    context.delete(item)
                                                 }
+                                                try? context.save()
                                             }
                                         }
                                     }
@@ -1444,23 +1445,23 @@ public class Cryptomator: ChildStorage {
                                 }
                             }
                         }
-                        group3.notify(queue: .main) {
+                        group3.notify(queue: .global()) {
                             DispatchQueue.global().async {
                                 self.removeDirCache(fileId: fileId)
                             }
                             
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-                            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                                for item in items {
-                                    viewContext.delete(item)
+                            CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
+                                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
+                                if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
+                                    for item in items {
+                                        context.delete(item)
+                                    }
+                                    try? context.save()
                                 }
-                                try? viewContext.save()
-                            }
-                            
-                            DispatchQueue.global().async {
-                                onFinish?(ret)
+                                DispatchQueue.global().async {
+                                    onFinish?(ret)
+                                }
                             }
                         }
                     }
@@ -1514,15 +1515,14 @@ public class Cryptomator: ChildStorage {
                         }
                         self.removeDirCache(dirId: parentDirId)
                         
-                        DispatchQueue.main.async {
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                        CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-                            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                                 for item in items {
-                                    viewContext.delete(item)
+                                    context.delete(item)
                                 }
-                                try? viewContext.save()
+                                try? context.save()
                             }
                             
                             DispatchQueue.global().async {
@@ -1563,29 +1563,42 @@ public class Cryptomator: ChildStorage {
             return
         }
         
-        let group = DispatchGroup()
-        var going = true
-        var parentPath = ""
+        var parentPath1: String?
         var parentId = c.parent
         if parentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
                 if let result = try? viewContext.fetch(fetchRequest) {
                     if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                        return
+                        parentPath1 = items.first?.path ?? ""
                     }
                 }
-                going = false
+            }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath1 = items.first?.path ?? ""
+                        }
+                    }
+                }
             }
         }
+        guard let parentPath = parentPath1 else {
+            DispatchQueue.global().async {
+                onFinish?(nil)
+            }
+            return
+        }
         
+        var going = true
         let group2 = DispatchGroup()
         guard let ename = self.encryptFilename(cleartextName: newname, dirId: parentDirId) else {
             onFinish?(nil)
@@ -1599,14 +1612,9 @@ public class Cryptomator: ChildStorage {
         else {
             deflatedName = self.deflate(longFileName: encFilename)
             group2.enter()
-            group.notify(queue: .global()) {
-                guard going else {
-                    return
-                }
-                self.uploadMetadataFile(shortName: deflatedName!, orgName: encFilename) { success in
-                    going = going && success
-                    group2.leave()
-                }
+            self.uploadMetadataFile(shortName: deflatedName!, orgName: encFilename) { success in
+                going = going && success
+                group2.leave()
             }
         }
 
@@ -1672,12 +1680,11 @@ public class Cryptomator: ChildStorage {
 
                 self.removeDirCache(dirId: parentDirId)
                 
-                DispatchQueue.main.async {
+                CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                     var ret: String? = nil
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                    if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                         if let item = items.first {
                             let newid = "\(parentDirId)/\(deflatedName ?? encFilename)"
                             let newname = newname
@@ -1686,7 +1693,7 @@ public class Cryptomator: ChildStorage {
                             let newfolder = item.folder
                             let newsize = item.size
                             
-                            let newitem = RemoteData(context: viewContext)
+                            let newitem = RemoteData(context: context)
                             newitem.storage = self.storageName
                             newitem.id = newid
                             newitem.name = newname
@@ -1710,10 +1717,10 @@ public class Cryptomator: ChildStorage {
                         }
                         if ret != nil {
                             for item in items {
-                                viewContext.delete(item)
+                                context.delete(item)
                             }
                         }
-                        try? viewContext.save()
+                        try? context.save()
                     }
                     
                     DispatchQueue.global().async {
@@ -1754,16 +1761,14 @@ public class Cryptomator: ChildStorage {
                     return
                 }
                 
-                DispatchQueue.main.async {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-
+                CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                     var newcdate: Date? = nil
                     var newmdate: Date? = nil
                     var newId: String? = nil
 
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.baseRootStorage)
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                    if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                         if let baseItem = items.first {
                             newcdate = baseItem.cdate
                             newmdate = baseItem.mdate
@@ -1771,11 +1776,11 @@ public class Cryptomator: ChildStorage {
                     }
                     let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-                    if let result = try? viewContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
+                    if let result = try? context.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
                         if let pitem = items1.first {
                             pitem.cdate = newcdate
                             pitem.mdate = newmdate
-                            try? viewContext.save()
+                            try? context.save()
                             
                             newId = pitem.id
                         }
@@ -1807,157 +1812,162 @@ public class Cryptomator: ChildStorage {
         }
         
         // first, find name for moving item
-        let group = DispatchGroup()
-        var orgname: String? = nil
+        var orgname1: String? = nil
         var isFolder = false
-        group.enter()
-        DispatchQueue.main.async {
-            defer {
-                group.leave()
-            }
+        if Thread.isMainThread {
             let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
             if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                 if let item = items.first {
-                    orgname = item.name
+                    orgname1 = item.name
                     isFolder = item.folder
                 }
             }
         }
+        else {
+            DispatchQueue.main.sync {
+                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                    if let item = items.first {
+                        orgname1 = item.name
+                        isFolder = item.folder
+                    }
+                }
+            }
+        }
         
-        group.notify(queue: .global()) {
-            guard let orgname = orgname else {
+        guard let orgname = orgname1 else {
+            onFinish?(nil)
+            return
+        }
+        
+        let array = fileId.components(separatedBy: "/")
+        let parentDirId = array[0]
+        let deflateId = array[1]
+        
+        guard let parentIdHash = self.resolveDirectory(dirId: parentDirId) else {
+            onFinish?(nil)
+            return
+        }
+        
+        self.resolveDirId(fileId: fixToParentId) { toParentDirId in
+            guard let toParentDirId = toParentDirId else {
+                onFinish?(nil)
+                return
+            }
+            guard let toParentIdHash = self.resolveDirectory(dirId: toParentDirId) else {
                 onFinish?(nil)
                 return
             }
             
-            let array = fileId.components(separatedBy: "/")
-            let parentDirId = array[0]
-            let deflateId = array[1]
-            
-            guard let parentIdHash = self.resolveDirectory(dirId: parentDirId) else {
-                onFinish?(nil)
-                return
-            }
-            
-            self.resolveDirId(fileId: fixToParentId) { toParentDirId in
-                guard let toParentDirId = toParentDirId else {
+            // find base item for toDir
+            self.findParentStorage(path: [self.DATA_DIR_NAME, String(toParentIdHash.prefix(2)), String(toParentIdHash.suffix(30))], expandDir: false) { toItems in
+                guard toItems.count > 0 else {
                     onFinish?(nil)
                     return
                 }
-                guard let toParentIdHash = self.resolveDirectory(dirId: toParentDirId) else {
-                    onFinish?(nil)
-                    return
-                }
+                let toItem = toItems[0] //baseItem for toDir
                 
-                // find base item for toDir
-                self.findParentStorage(path: [self.DATA_DIR_NAME, String(toParentIdHash.prefix(2)), String(toParentIdHash.suffix(30))], expandDir: false) { toItems in
-                    guard toItems.count > 0 else {
+                // find base item for moving item
+                self.findParentStorage(path: [self.DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expandDir: false) { items in
+                    guard items.count > 0 else {
                         onFinish?(nil)
                         return
                     }
-                    let toItem = toItems[0] //baseItem for toDir
+                    let item = items[0] //baseItem for moving
                     
-                    // find base item for moving item
-                    self.findParentStorage(path: [self.DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expandDir: false) { items in
-                        guard items.count > 0 else {
+                    // move base item to toDir
+                    item.move(toParentId: toItem.id) { newBaseId in
+                        guard let newBaseId = newBaseId else {
                             onFinish?(nil)
                             return
                         }
-                        let item = items[0] //baseItem for moving
                         
-                        // move base item to toDir
-                        item.move(toParentId: toItem.id) { newBaseId in
-                            guard let newBaseId = newBaseId else {
+                        // parent dirid is changed, encrypted name will be changed
+                        guard let encFilename = self.encryptFilename(cleartextName: orgname, dirId: toParentDirId) else {
+                            onFinish?(nil)
+                            return
+                        }
+                        let uploadname = isFolder ? "0"+encFilename : encFilename
+                        let deflatedName: String?
+                        var done = false
+                        let group2 = DispatchGroup()
+                        if encFilename.count <= 129 {
+                            deflatedName = nil
+                            done = true
+                        }
+                        else {
+                            // long name
+                            deflatedName = self.deflate(longFileName: uploadname)
+                            group2.enter()
+                            self.uploadMetadataFile(shortName: deflatedName!, orgName: uploadname) { success in
+                                done = success
+                                group2.leave()
+                            }
+                        }
+                        
+                        group2.notify(queue: .global()) {
+                            guard done else {
                                 onFinish?(nil)
                                 return
                             }
                             
-                            // parent dirid is changed, encrypted name will be changed
-                            guard let encFilename = self.encryptFilename(cleartextName: orgname, dirId: toParentDirId) else {
+                            // rename to new encrypted name
+                            guard let newBaseItem = CloudFactory.shared[self.baseRootStorage]?.get(fileId: newBaseId == "" ? self.baseRootFileId : newBaseId) else {
                                 onFinish?(nil)
                                 return
                             }
-                            let uploadname = isFolder ? "0"+encFilename : encFilename
-                            let deflatedName: String?
-                            var done = false
-                            let group2 = DispatchGroup()
-                            if encFilename.count <= 129 {
-                                deflatedName = nil
-                                done = true
-                            }
-                            else {
-                                // long name
-                                deflatedName = self.deflate(longFileName: uploadname)
-                                group2.enter()
-                                self.uploadMetadataFile(shortName: deflatedName!, orgName: uploadname) { success in
-                                    done = success
-                                    group2.leave()
-                                }
-                            }
-                            
-                            group2.notify(queue: .global()) {
-                                guard done else {
+                            newBaseItem.rename(newname: deflatedName ?? uploadname) { nbItem in
+                                guard nbItem != nil else {
                                     onFinish?(nil)
                                     return
                                 }
                                 
-                                // rename to new encrypted name
-                                guard let newBaseItem = CloudFactory.shared[self.baseRootStorage]?.get(fileId: newBaseId == "" ? self.baseRootFileId : newBaseId) else {
-                                    onFinish?(nil)
-                                    return
-                                }
-                                newBaseItem.rename(newname: deflatedName ?? uploadname) { nbItem in
-                                    guard nbItem != nil else {
-                                        onFinish?(nil)
+                                // move done successfully
+                                self.removeDirCache(fileId: fromParentId)
+                                self.removeDirCache(fileId: toParentId)
+
+                                // if old id is longname, remove old matadata
+                                if deflateId.hasSuffix(self.LONG_NAME_FILE_EXT) {
+                                    guard let s = CloudFactory.shared[self.baseRootStorage] as? RemoteStorageBase else {
                                         return
                                     }
-                                    
-                                    // move done successfully
-                                    self.removeDirCache(fileId: fromParentId)
-                                    self.removeDirCache(fileId: toParentId)
 
-                                    // if old id is longname, remove old matadata
-                                    if deflateId.hasSuffix(self.LONG_NAME_FILE_EXT) {
-                                        guard let s = CloudFactory.shared[self.baseRootStorage] as? RemoteStorageBase else {
-                                            return
-                                        }
-
-                                        self.findParentStorage(path: [self.METADATA_DIR_NAME, String(deflateId.prefix(2)), String(deflateId.dropFirst(2).prefix(2))]) { metaItems in
-                                            for metaItem in metaItems {
-                                                if metaItem.name == deflateId {
-                                                    s.deleteItem(fileId: metaItem.id) { success2 in
-                                                    }
-                                                    return
+                                    self.findParentStorage(path: [self.METADATA_DIR_NAME, String(deflateId.prefix(2)), String(deflateId.dropFirst(2).prefix(2))]) { metaItems in
+                                        for metaItem in metaItems {
+                                            if metaItem.name == deflateId {
+                                                s.deleteItem(fileId: metaItem.id) { success2 in
                                                 }
+                                                return
                                             }
                                         }
                                     }
-                                    
-                                    // register record
-                                    DispatchQueue.main.async {
-                                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                                        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                                            if let item = items.first {
-                                                item.id = "\(toParentDirId)/\(deflatedName ?? uploadname)"
-                                                item.cdate = newBaseItem.cDate
-                                                item.mdate = newBaseItem.mDate
-                                                item.parent = toParentId
-                                                if toParentId == "" {
-                                                    item.path = "\(self.storageName ?? ""):/\(item.name ?? "")"
-                                                }
-                                                else {
-                                                    item.path = "\(toItem.path)/\(item.name ?? "")"
-                                                }
-                                                try? viewContext.save()
-                                                let newId = item.id
-                                                
-                                                DispatchQueue.global().async {
-                                                    onFinish?(newId)
-                                                }
+                                }
+                                
+                                // register record
+                                CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
+                                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                                    if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
+                                        if let item = items.first {
+                                            item.id = "\(toParentDirId)/\(deflatedName ?? uploadname)"
+                                            item.cdate = newBaseItem.cDate
+                                            item.mdate = newBaseItem.mDate
+                                            item.parent = toParentId
+                                            if toParentId == "" {
+                                                item.path = "\(self.storageName ?? ""):/\(item.name ?? "")"
+                                            }
+                                            else {
+                                                item.path = "\(toItem.path)/\(item.name ?? "")"
+                                            }
+                                            try? context.save()
+                                            let newId = item.id
+                                            
+                                            DispatchQueue.global().async {
+                                                onFinish?(newId)
                                             }
                                         }
                                     }
@@ -2039,12 +2049,11 @@ public class Cryptomator: ChildStorage {
                             }
                             self.removeDirCache(fileId: parentId)
                             
-                            DispatchQueue.main.async {
+                            CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
                                 var ret: String? = nil
-                                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, self.baseRootStorage)
-                                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                                if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                                     if let item = items.first {
                                         let newid = "\(dirId)/\(deflatedName ?? encFilename)"
                                         let newname = uploadname
@@ -2053,7 +2062,7 @@ public class Cryptomator: ChildStorage {
                                         let newfolder = item.folder
                                         let newsize = self.ConvertDecryptSize(size: item.size)
 
-                                        let newitem = RemoteData(context: viewContext)
+                                        let newitem = RemoteData(context: context)
                                         newitem.storage = self.storageName
                                         newitem.id = newid
                                         newitem.name = newname
@@ -2073,7 +2082,7 @@ public class Cryptomator: ChildStorage {
                                         else {
                                             newitem.path = "\(parentPath)/\(newname)"
                                         }
-                                        try? viewContext.save()
+                                        try? context.save()
                                         ret = newid
                                     }
                                 }

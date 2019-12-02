@@ -103,6 +103,7 @@ public class UploadManeger {
             if let i = self.uploadIdentifers.firstIndex(of: identifier) {
                 self.uploadIdentifers.remove(at: i)
             }
+            self.uploadSessions[identifier]?.position = self.uploadSessions[identifier]?.size ?? 0
             self.finishedSessions[identifier] = self.uploadSessions[identifier]
             self.finishedSessions[identifier]?.finishDate = Date()
             self.uploadSessions[identifier] = nil
@@ -161,10 +162,10 @@ class UploadItemCell: UITableViewCell {
             }
             if let p = info?.position, let s = info?.size, s != 0 {
                 let ratio = Float(p) / Float(s)
-                progressView.setProgress(ratio, animated: true)
+                progressView.setProgress(ratio, animated: false)
             }
             else {
-                progressView.setProgress(0, animated: true)
+                progressView.setProgress(0, animated: false)
             }
         }
     }

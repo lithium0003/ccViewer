@@ -17,7 +17,8 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
     
     var webAuthSession: ASWebAuthenticationSession?
-    
+    let uploadSemaphore = DispatchSemaphore(value: 5)
+
     public convenience init(name: String) {
         self.init()
         service = CloudFactory.getServiceName(service: .pCloud)
@@ -276,7 +277,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
     }
     
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, group: DispatchGroup?) {
+    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
         guard let id = item["id"] as? String else {
             return
         }
@@ -295,16 +296,13 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         let size = item["size"] as? Int64 ?? 0
         let hashint = item["hash"] as? Int
         
-        group?.enter()
-        DispatchQueue.main.async {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        context.perform {
             var prevParent: String?
             var prevPath: String?
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? context.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
                         prevPath = item.path
@@ -312,11 +310,11 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                         prevPath = component?.dropLast().joined(separator: "/")
                         prevParent = item.parent
                     }
-                    viewContext.delete(object as! NSManagedObject)
+                    context.delete(object as! NSManagedObject)
                 }
             }
             
-            let newitem = RemoteData(context: viewContext)
+            let newitem = RemoteData(context: context)
             newitem.storage = self.storageName
             newitem.id = id
             newitem.name = name
@@ -338,9 +336,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     newitem.path = "\(path)/\(name)"
                 }
             }
-            group?.leave()
         }
-        
     }
 
     override func ListChildren(fileId: String, path: String, onFinish: (() -> Void)?) {
@@ -357,14 +353,12 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
         listFolder(folderId: folderId) { result in
             if let items = result {
-                let group = DispatchGroup()
-                
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
                 for item in items {
-                    self.storeItem(item: item, parentFileId: fileId, parentPath: path, group: group)
+                    self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
                 }
-                group.notify(queue: .main){
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?()
                     }
@@ -498,6 +492,15 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
     
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
+        
+        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+            if let data = try? Data(contentsOf: cache) {
+                os_log("%{public}@", log: log, type: .debug, "hit cache(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+                onFinish?(data)
+                return
+            }
+        }
+
         os_log("%{public}@", log: log, type: .debug, "readFile(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
         
         let id: Int
@@ -594,17 +597,14 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(nil)
                     return
                 }
-                let group = DispatchGroup()
-                group.enter()
                 DispatchQueue.global().async {
-                    self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(newid)
+                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                    backgroundContext.perform {
+                        try? backgroundContext.save()
+                        DispatchQueue.global().async {
+                            onFinish?(newid)
+                        }
                     }
                 }
             }
@@ -744,20 +744,19 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(false)
                     return
                 }
-                DispatchQueue.main.async {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
+                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundCountext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
+                    if let result = try? backgroundCountext.fetch(fetchRequest) {
                         for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                            backgroundCountext.delete(object as! NSManagedObject)
                         }
                     }
-                    
-                    self.deleteChildRecursive(parent: fileId)
-                    
-                    try? viewContext.save()
+                }
+                self.deleteChildRecursive(parent: fileId, context: backgroundCountext)
+                backgroundCountext.perform {
+                    try? backgroundCountext.save()
                     DispatchQueue.global().async {
                         onFinish?(true)
                     }
@@ -771,20 +770,19 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(false)
                     return
                 }
-                DispatchQueue.main.async {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
+                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundCountext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
+                    if let result = try? backgroundCountext.fetch(fetchRequest) {
                         for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                            backgroundCountext.delete(object as! NSManagedObject)
                         }
                     }
-
-                    self.deleteChildRecursive(parent: fileId)
-                    
-                    try? viewContext.save()
+                }
+                self.deleteChildRecursive(parent: fileId, context: backgroundCountext)
+                backgroundCountext.perform {
+                    try? backgroundCountext.save()
                     DispatchQueue.global().async {
                         onFinish?(true)
                     }
@@ -958,15 +956,10 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(nil)
                     return
                 }
-                let group = DispatchGroup()
-                group.enter()
-                DispatchQueue.global().async {
-                    self.storeItem(item: metadata, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                self.storeItem(item: metadata, context: backgroundContext)
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?(newid)
                     }
@@ -980,15 +973,10 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(nil)
                     return
                 }
-                let group = DispatchGroup()
-                group.enter()
-                DispatchQueue.global().async {
-                    self.storeItem(item: metadata, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                self.storeItem(item: metadata, context: backgroundContext)
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?(newid)
                     }
@@ -1020,13 +1008,9 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(nil)
                     return
                 }
-                let group = DispatchGroup()
                 var toParentPath = ""
                 if toParentId != "" {
-                    group.enter()
-                    DispatchQueue.main.async {
-                        defer { group.leave() }
-                        
+                    if Thread.isMainThread {
                         let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                         
                         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -1037,15 +1021,24 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                             }
                         }
                     }
+                    else {
+                        DispatchQueue.main.sync {
+                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                            if let result = try? viewContext.fetch(fetchRequest) {
+                                if let items = result as? [RemoteData] {
+                                    toParentPath = items.first?.path ?? ""
+                                }
+                            }
+                        }
+                    }
                 }
-                group.enter()
-                DispatchQueue.global().async {
-                    self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?(newid)
                     }
@@ -1059,13 +1052,9 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     onFinish?(nil)
                     return
                 }
-                let group = DispatchGroup()
                 var toParentPath = ""
                 if toParentId != "" {
-                    group.enter()
-                    DispatchQueue.main.async {
-                        defer { group.leave() }
-                        
+                    if Thread.isMainThread {
                         let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                         
                         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -1076,15 +1065,24 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                             }
                         }
                     }
+                    else {
+                        DispatchQueue.main.sync {
+                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                            if let result = try? viewContext.fetch(fetchRequest) {
+                                if let items = result as? [RemoteData] {
+                                    toParentPath = items.first?.path ?? ""
+                                }
+                            }
+                        }
+                    }
                 }
-                group.enter()
-                DispatchQueue.global().async {
-                    self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?(newid)
                     }
@@ -1124,13 +1122,9 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
         targetStream.open()
 
-        let group = DispatchGroup()
         var parentPath = "\(storageName ?? ""):/"
         if parentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -1141,105 +1135,133 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
-        group.notify(queue: .global()){
-            self.checkToken() { success in
-                guard success else {
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish?(nil)
-                    return
-                }
-                
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/uploadfile")!)
-                request.httpMethod = "POST"
-                request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-                let boundary = "Boundary-\(UUID().uuidString)"
-                request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-                
-                let boundaryText = "--\(boundary)\r\n"
-                var body = Data()
-                var footer = Data()
-                
-                body.append(boundaryText.data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"folderid\"\r\n\r\n".data(using: .utf8)!)
-                body.append(String(folderId).data(using: .utf8)!)
-                body.append("\r\n".data(using: .utf8)!)
-                body.append(boundaryText.data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"timeformat\"\r\n\r\n".data(using: .utf8)!)
-                body.append("timestamp".data(using: .utf8)!)
-                body.append("\r\n".data(using: .utf8)!)
-
-                body.append(boundaryText.data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; filename=\"\(uploadname)\"\r\n".data(using: .utf8)!)
-                body.append("Content-Length: \(fileSize)\r\n\r\n".data(using: .utf8)!)
-                //file body is here
-                footer.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-                
-                let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                guard let outStream = OutputStream(url: tmpurl, append: false) else {
-                    onFinish?(nil)
-                    return
-                }
-                outStream.open()
-                
-                guard body.withUnsafeBytes({ pointer in
-                    outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
-                }) == body.count else {
-                    outStream.close()
-                    try? FileManager.default.removeItem(at: tmpurl)
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish?(nil)
-                    return
-                }
-                
-                var offset = 0
-                while offset < fileSize {
-                    var buflen = Int(fileSize) - offset
-                    if buflen > 1024*1024 {
-                        buflen = 1024*1024
-                    }
-                    var buf:[UInt8] = [UInt8](repeating: 0, count: buflen)
-                    let len = targetStream.read(&buf, maxLength: buf.count)
-                    if len <= 0 || outStream.write(buf, maxLength: len) != len {
-                        print(targetStream.streamError!)
-                        outStream.close()
-                        try? FileManager.default.removeItem(at: tmpurl)
-                        targetStream.close()
-                        try? FileManager.default.removeItem(at: target)
-                        onFinish?(nil)
-                        return
-                    }
-                    offset += len
-                }
-
-                guard footer.withUnsafeBytes({ pointer in
-                    outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
-                }) == footer.count else {
-                    outStream.close()
-                    try? FileManager.default.removeItem(at: tmpurl)
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish?(nil)
-                    return
-                }
-
+        uploadSemaphore.wait()
+        self.checkToken() { success in
+            let onFinish: (String?)->Void = { id in
+                self.uploadSemaphore.signal()
+                onFinish?(id)
+            }
+            guard success else {
                 targetStream.close()
-                outStream.close()
+                try? FileManager.default.removeItem(at: target)
+                onFinish(nil)
+                return
+            }
+            
+            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/uploadfile")!)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            
+            let boundaryText = "--\(boundary)\r\n"
+            var body = Data()
+            var footer = Data()
+            
+            body.append(boundaryText.data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"folderid\"\r\n\r\n".data(using: .utf8)!)
+            body.append(String(folderId).data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
+            body.append(boundaryText.data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"timeformat\"\r\n\r\n".data(using: .utf8)!)
+            body.append("timestamp".data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
 
-                #if !targetEnvironment(macCatalyst)
-                let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
-                //config.isDiscretionary = true
-                config.sessionSendsLaunchEvents = true
-                #else
-                let config = URLSessionConfiguration.default
-                #endif
-                let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-                self.sessions += [session]
+            body.append(boundaryText.data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; filename=\"\(uploadname)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Length: \(fileSize)\r\n\r\n".data(using: .utf8)!)
+            //file body is here
+            footer.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+            
+            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
+            guard let outStream = OutputStream(url: tmpurl, append: false) else {
+                onFinish(nil)
+                return
+            }
+            outStream.open()
+            
+            guard body.withUnsafeBytes({ pointer in
+                outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
+            }) == body.count else {
+                outStream.close()
+                try? FileManager.default.removeItem(at: tmpurl)
+                targetStream.close()
+                try? FileManager.default.removeItem(at: target)
+                onFinish(nil)
+                return
+            }
+            
+            var offset = 0
+            while offset < fileSize {
+                var buflen = Int(fileSize) - offset
+                if buflen > 1024*1024 {
+                    buflen = 1024*1024
+                }
+                var buf:[UInt8] = [UInt8](repeating: 0, count: buflen)
+                let len = targetStream.read(&buf, maxLength: buf.count)
+                if len <= 0 || outStream.write(buf, maxLength: len) != len {
+                    print(targetStream.streamError!)
+                    outStream.close()
+                    try? FileManager.default.removeItem(at: tmpurl)
+                    targetStream.close()
+                    try? FileManager.default.removeItem(at: target)
+                    onFinish(nil)
+                    return
+                }
+                offset += len
+            }
+
+            guard footer.withUnsafeBytes({ pointer in
+                outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
+            }) == footer.count else {
+                outStream.close()
+                try? FileManager.default.removeItem(at: tmpurl)
+                targetStream.close()
+                try? FileManager.default.removeItem(at: target)
+                onFinish(nil)
+                return
+            }
+
+            targetStream.close()
+            outStream.close()
+
+            do {
+                let attr = try FileManager.default.attributesOfItem(atPath: tmpurl.path)
+                let fileSize = attr[.size] as! UInt64
                 
-                let task = session.uploadTask(with: request, fromFile: tmpurl)
-                let taskid = task.taskIdentifier
+                UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+            }
+            catch {
+                print(error)
+                try? FileManager.default.removeItem(at: tmpurl)
+                try? FileManager.default.removeItem(at: target)
+                onFinish(nil)
+                return
+            }
+            
+            let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
+            //config.isDiscretionary = true
+            config.sessionSendsLaunchEvents = true
+            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+            self.sessions += [session]
+            
+            let task = session.uploadTask(with: request, fromFile: tmpurl)
+            let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+            self.taskQueue.async {
                 self.task_upload[taskid] = ["data": Data(), "tmpfile": tmpurl, "parentId": parentId, "parentPath": parentPath]
                 self.onFinsh_upload[taskid] = onFinish
                 task.resume()
@@ -1247,22 +1269,26 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
     }
 
-    var task_upload = [Int: [String: Any]]()
-    var onFinsh_upload = [Int: ((String?)->Void)?]()
+    var task_upload = [String: [String: Any]]()
+    var onFinsh_upload = [String: ((String?)->Void)?]()
     var sessions = [URLSession]()
-    
+    let taskQueue = DispatchQueue(label: "taskDict")
+
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        if var taskdata = self.task_upload[dataTask.taskIdentifier] {
+        let taskid = (session.configuration.identifier ?? "") + ".\(dataTask.taskIdentifier)"
+        if var taskdata = taskQueue.sync(execute: { self.task_upload[taskid] }) {
             guard var recvData = taskdata["data"] as? Data else {
                 return
             }
             recvData.append(data)
             taskdata["data"] = recvData
-            self.task_upload[dataTask.taskIdentifier] = taskdata
+            taskQueue.async {
+                self.task_upload[taskid] = taskdata
+            }
         }
     }
 
@@ -1276,11 +1302,16 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let taskdata = self.task_upload.removeValue(forKey: task.taskIdentifier) else {
+        let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+        guard let taskdata = taskQueue.sync(execute: {
+            self.task_upload.removeValue(forKey: taskid)
+        }) else {
             print(task.response ?? "")
             return
         }
-        guard let onFinish = self.onFinsh_upload.removeValue(forKey: task.taskIdentifier) else {
+        guard let onFinish = taskQueue.sync(execute: {
+            self.onFinsh_upload.removeValue(forKey: taskid)
+        }) else {
             print("onFinish not found")
             return
         }
@@ -1320,20 +1351,14 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 print(object)
                 throw RetryError.Failed
             }
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.global().async {
-                self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, group: group)
-                group.leave()
-            }
-            group.notify(queue: .main) {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                try? viewContext.save()
+            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundCountext)
+            backgroundCountext.perform {
+                try? backgroundCountext.save()
                 DispatchQueue.global().async {
                     onFinish?(newid)
                 }
             }
-
         }
         catch {
             onFinish?(nil)

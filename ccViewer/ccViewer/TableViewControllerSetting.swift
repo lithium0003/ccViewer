@@ -105,7 +105,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                      NSLocalizedString("Cache limit", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
-                     NSLocalizedString("Version", comment: "")]
+                     NSLocalizedString("Version", comment: ""),
+                     NSLocalizedString("About", comment: "")]
                     ]
     
     // MARK: - Table view data source
@@ -304,7 +305,7 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             }
         case 10:
             switch indexPath.row {
-            case 0...1:
+            case 0...1,3:
                 cell.accessoryType = .detailButton
             case 2:
                 cell.detailTextLabel?.text = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -417,6 +418,10 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             case 1:
                 let url = URL(string: NSLocalizedString("Privacy policy URL", comment: ""))!
                 UIApplication.shared.open(url)
+            case 3:
+                let storyboardAbout = UIStoryboard(name: "About", bundle: nil)
+                let next = storyboardAbout.instantiateViewController(withIdentifier: "AboutView")
+                self.present(next, animated: false)
             default:
                 break
             }

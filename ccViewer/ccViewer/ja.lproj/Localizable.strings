@@ -5,6 +5,8 @@
   Created by rei6 on 2019/03/19.
   Copyright © 2019 lithium03. All rights reserved.
 */
+"About CryptCloudViewer" = "CryptCloudViewerについて";
+
 "Require Authentication" = "認証が必要です";
 "Authentication failed" = "認証失敗しました";
 "Require password" = "パスワードが必要です";

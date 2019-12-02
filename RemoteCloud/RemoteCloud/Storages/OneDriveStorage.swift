@@ -17,7 +17,8 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     }
     
     var webAuthSession: ASWebAuthenticationSession?
-    
+    let uploadSemaphore = DispatchSemaphore(value: 5)
+
     public convenience init(name: String) {
         self.init()
         service = CloudFactory.getServiceName(service: .OneDrive)
@@ -279,7 +280,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         }
     }
 
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, group: DispatchGroup?) {
+    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
         guard let id = item["id"] as? String else {
             return
         }
@@ -301,16 +302,13 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         formatter.formatOptions.insert(.withFractionalSeconds)
         let formatter2 = ISO8601DateFormatter()
         
-        group?.enter()
-        DispatchQueue.main.async {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        context.perform {
             var prevParent: String?
             var prevPath: String?
 
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? context.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
                         prevPath = item.path
@@ -318,11 +316,11 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                         prevPath = component?.dropLast().joined(separator: "/")
                         prevParent = item.parent
                     }
-                    viewContext.delete(object as! NSManagedObject)
+                    context.delete(object as! NSManagedObject)
                 }
             }
             
-            let newitem = RemoteData(context: viewContext)
+            let newitem = RemoteData(context: context)
             newitem.storage = self.storageName
             newitem.id = id
             newitem.name = name
@@ -354,22 +352,19 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     newitem.path = "\(path)/\(name)"
                 }
             }
-            group?.leave()
         }
-
     }
     
     override func ListChildren(fileId: String, path: String, onFinish: (() -> Void)?) {
         listFiles(itemId: fileId, nextLink: "") { result in
             if let items = result {
-                let group = DispatchGroup()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
                 
                 for item in items {
-                    self.storeItem(item: item, parentFileId: fileId, parentPath: path, group: group)
+                    self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
                 }
-                group.notify(queue: .main){
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     DispatchQueue.global().async {
                         onFinish?()
                     }
@@ -506,6 +501,15 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     }
     
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
+        
+        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+            if let data = try? Data(contentsOf: cache) {
+                os_log("%{public}@", log: log, type: .debug, "hit cache(OneDrive:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+                onFinish?(data)
+                return
+            }
+        }
+
         os_log("%{public}@", log: log, type: .debug, "readFile(onedrive:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
         
         getLink(fileId: fileId, start: start, length: length, onFinish: onFinish)
@@ -574,24 +578,19 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     guard let id = json["id"] as? String else {
                         throw RetryError.Retry
                     }
-                    let group = DispatchGroup()
-                    group.enter()
-                    DispatchQueue.main.async {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                        
+                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    backgroundContext.perform {
                         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-                        if let result = try? viewContext.fetch(fetchRequest) {
+                        if let result = try? backgroundContext.fetch(fetchRequest) {
                             for object in result {
-                                viewContext.delete(object as! NSManagedObject)
+                                backgroundContext.delete(object as! NSManagedObject)
                             }
                         }
-                        self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, group: group)
-                        group.leave()
                     }
-                    group.notify(queue: .main) {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                        try? viewContext.save()
+                    self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                    backgroundContext.perform {
+                        try? backgroundContext.save()
                         DispatchQueue.global().async {
                             onFinish?(id)
                         }
@@ -659,20 +658,19 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                         throw RetryError.Failed
                     }
                     if httpResponse.statusCode == 204 {
-                        DispatchQueue.main.async {
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                            
+                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        backgroundContext.perform {
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                            if let result = try? viewContext.fetch(fetchRequest) {
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
                                 for object in result {
-                                    viewContext.delete(object as! NSManagedObject)
+                                    backgroundContext.delete(object as! NSManagedObject)
                                 }
                             }
-
-                            self.deleteChildRecursive(parent: fileId)
-                            
-                            try? viewContext.save()
+                        }
+                        self.deleteChildRecursive(parent: fileId, context: backgroundContext)
+                        backgroundContext.perform {
+                            try? backgroundContext.save()
                             DispatchQueue.global().async {
                                 onFinish?(true)
                             }
@@ -752,15 +750,10 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                         print(e)
                         throw RetryError.Retry
                     }
-                    let group = DispatchGroup()
-                    group.enter()
-                    DispatchQueue.global().async {
-                        self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, group: group)
-                        group.leave()
-                    }
-                    group.notify(queue: .main) {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                        try? viewContext.save()
+                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                    backgroundContext.perform {
+                        try? backgroundContext.save()
                         DispatchQueue.global().async {
                             onFinish?(true)
                         }
@@ -960,11 +953,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         }
         else {
             var toParentPath = ""
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -975,7 +964,20 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     }
                 }
             }
-            group.notify(queue: .global()) {
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            toParentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
+            DispatchQueue.global().sync {
                 let json: [String: Any] = ["parentReference": ["id": toParentId]]
                 self.updateItem(fileId: fileId, json: json, parentId: toParentId, parentPath: toParentPath, onFinish: onFinish)
             }
@@ -1003,12 +1005,8 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
         let len = targetStream.read(&buf, maxLength: buf.count)
 
         var parentPath = "\(storageName ?? ""):/"
-        let group = DispatchGroup()
         if parentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -1019,110 +1017,128 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
-        group.notify(queue: .global()) {
-            self.checkToken() { success in
-                do {
-                    guard success else {
-                        throw RetryError.Failed
-                    }
-                    guard self.apiEndPoint != "" else {
-                        throw RetryError.Failed
-                    }
-                    let attr = try FileManager.default.attributesOfItem(atPath: target.path)
-                    let fileSize = attr[.size] as! UInt64
-                    
-                    UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
-                    
-                    let path = (parentId == "") ? "root" : "items/\(parentId)"
-                    var allowedCharacterSet = CharacterSet.alphanumerics
-                    allowedCharacterSet.insert(charactersIn: "-._~")
-                    let encoded_name = uploadname.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)
-                    let url = "\(self.apiEndPoint)/\(path):/\(encoded_name!):/createUploadSession"
-                    var request: URLRequest = URLRequest(url: URL(string: url)!)
-                    request.httpMethod = "POST"
-                    request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-                    request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-                    let json: [String: Any] = [
-                            "@microsoft.graph.conflictBehavior": "rename"]
-                    let postData = try? JSONSerialization.data(withJSONObject: json)
-                    request.httpBody = postData
-                    
-                    let task = URLSession.shared.dataTask(with: request) {data, response, error in
-                        do {
-                            if let error = error {
-                                print(error)
-                                throw RetryError.Failed
-                            }
-                            guard let data = data else {
-                                print(response!)
-                                throw RetryError.Failed
-                            }
-                            print(String(data: data, encoding: .utf8) ?? "")
-                            guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                                throw RetryError.Failed
-                            }
-                            guard let uploadUrl = object["uploadUrl"] as? String else {
-                                throw RetryError.Failed
-                            }
+        uploadSemaphore.wait()
+        self.checkToken() { success in
+            let onFinish: (String?)->Void = { id in
+                self.uploadSemaphore.signal()
+                onFinish?(id)
+            }
+            do {
+                guard success else {
+                    throw RetryError.Failed
+                }
+                guard self.apiEndPoint != "" else {
+                    throw RetryError.Failed
+                }
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let fileSize = attr[.size] as! UInt64
+                
+                UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
+                
+                let path = (parentId == "") ? "root" : "items/\(parentId)"
+                var allowedCharacterSet = CharacterSet.alphanumerics
+                allowedCharacterSet.insert(charactersIn: "-._~")
+                let encoded_name = uploadname.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)
+                let url = "\(self.apiEndPoint)/\(path):/\(encoded_name!):/createUploadSession"
+                var request: URLRequest = URLRequest(url: URL(string: url)!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                let json: [String: Any] = [
+                        "@microsoft.graph.conflictBehavior": "rename"]
+                let postData = try? JSONSerialization.data(withJSONObject: json)
+                request.httpBody = postData
+                
+                let task = URLSession.shared.dataTask(with: request) {data, response, error in
+                    do {
+                        if let error = error {
+                            print(error)
+                            throw RetryError.Failed
+                        }
+                        guard let data = data else {
+                            print(response!)
+                            throw RetryError.Failed
+                        }
+                        print(String(data: data, encoding: .utf8) ?? "")
+                        guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                            throw RetryError.Failed
+                        }
+                        guard let uploadUrl = object["uploadUrl"] as? String else {
+                            throw RetryError.Failed
+                        }
 
-                            var request: URLRequest = URLRequest(url: URL(string: uploadUrl)!)
-                            request.httpMethod = "PUT"
+                        var request: URLRequest = URLRequest(url: URL(string: uploadUrl)!)
+                        request.httpMethod = "PUT"
 
-                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                            try? Data(bytes: buf, count: len).write(to: tmpurl)
+                        let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
+                        try? Data(bytes: buf, count: len).write(to: tmpurl)
 
-                            request.setValue("bytes 0-\(len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
+                        request.setValue("bytes 0-\(len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
 
-                            #if !targetEnvironment(macCatalyst)
-                            let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
-                            //config.isDiscretionary = true
-                            config.sessionSendsLaunchEvents = true
-                            #else
-                            let config = URLSessionConfiguration.default
-                            #endif
-                            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-                            self.sessions += [session]
+                        let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
+                        //config.isDiscretionary = true
+                        config.sessionSendsLaunchEvents = true
+                        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+                        self.sessions += [session]
 
-                            let task = session.uploadTask(with: request, fromFile: tmpurl)
-                            let taskid = task.taskIdentifier
+                        let task = session.uploadTask(with: request, fromFile: tmpurl)
+                        let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+                        self.taskQueue.async {
                             self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
                             self.onFinsh_upload[taskid] = onFinish
                             task.resume()
                         }
-                        catch {
-                            targetStream.close()
-                            try? FileManager.default.removeItem(at: target)
-                            onFinish?(nil)
-                        }
                     }
-                    task.resume()
+                    catch {
+                        targetStream.close()
+                        try? FileManager.default.removeItem(at: target)
+                        onFinish(nil)
+                    }
                 }
-                catch {
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish?(nil)
-                }
+                task.resume()
+            }
+            catch {
+                targetStream.close()
+                try? FileManager.default.removeItem(at: target)
+                onFinish(nil)
             }
         }
     }
     
-    var task_upload = [Int: [String: Any]]()
-    var onFinsh_upload = [Int: ((String?)->Void)?]()
+    var task_upload = [String: [String: Any]]()
+    var onFinsh_upload = [String: ((String?)->Void)?]()
     var sessions = [URLSession]()
-    
+    let taskQueue = DispatchQueue(label: "taskDict")
+
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         CloudFactory.shared.urlSessionDidFinishCallback?(session)
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        if var taskdata = self.task_upload[dataTask.taskIdentifier] {
+        let taskid = (session.configuration.identifier ?? "") + ".\(dataTask.taskIdentifier)"
+        if var taskdata = taskQueue.sync(execute: { self.task_upload[taskid] }) {
             guard var recvData = taskdata["data"] as? Data else {
                 return
             }
             recvData.append(data)
             taskdata["data"] = recvData
-            self.task_upload[dataTask.taskIdentifier] = taskdata
+            taskQueue.async {
+                self.task_upload[taskid] = taskdata
+            }
         }
     }
     
@@ -1135,11 +1151,16 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     }
     
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let taskdata = self.task_upload.removeValue(forKey: task.taskIdentifier) else {
+        let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+        guard let taskdata = taskQueue.sync(execute: {
+            self.task_upload.removeValue(forKey: taskid)
+        }) else {
             print(task.response ?? "")
             return
         }
-        guard let onFinish = self.onFinsh_upload.removeValue(forKey: task.taskIdentifier) else {
+        guard let onFinish = taskQueue.sync(execute: {
+            self.onFinsh_upload.removeValue(forKey: taskid)
+        }) else {
             print("onFinish not found")
             return
         }
@@ -1195,10 +1216,12 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                 request.httpMethod = "GET"
 
                 let task = session.downloadTask(with: request)
-                let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "size": fileSize, "orgtarget": target, "session": sessionId]
-                self.onFinsh_upload[taskid] = onFinish
-                task.resume()
+                let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+                taskQueue.async {
+                    self.task_upload[taskid] = ["upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "size": fileSize, "orgtarget": target, "session": sessionId]
+                    self.onFinsh_upload[taskid] = onFinish
+                    task.resume()
+                }
                 return
             }
             if let nextExpectedRanges = object["nextExpectedRanges"] as? [String] {
@@ -1215,10 +1238,12 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                 request.setValue("bytes \(offset)-\(offset+len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
 
                 let task = session.uploadTask(with: request, fromFile: tmpurl)
-                let taskid = task.taskIdentifier
-                self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-                self.onFinsh_upload[taskid] = onFinish
-                task.resume()
+                let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+                taskQueue.async {
+                    self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
+                    self.onFinsh_upload[taskid] = onFinish
+                    task.resume()
+                }
             }
             else {
                 guard let id = object["id"] as? String else {
@@ -1229,15 +1254,10 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
                     targetStream.close()
                     try? FileManager.default.removeItem(at: target)
                 }
-                let group = DispatchGroup()
-                group.enter()
-                DispatchQueue.global().async {
-                    self.storeItem(item: object, parentFileId: parentId, parentPath: parentPath, group: group)
-                    group.leave()
-                }
-                group.notify(queue: .main) {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                self.storeItem(item: object, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                backgroundContext.perform {
+                    try? backgroundContext.save()
                     print("done")
                     
                     self.sessions.removeAll(where: { $0.configuration.identifier == session.configuration.identifier })
@@ -1255,10 +1275,15 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
     }
     
     public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let taskdata = self.task_upload.removeValue(forKey: downloadTask.taskIdentifier) else {
+        let taskid = (session.configuration.identifier ?? "") + ".\(downloadTask.taskIdentifier)"
+        guard let taskdata = taskQueue.sync(execute: {
+            self.task_upload.removeValue(forKey: taskid)
+        }) else {
             return
         }
-        guard let onFinish = self.onFinsh_upload.removeValue(forKey: downloadTask.taskIdentifier) else {
+        guard let onFinish = taskQueue.sync(execute: {
+            self.onFinsh_upload.removeValue(forKey: taskid)
+        }) else {
             print("onFinish not found")
             return
         }
@@ -1321,10 +1346,12 @@ public class OneDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSession
             request.setValue("bytes \(offset)-\(offset+len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
             
             let task = session.uploadTask(with: request, fromFile: tmpurl)
-            let taskid = task.taskIdentifier
-            self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-            self.onFinsh_upload[taskid] = onFinish
-            task.resume()
+            let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
+            taskQueue.async {
+                self.task_upload[taskid] = ["target": targetStream, "data": Data(), "upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
+                self.onFinsh_upload[taskid] = onFinish
+                task.resume()
+            }
         }
         catch {
             onFinish?(nil)

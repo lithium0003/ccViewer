@@ -6,7 +6,7 @@ https://itunes.apple.com/jp/app/cryptcloudviewer/id1458528598?mt=8
 
 ## 説明
 暗号化したまま閲覧できるクラウドビューワです。
-クラウドストレージ: Google Drive, Dropbox, OneDrive, pCloud,ドキュメントフォルダ、
+クラウドストレージ: Google Drive, Dropbox, OneDrive, pCloud, WebDAV, ドキュメントフォルダ、
 暗号化: rclone, CarotDAV, Cryptomatorに対応しています。
 iOSで再生できるメディアファイルの他、ソフトウエアデコードによりmpeg2等の動画も再生できます。
 クラウドストレージのファイルを編集することも可能です(アップロード、フォルダ作成、リネーム、移動、削除)

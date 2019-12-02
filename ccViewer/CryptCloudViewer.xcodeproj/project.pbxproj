@@ -25,7 +25,6 @@
 		3CA2C9632235969900481DB5 /* TableViewControllerItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C9622235969900481DB5 /* TableViewControllerItems.swift */; };
 		3CBBC1812252F5C70014AB10 /* ViewControllerTutorialPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */; };
 		3CC48515225719160003C44A /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CC48514225719160003C44A /* CloudKit.framework */; };
-		3CC4851D2258945B0003C44A /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 3CC4851C2258945B0003C44A /* Settings.bundle */; };
 		3CC48521225AC1690003C44A /* NavigationControllerHide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC48520225AC1690003C44A /* NavigationControllerHide.swift */; };
 		3CEF9AC9223EE865008F90B5 /* ViewControllerPDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEF9AC8223EE865008F90B5 /* ViewControllerPDF.swift */; };
 		3CF15E7922370B9300328A90 /* ViewControllerText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF15E7822370B9300328A90 /* ViewControllerText.swift */; };
@@ -63,6 +62,9 @@
 		3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */; };
 		3F48A078237AFDFF008B6690 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; };
 		3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F84578A238E5039004E78EC /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F845789238E5039004E78EC /* SceneDelegate.swift */; };
+		3F84578C238E622C004E78EC /* About.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3F84578B238E622C004E78EC /* About.storyboard */; };
+		3F84578E238E6896004E78EC /* ViewControllerAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F84578D238E6896004E78EC /* ViewControllerAbout.swift */; };
 		3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7022336B1F700D1FF9B /* Media.xcassets */; };
 		3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D52322EC22005B086A /* ViewControllerConvert.swift */; };
 		3FC2F2392381355800EB747C /* ccViewer.help in Resources */ = {isa = PBXBuildFile; fileRef = 3FC2F2382381355800EB747C /* ccViewer.help */; };
@@ -127,7 +129,6 @@
 		3CA2C9622235969900481DB5 /* TableViewControllerItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerItems.swift; sourceTree = "<group>"; };
 		3CBBC1802252F5C70014AB10 /* ViewControllerTutorialPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerTutorialPage.swift; sourceTree = "<group>"; };
 		3CC48514225719160003C44A /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
-		3CC4851C2258945B0003C44A /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		3CC48520225AC1690003C44A /* NavigationControllerHide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationControllerHide.swift; sourceTree = "<group>"; };
 		3CEF9AC8223EE865008F90B5 /* ViewControllerPDF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerPDF.swift; sourceTree = "<group>"; };
 		3CF15E7822370B9300328A90 /* ViewControllerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerText.swift; sourceTree = "<group>"; };
@@ -181,6 +182,9 @@
 		3F19BC21232455C80040ED19 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimePickerKeyboard.swift; sourceTree = "<group>"; };
 		3F48A076237AFD99008B6690 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.6_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		3F845789238E5039004E78EC /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		3F84578B238E622C004E78EC /* About.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = About.storyboard; sourceTree = "<group>"; };
+		3F84578D238E6896004E78EC /* ViewControllerAbout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerAbout.swift; sourceTree = "<group>"; };
 		3F9151D5236C191600E5EF65 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.5_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
 		3F92E7022336B1F700D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3FA954D52322EC22005B086A /* ViewControllerConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerConvert.swift; sourceTree = "<group>"; };
@@ -271,7 +275,6 @@
 				3F19BC21232455C80040ED19 /* RemoteCloud.framework */,
 				3F19BC1E232455C80040ED19 /* ffplayer.framework */,
 				3F19BC1B232455C80040ED19 /* ffconverter.framework */,
-				3CC4851C2258945B0003C44A /* Settings.bundle */,
 				3CFCF697222F347A00843054 /* ccViewer */,
 				3CFCF6AF222F347B00843054 /* ccViewerTests */,
 				3CFCF6BA222F347B00843054 /* ccViewerUITests */,
@@ -296,6 +299,7 @@
 				3CA2C96122355E9B00481DB5 /* ccViewer.entitlements */,
 				3FC2F2382381355800EB747C /* ccViewer.help */,
 				3C0693342253CCD40040DC0B /* Info.plist */,
+				3F84578B238E622C004E78EC /* About.storyboard */,
 				3CFCF698222F347A00843054 /* AppDelegate.swift */,
 				3CA2C9582234DE2D00481DB5 /* CollectionViewControllerCloud.swift */,
 				3C40091122401D020028A45A /* CustomPlayerViewController.swift */,
@@ -303,6 +307,7 @@
 				3C0693472253DBD40040DC0B /* ProductManager.swift */,
 				3C0693482253DBD50040DC0B /* PurchaceManager.swift */,
 				3C0693492253DBD50040DC0B /* PurchaceViewController.swift */,
+				3F845789238E5039004E78EC /* SceneDelegate.swift */,
 				3CA2C9622235969900481DB5 /* TableViewControllerItems.swift */,
 				3C0D4418224B106C001FCAAC /* TableViewControllerItemsEdit.swift */,
 				3C79B383225FE3DE0036E22F /* TableViewControllerPlaylist.swift */,
@@ -310,6 +315,7 @@
 				3CFCF6C9222F351900843054 /* TableViewControllerRoot.swift */,
 				3CF89CEF22333C14002FF0B5 /* TableViewControllerSetting.swift */,
 				3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */,
+				3F84578D238E6896004E78EC /* ViewControllerAbout.swift */,
 				3FA954D52322EC22005B086A /* ViewControllerConvert.swift */,
 				3C0654A6223978BF003BD932 /* ViewControllerFirst.swift */,
 				3C06549E22381567003BD932 /* ViewControllerImage.swift */,
@@ -396,7 +402,6 @@
 				3CFCF693222F347A00843054 /* Resources */,
 				3CA2C9552234980C00481DB5 /* Embed Frameworks */,
 				3F9151E5236C463100E5EF65 /* ShellScript */,
-				3F1102F923704BAE00994810 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -526,11 +531,11 @@
 			files = (
 				3CFCF6A6222F347B00843054 /* LaunchScreen.storyboard in Resources */,
 				3C4009192240653C0028A45A /* Localizable.strings in Resources */,
+				3F84578C238E622C004E78EC /* About.storyboard in Resources */,
 				3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */,
 				3CFCF6A3222F347B00843054 /* Assets.xcassets in Resources */,
 				3FC2F2392381355800EB747C /* ccViewer.help in Resources */,
 				3CFCF69E222F347A00843054 /* Main.storyboard in Resources */,
-				3CC4851D2258945B0003C44A /* Settings.bundle in Resources */,
 				3C0693432253D1EC0040DC0B /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -552,23 +557,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		3F1102F923704BAE00994810 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nbuildPlist=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n\necho $buildPlist\nAPP_VERSION=$(/usr/libexec/PlistBuddy -c \"Print CFBundleShortVersionString\" $buildPlist)\n/usr/libexec/PlistBuddy -c \"Set :PreferenceSpecifiers:0:DefaultValue ${APP_VERSION}\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Settings.bundle/Root.plist\"\n";
-		};
 		3F9151E5236C463100E5EF65 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -599,6 +587,7 @@
 				3CA2C9592234DE2D00481DB5 /* CollectionViewControllerCloud.swift in Sources */,
 				3C06934B2253DBD50040DC0B /* PurchaceManager.swift in Sources */,
 				3C40091222401D020028A45A /* CustomPlayerViewController.swift in Sources */,
+				3F84578A238E5039004E78EC /* SceneDelegate.swift in Sources */,
 				3CF15E7922370B9300328A90 /* ViewControllerText.swift in Sources */,
 				3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */,
 				3C06934C2253DBD50040DC0B /* PurchaceViewController.swift in Sources */,
@@ -606,6 +595,7 @@
 				3CEF9AC9223EE865008F90B5 /* ViewControllerPDF.swift in Sources */,
 				3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */,
 				3C79B38622608C4D0036E22F /* TableViewControllerPlayListFolder.swift in Sources */,
+				3F84578E238E6896004E78EC /* ViewControllerAbout.swift in Sources */,
 				3C0654A7223978BF003BD932 /* ViewControllerFirst.swift in Sources */,
 				3CFCF6CD223059AF00843054 /* ViewControllerProtect.swift in Sources */,
 				3C06549F22381567003BD932 /* ViewControllerImage.swift in Sources */,
@@ -813,7 +803,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 60;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -848,7 +838,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 60;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;

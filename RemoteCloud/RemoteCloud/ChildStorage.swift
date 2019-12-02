@@ -360,7 +360,6 @@ public class ChildStorage: RemoteStorageBase {
         return size
     }
     
-
     override func ListChildren(fileId: String, path: String, onFinish: (() -> Void)?) {
         let fixFileId = (fileId == "") ? "\(baseRootStorage)\n\(baseRootFileId)" : fileId
         let array = fixFileId.components(separatedBy: .newlines)
@@ -371,62 +370,60 @@ public class ChildStorage: RemoteStorageBase {
             return
         }
         
-        let group = DispatchGroup()
-        group.enter()
         DispatchQueue.global().async {
             s.list(fileId: baseFileId) {
-                group.leave()
-            }
-        }
+                DispatchQueue.main.async {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
 
-        group.notify(queue: .main) {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", baseFileId, baseStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    let newid = "\(item.storage!)\n\(item.id!)"
-                    let newname = self.ConvertDecryptName(name: item.name!)
-                    let newcdate = item.cdate
-                    let newmdate = item.mdate
-                    let newfolder = item.folder
-                    let newsize = self.ConvertDecryptSize(size: item.size)
-                    
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                    fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", baseFileId, baseStorage)
+                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        for item in items {
+                            guard let storage = item.storage, let id = item.id, let name = item.name else {
+                                continue
+                            }
+                            let newid = "\(storage)\n\(id)"
+                            let newname = self.ConvertDecryptName(name: name)
+                            let newcdate = item.cdate
+                            let newmdate = item.mdate
+                            let newfolder = item.folder
+                            let newsize = self.ConvertDecryptSize(size: item.size)
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
+                            if let result = try? viewContext.fetch(fetchRequest) {
+                                for object in result {
+                                    viewContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                                
+                            let newitem = RemoteData(context: viewContext)
+                            newitem.storage = self.storageName
+                            newitem.id = newid
+                            newitem.name = newname
+                            let comp = newname.components(separatedBy: ".")
+                            if comp.count >= 1 {
+                                newitem.ext = comp.last!.lowercased()
+                            }
+                            newitem.cdate = newcdate
+                            newitem.mdate = newmdate
+                            newitem.folder = newfolder
+                            newitem.size = newsize
+                            newitem.hashstr = ""
+                            newitem.parent = fileId
+                            if fileId == "" {
+                                newitem.path = "\(self.storageName ?? ""):/\(newname)"
+                            }
+                            else {
+                                newitem.path = "\(path)/\(newname)"
+                            }
                         }
+                        try? viewContext.save()
                     }
-                        
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = self.storageName
-                    newitem.id = newid
-                    newitem.name = newname
-                    let comp = newname.components(separatedBy: ".")
-                    if comp.count >= 1 {
-                        newitem.ext = comp.last!.lowercased()
-                    }
-                    newitem.cdate = newcdate
-                    newitem.mdate = newmdate
-                    newitem.folder = newfolder
-                    newitem.size = newsize
-                    newitem.hashstr = ""
-                    newitem.parent = fileId
-                    if fileId == "" {
-                        newitem.path = "\(self.storageName ?? ""):/\(newname)"
-                    }
-                    else {
-                        newitem.path = "\(path)/\(newname)"
+                    DispatchQueue.global().async {
+                        onFinish?()
                     }
                 }
-                try? viewContext.save()
-            }
-            
-            DispatchQueue.global().async {
-                onFinish?()
             }
         }
     }
@@ -454,65 +451,64 @@ public class ChildStorage: RemoteStorageBase {
         }
 
         var newBaseId = ""
-        let group = DispatchGroup()
-        group.enter()
         DispatchQueue.global().async {
             s.mkdir(parentId: baseFileId, newname: self.ConvertEncryptName(name: newname, folder: true)) { id in
                 if let id = id {
                     newBaseId = id
                 }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            var ret: String?
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    let newid = "\(item.storage!)\n\(item.id!)"
-                    let newname = self.ConvertDecryptName(name: item.name!)
-                    let newcdate = item.cdate
-                    let newmdate = item.mdate
-                    let newfolder = item.folder
-                    let newsize = self.ConvertDecryptSize(size: item.size)
-                    
+                
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                
+                backgroundContext.perform {
+                    var ret: String?
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+                    if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        if let item = items.first {
+                            let newid = "\(item.storage!)\n\(item.id!)"
+                            let newname = self.ConvertDecryptName(name: item.name!)
+                            let newcdate = item.cdate
+                            let newmdate = item.mdate
+                            let newfolder = item.folder
+                            let newsize = self.ConvertDecryptSize(size: item.size)
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroundContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                            
+                            let newitem = RemoteData(context: backgroundContext)
+                            newitem.storage = self.storageName
+                            newitem.id = newid
+                            newitem.name = newname
+                            let comp = newname.components(separatedBy: ".")
+                            if comp.count >= 1 {
+                                newitem.ext = comp.last!.lowercased()
+                            }
+                            newitem.cdate = newcdate
+                            newitem.mdate = newmdate
+                            newitem.folder = newfolder
+                            newitem.size = newsize
+                            newitem.hashstr = ""
+                            newitem.parent = parentId
+                            if parentId == "" {
+                                newitem.path = "\(self.storageName ?? ""):/\(newname)"
+                            }
+                            else {
+                                newitem.path = "\(parentPath)/\(newname)"
+                            }
+                            ret = newid
+                            try? backgroundContext.save()
                         }
                     }
                     
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = self.storageName
-                    newitem.id = newid
-                    newitem.name = newname
-                    let comp = newname.components(separatedBy: ".")
-                    if comp.count >= 1 {
-                        newitem.ext = comp.last!.lowercased()
+                    DispatchQueue.global().async {
+                        onFinish?(ret)
                     }
-                    newitem.cdate = newcdate
-                    newitem.mdate = newmdate
-                    newitem.folder = newfolder
-                    newitem.size = newsize
-                    newitem.hashstr = ""
-                    newitem.parent = parentId
-                    if parentId == "" {
-                        newitem.path = "\(self.storageName ?? ""):/\(newname)"
-                    }
-                    else {
-                        newitem.path = "\(parentPath)/\(newname)"
-                    }
-                    ret = newid
-                    try? viewContext.save()
                 }
-            }
-            
-            DispatchQueue.global().async {
-                onFinish?(ret)
             }
         }
     }
@@ -535,34 +531,29 @@ public class ChildStorage: RemoteStorageBase {
             return
         }
         
-        var done = false
-        let group = DispatchGroup()
-        group.enter()
         DispatchQueue.global().async {
             s.delete(fileId: baseFileId) { success in
-                done = success
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            guard done else {
-                DispatchQueue.global().async {
-                    onFinish?(false)
+                guard success else {
+                    DispatchQueue.global().async {
+                        onFinish?(false)
+                    }
+                    return
                 }
-                return
-            }
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    viewContext.delete(item)
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundContext.perform {
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
+                    if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        for item in items {
+                            backgroundContext.delete(item)
+                        }
+                        try? backgroundContext.save()
+                    }
+                    
+                    DispatchQueue.global().async {
+                        onFinish?(true)
+                    }
                 }
-                try? viewContext.save()
-            }
-            
-            DispatchQueue.global().async {
-                onFinish?(true)
             }
         }
     }
@@ -589,14 +580,10 @@ public class ChildStorage: RemoteStorageBase {
             return
         }
         
-        let group = DispatchGroup()
         var parentPath = ""
-        var parentId = c.parent
+        let parentId = c.parent
         if parentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -607,74 +594,87 @@ public class ChildStorage: RemoteStorageBase {
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
         var newBaseId = ""
-        group.enter()
         DispatchQueue.global().async {
             b.rename(newname: self.ConvertEncryptName(name: newname, folder: b.isFolder)) { id in
                 if let id = id {
                     newBaseId = id
                 }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-            if let result = try? viewContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
-                for item in items1 {
-                    viewContext.delete(item)
-                }
-            }
 
-            var ret: String?
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    let newid = "\(item.storage!)\n\(item.id!)"
-                    let newname = self.ConvertDecryptName(name: item.name!)
-                    let newcdate = item.cdate
-                    let newmdate = item.mdate
-                    let newfolder = item.folder
-                    let newsize = self.ConvertDecryptSize(size: item.size)
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundContext.perform {
+                    let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
+                    if let result = try? backgroundContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
+                        for item in items1 {
+                            backgroundContext.delete(item)
                         }
                     }
-                    
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = self.storageName
-                    newitem.id = newid
-                    newitem.name = newname
-                    let comp = newname.components(separatedBy: ".")
-                    if comp.count >= 1 {
-                        newitem.ext = comp.last!.lowercased()
-                    }
-                    newitem.cdate = newcdate
-                    newitem.mdate = newmdate
-                    newitem.folder = newfolder
-                    newitem.size = newsize
-                    newitem.hashstr = ""
-                    newitem.parent = parentId
-                    if parentId == "" {
-                        newitem.path = "\(self.storageName ?? ""):/\(newname)"
-                    }
-                    else {
-                        newitem.path = "\(parentPath)/\(newname)"
-                    }
-                    ret = newid
                 }
-            }
-            try? viewContext.save()
+                backgroundContext.perform {
+                    var ret: String?
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+                    if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        if let item = items.first {
+                            let newid = "\(item.storage!)\n\(item.id!)"
+                            let newname = self.ConvertDecryptName(name: item.name!)
+                            let newcdate = item.cdate
+                            let newmdate = item.mdate
+                            let newfolder = item.folder
+                            let newsize = self.ConvertDecryptSize(size: item.size)
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroundContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                            
+                            let newitem = RemoteData(context: backgroundContext)
+                            newitem.storage = self.storageName
+                            newitem.id = newid
+                            newitem.name = newname
+                            let comp = newname.components(separatedBy: ".")
+                            if comp.count >= 1 {
+                                newitem.ext = comp.last!.lowercased()
+                            }
+                            newitem.cdate = newcdate
+                            newitem.mdate = newmdate
+                            newitem.folder = newfolder
+                            newitem.size = newsize
+                            newitem.hashstr = ""
+                            newitem.parent = parentId
+                            if parentId == "" {
+                                newitem.path = "\(self.storageName ?? ""):/\(newname)"
+                            }
+                            else {
+                                newitem.path = "\(parentPath)/\(newname)"
+                            }
+                            ret = newid
+                        }
+                    }
+                    try? backgroundContext.save()
 
-            DispatchQueue.global().async {
-                onFinish?(ret)
+                    DispatchQueue.global().async {
+                        onFinish?(ret)
+                    }
+                }
             }
         }
     }
@@ -701,14 +701,10 @@ public class ChildStorage: RemoteStorageBase {
             return
         }
         
-        let group = DispatchGroup()
         var parentPath = ""
-        var parentId = c.parent
+        let parentId = c.parent
         if parentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -719,74 +715,86 @@ public class ChildStorage: RemoteStorageBase {
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
         var newBaseId = ""
-        group.enter()
         DispatchQueue.global().async {
             b.changetime(newdate: newdate) { id in
                 if let id = id {
                     newBaseId = id
                 }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-            if let result = try? viewContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
-                for item in items1 {
-                    viewContext.delete(item)
-                }
-            }
-            
-            var ret: String?
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    let newid = "\(item.storage!)\n\(item.id!)"
-                    let newname = self.ConvertDecryptName(name: item.name!)
-                    let newcdate = item.cdate
-                    let newmdate = item.mdate
-                    let newfolder = item.folder
-                    let newsize = self.ConvertDecryptSize(size: item.size)
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundContext.perform {
+                    let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
+                    if let result = try? backgroundContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
+                        for item in items1 {
+                            backgroundContext.delete(item)
                         }
                     }
-                    
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = self.storageName
-                    newitem.id = newid
-                    newitem.name = newname
-                    let comp = newname.components(separatedBy: ".")
-                    if comp.count >= 1 {
-                        newitem.ext = comp.last!.lowercased()
-                    }
-                    newitem.cdate = newcdate
-                    newitem.mdate = newmdate
-                    newitem.folder = newfolder
-                    newitem.size = newsize
-                    newitem.hashstr = ""
-                    newitem.parent = parentId
-                    if parentId == "" {
-                        newitem.path = "\(self.storageName ?? ""):/\(newname)"
-                    }
-                    else {
-                        newitem.path = "\(parentPath)/\(newname)"
-                    }
-                    ret = newid
                 }
-            }
-            try? viewContext.save()
-            
-            DispatchQueue.global().async {
-                onFinish?(ret)
+                backgroundContext.perform {
+                    var ret: String?
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+                    if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        if let item = items.first {
+                            let newid = "\(item.storage!)\n\(item.id!)"
+                            let newname = self.ConvertDecryptName(name: item.name!)
+                            let newcdate = item.cdate
+                            let newmdate = item.mdate
+                            let newfolder = item.folder
+                            let newsize = self.ConvertDecryptSize(size: item.size)
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroundContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                            
+                            let newitem = RemoteData(context: backgroundContext)
+                            newitem.storage = self.storageName
+                            newitem.id = newid
+                            newitem.name = newname
+                            let comp = newname.components(separatedBy: ".")
+                            if comp.count >= 1 {
+                                newitem.ext = comp.last!.lowercased()
+                            }
+                            newitem.cdate = newcdate
+                            newitem.mdate = newmdate
+                            newitem.folder = newfolder
+                            newitem.size = newsize
+                            newitem.hashstr = ""
+                            newitem.parent = parentId
+                            if parentId == "" {
+                                newitem.path = "\(self.storageName ?? ""):/\(newname)"
+                            }
+                            else {
+                                newitem.path = "\(parentPath)/\(newname)"
+                            }
+                            ret = newid
+                        }
+                    }
+                    try? backgroundContext.save()
+                    
+                    DispatchQueue.global().async {
+                        onFinish?(ret)
+                    }
+                }
             }
         }
     }
@@ -824,13 +832,9 @@ public class ChildStorage: RemoteStorageBase {
             return
         }
         
-        let group = DispatchGroup()
         var toParentPath = "\(tobaseStorage):/"
         if toParentId != "" {
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -841,76 +845,87 @@ public class ChildStorage: RemoteStorageBase {
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            toParentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
 
         var newBaseId = ""
-        group.enter()
         DispatchQueue.global().async {
             b.move(toParentId: tobaseFileId) { id in
                 if let id = id {
                     newBaseId = id
                 }
-                group.leave()
-            }
-        }
-
-        group.notify(queue: .main) {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
-            if let result = try? viewContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
-                for item in items1 {
-                    viewContext.delete(item)
-                }
-            }
-            
-            var ret: String?
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    let newid = "\(item.storage!)\n\(item.id!)"
-                    let newname = self.ConvertDecryptName(name: item.name!)
-                    let newcdate = item.cdate
-                    let newmdate = item.mdate
-                    let newfolder = item.folder
-                    let newsize = self.ConvertDecryptSize(size: item.size)
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                backgroundContext.perform {
+                    let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName!)
+                    if let result = try? backgroundContext.fetch(fetchRequest1), let items1 = result as? [RemoteData] {
+                        for item in items1 {
+                            backgroundContext.delete(item)
                         }
                     }
-                    
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = self.storageName
-                    newitem.id = newid
-                    newitem.name = newname
-                    let comp = newname.components(separatedBy: ".")
-                    if comp.count >= 1 {
-                        newitem.ext = comp.last!.lowercased()
-                    }
-                    newitem.cdate = newcdate
-                    newitem.mdate = newmdate
-                    newitem.folder = newfolder
-                    newitem.size = newsize
-                    newitem.hashstr = ""
-                    newitem.parent = toParentId
-                    if toParentId == "" {
-                        newitem.path = "\(self.storageName ?? ""):/\(newname)"
-                    }
-                    else {
-                        newitem.path = "\(toParentPath)/\(newname)"
-                    }
-                    ret = newid
                 }
-            }
-            try? viewContext.save()
-            
-            DispatchQueue.global().async {
-                onFinish?(ret)
+                backgroundContext.perform {
+                    var ret: String?
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+                    if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        if let item = items.first {
+                            let newid = "\(item.storage!)\n\(item.id!)"
+                            let newname = self.ConvertDecryptName(name: item.name!)
+                            let newcdate = item.cdate
+                            let newmdate = item.mdate
+                            let newfolder = item.folder
+                            let newsize = self.ConvertDecryptSize(size: item.size)
+                            
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroundContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                            
+                            let newitem = RemoteData(context: backgroundContext)
+                            newitem.storage = self.storageName
+                            newitem.id = newid
+                            newitem.name = newname
+                            let comp = newname.components(separatedBy: ".")
+                            if comp.count >= 1 {
+                                newitem.ext = comp.last!.lowercased()
+                            }
+                            newitem.cdate = newcdate
+                            newitem.mdate = newmdate
+                            newitem.folder = newfolder
+                            newitem.size = newsize
+                            newitem.hashstr = ""
+                            newitem.parent = toParentId
+                            if toParentId == "" {
+                                newitem.path = "\(self.storageName ?? ""):/\(newname)"
+                            }
+                            else {
+                                newitem.path = "\(toParentPath)/\(newname)"
+                            }
+                            ret = newid
+                        }
+                    }
+                    try? backgroundContext.save()
+                    
+                    DispatchQueue.global().async {
+                        onFinish?(ret)
+                    }
+                }
             }
         }
     }
@@ -947,13 +962,12 @@ public class ChildStorage: RemoteStorageBase {
                         onFinish?(nil)
                         return
                     }
-                    
-                    DispatchQueue.main.async {
+                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    backgroundContext.perform {
                         var ret: String? = nil
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                        if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                             if let item = items.first {
                                 let newid = "\(item.storage!)\n\(item.id!)"
                                 let newname = self.ConvertDecryptName(name: item.name!)
@@ -964,13 +978,13 @@ public class ChildStorage: RemoteStorageBase {
                                 
                                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-                                if let result = try? viewContext.fetch(fetchRequest) {
+                                if let result = try? backgroundContext.fetch(fetchRequest) {
                                     for object in result {
-                                        viewContext.delete(object as! NSManagedObject)
+                                        backgroundContext.delete(object as! NSManagedObject)
                                     }
                                 }
                                 
-                                let newitem = RemoteData(context: viewContext)
+                                let newitem = RemoteData(context: backgroundContext)
                                 newitem.storage = self.storageName
                                 newitem.id = newid
                                 newitem.name = newname
@@ -993,7 +1007,7 @@ public class ChildStorage: RemoteStorageBase {
                                 ret = newid
                             }
                         }
-                        try? viewContext.save()
+                        try? backgroundContext.save()
                         
                         DispatchQueue.global().async {
                             onFinish?(ret)

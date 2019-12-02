@@ -16,6 +16,14 @@ import RemoteCloud
 public class Player {
     public class func play(parent: UIViewController, item: RemoteItem, start: Double?, onFinish: @escaping (Double?)->Void) {
         DispatchQueue.main.async {
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback)
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print(error)
+            }
+
             let bridge = StreamBridge(item: item, name: item.name, count: 1)
             let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
             let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
@@ -76,6 +84,11 @@ public class Player {
                 }
             }
             bridge.run(parent: parent) { ret, pos in
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false)
+                } catch {
+                    print(error)
+                }
                 if ret >= 0 {
                     onFinish(pos)
                 }
@@ -87,6 +100,14 @@ public class Player {
     }
 
     public class func play(parent: UIViewController, items: [RemoteItem], shuffle: Bool, loop: Bool, onFinish: @escaping (Bool)->Void) {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print(error)
+        }
+
         var playItems = items;
         if shuffle {
             playItems.shuffle()
@@ -120,10 +141,20 @@ public class Player {
                                 cont = true
                             }
                             else {
+                                do {
+                                    try AVAudioSession.sharedInstance().setActive(false)
+                                } catch {
+                                    print(error)
+                                }
                                 onFinish(true)
                             }
                         }
                         else {
+                            do {
+                                try AVAudioSession.sharedInstance().setActive(false)
+                            } catch {
+                                print(error)
+                            }
                             onFinish(false)
                         }
                     }
@@ -448,15 +479,17 @@ class StreamBridge {
             basename = components.joined(separator: ".")
         }
         
-        if let imageitem = CloudFactory.shared.data.getImage(storage: remote.storage, parentId: parentId, baseName: basename) {
-            if let imagestream = CloudFactory.shared[remote.storage]?.get(fileId: imageitem.id ?? "")?.open() {
-                imagestream.read(position: 0, length: Int(imageitem.size)) { data in
-                    if let data = data, let image = UIImage(data: data) {
-                        self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
-                            return image
-                        }
-                        DispatchQueue.main.async {
-                            self.player.artworkView.image = image
+        if let imageitem = CloudFactory.shared.data.getImage(storage: self.remote.storage, parentId: parentId, baseName: basename) {
+            DispatchQueue.global().async {
+                if let imagestream = CloudFactory.shared[self.remote.storage]?.get(fileId: imageitem.id ?? "")?.open() {
+                    imagestream.read(position: 0, length: Int(imageitem.size)) { data in
+                        if let data = data, let image = UIImage(data: data) {
+                            self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
+                                return image
+                            }
+                            DispatchQueue.main.async {
+                                self.player.artworkView.image = image
+                            }
                         }
                     }
                 }
@@ -581,12 +614,14 @@ class StreamBridge {
                         self.finishRemoteTransportControls()
                         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
                     }
-                    if self.player.possition >= self.player.totalTime - 1 {
+                    if self.player.possition >= self.player.totalTime - 3 {
                         onFinish(ret, 0)
                     }
                     else {
                         onFinish(ret, self.player.possition)
                     }
+                    self.stream.isLive = false
+                    self.remote.cancel()
                 }
             }
         }

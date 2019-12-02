@@ -40,7 +40,9 @@ extension AVPlayerViewController {
 class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     static var pipVideo = false
 
+    let itemQueue = DispatchQueue(label: "playItemQueue")
     var playItems = [[String: Any]]()
+    var playIndex = [Int]()
     var loop = false
     var shuffle = false
     var playtitle = ""
@@ -50,7 +52,8 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     var customDelegate = [URL: [CustomAVARLDelegate]]()
     var infoItems = [URL: [String: Any]]()
     var image: MPMediaItemArtwork?
-    var playCount = -1
+    var queue = DispatchQueue(label: "load_items")
+    var playCounts = [URL: Int]()
     
     func getURL(storage: String, fileId: String) -> URL {
         var allowedCharacterSet = CharacterSet.alphanumerics
@@ -62,7 +65,7 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         return url!
     }
     
-    func getPlayItem(url: URL) -> AVPlayerItem {
+    func getAsset(url: URL) -> AVURLAsset {
         let asset = AVURLAsset(url: url)
         let newDelegate = CustomAVARLDelegate()
         if var prev = self.customDelegate[url] {
@@ -72,41 +75,111 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         else {
             self.customDelegate[url] = [newDelegate]
         }
-        asset.resourceLoader.setDelegate(newDelegate, queue: newDelegate.queue)
-        let playerItem = AVPlayerItem(asset: asset)
-        return playerItem
+        asset.resourceLoader.setDelegate(newDelegate, queue: queue)
+        return asset
     }
 
+    func PrepareAVPlayerItem(itemIndex: Int, needplay: Bool = false) {
+        let item = playItems[itemIndex]
+        let storage = item["storage"] as! String
+        let id = item["id"] as! String
+        let url = getURL(storage: storage, fileId: id)
+        self.infoItems[url] = item
+        let asset = getAsset(url: url)
+        let playableKey = "playable"
+        // Load the "playable" property
+        asset.loadValuesAsynchronously(forKeys: [playableKey]) {
+            var error: NSError? = nil
+            let status = asset.statusOfValue(forKey: playableKey, error: &error)
+            switch status {
+            case .loaded:
+                // Sucessfully loaded. Continue processing.
+                let playitem = AVPlayerItem(asset: asset)
+                self.itemQueue.async {
+                    let pos: CMTime
+                    if let lc = item["loadCount"] as? Int, lc > 0 {
+                        self.playItems[itemIndex]["loadCount"] = lc + 1
+                        let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+                        let duration = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+                        if duration > 0 {
+                            playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(Double(skip+duration), preferredTimescale: Int32(NSEC_PER_SEC))
+                        }
+                        if skip > 0 {
+                            pos = CMTimeMakeWithSeconds(Double(skip), preferredTimescale: Int32(NSEC_PER_SEC))
+                            playitem.seek(to: pos) { finished in
+                            }
+                        }
+                    }
+                    else {
+                        self.playItems[itemIndex]["loadCount"] = 1
+                        if let stop = item["stop"] as? Double {
+                            playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(stop, preferredTimescale: Int32(NSEC_PER_SEC))
+                        }
+                        if let start = item["start"] as? Double {
+                            pos = CMTimeMakeWithSeconds(start, preferredTimescale: Int32(NSEC_PER_SEC))
+                            playitem.seek(to: pos) { finished in
+                            }
+                        }
+                    }
+                }
+                let center = NotificationCenter.default
+                center.addObserver(self, selector: #selector(self.newErrorLogEntry), name: .AVPlayerItemNewErrorLogEntry, object: playitem)
+                center.addObserver(self, selector: #selector(self.failedToPlayToEndTime), name: .AVPlayerItemFailedToPlayToEndTime, object: playitem)
+                center.addObserver(self, selector: #selector(self.didPlayToEndTime), name: .AVPlayerItemDidPlayToEndTime, object: playitem)
+
+                DispatchQueue.main.async {
+                    self.player.insert(playitem, after: nil)
+                    if needplay {
+                        self.player.play()
+                    }
+                }
+                
+                if self.playIndex.count > 0 {
+                    self.enqueuePlayItem()
+                }
+                
+            default:
+                // Handle all other cases
+                if let lc = item["loadCount"] as? Int, lc > 0 {
+                    self.playItems[itemIndex]["loadCount"] = lc + 1
+                }
+                else {
+                    self.playItems[itemIndex]["loadCount"] = 1
+                }
+            }
+        }
+    }
+    
     lazy var player: AVQueuePlayer = {
-        if self.loop && self.playItems.count <= 2 {
-            self.playItems += self.playItems
-        }
+        self.playIndex = Array(0..<self.playItems.count)
         if self.shuffle {
-            self.playItems.shuffle()
+            self.playIndex.shuffle()
         }
-        let items = self.playItems.map({ (item: [String: Any])->AVPlayerItem in
+        for item in self.playItems {
             let storage = item["storage"] as! String
             let id = item["id"] as! String
             let url = getURL(storage: storage, fileId: id)
-            let playitem = getPlayItem(url: url)
-            self.infoItems[url] = item
-            let pos: CMTime
-            if let stop = item["stop"] as? Double {
-                playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(stop, preferredTimescale: Int32(NSEC_PER_SEC))
-            }
-            if let start = item["start"] as? Double {
-                pos = CMTimeMakeWithSeconds(start, preferredTimescale: Int32(NSEC_PER_SEC))
-                playitem.seek(to: pos) { finished in
-                }
-            }
-            return playitem
-        })
-        if !self.loop {
-            playCount = items.count
+            self.playCounts[url] = 0
         }
-        var player = AVQueuePlayer(items: items)
+        var player = AVQueuePlayer()
         return player
     }()
+    
+    func enqueuePlayItem(needplay: Bool = false) {
+        itemQueue.async {
+            if let next = self.playIndex.first {
+                self.PrepareAVPlayerItem(itemIndex: next, needplay: needplay)
+                self.playIndex = Array(self.playIndex.dropFirst())
+            }
+            else if self.loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
+                self.playIndex = Array(0..<self.playItems.count)
+                if self.shuffle {
+                    self.playIndex.shuffle()
+                }
+                self.enqueuePlayItem()
+            }
+        }
+    }
     
     lazy var playerViewController: AVPlayerViewController = {
         var viewController = AVPlayerViewController()
@@ -185,50 +258,52 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     }
     
     func skipNextTrack() {
-        print("skipNextTrack ", playCount)
-        print(player.items())
-        let url = prevURL
-        player.pause()
-        if player.items().count <= 2 {
-            if loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
-                loopSetup()
+        let cururl = (self.player.currentItem?.asset as? AVURLAsset)?.url
+        DispatchQueue.global().async {
+            print("skipNextTrack ", self.playCounts)
+            print(self.player.items())
+            let url = self.prevURL
+            self.player.pause()
+            if self.player.items().count <= 2 {
+                self.enqueuePlayItem()
             }
-        }
-        if player.items().count <= 1 {
-            DispatchQueue.main.async {
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            }
-            iscancel = true
-            playerViewController.dismiss(animated: false) {
-                self.finishRemoteTransportControls()
-                for items in self.customDelegate {
-                    for delegate in items.value {
-                        delegate.item?.cancel()
-                        delegate.stream?.isLive = false
+            if self.player.items().count <= 1 && (!self.loop && !UserDefaults.standard.bool(forKey: "keepOpenWhenDone")) {
+                DispatchQueue.main.async {
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                    self.iscancel = true
+                    self.playerViewController.dismiss(animated: false) {
+                        self.finishRemoteTransportControls()
+                        for items in self.customDelegate {
+                            for delegate in items.value {
+                                delegate.item?.cancel()
+                                delegate.stream?.isLive = false
+                            }
+                        }
+                        self.customDelegate.removeAll()
+                        self.onFinish?(0)
                     }
                 }
-                self.customDelegate.removeAll()
-                self.onFinish?(0)
-            }
-        }
-        else {
-            player.advanceToNextItem()
-            if let url = url, var prev = customDelegate[url] {
-                prev = Array(prev.dropFirst())
-                if prev.count > 0 {
-                    customDelegate[url] = prev
-                }
-                else {
-                    customDelegate.removeValue(forKey: url)
-                }
-            }
-            if playCount <= 1 {
-                playCount = playItems.count
             }
             else {
-                player.play()
-                if playCount > 0 {
-                    playCount -= 1
+                if let url = cururl {
+                    self.playCounts[url] = self.playCounts[url]! + 1
+                }
+                self.player.advanceToNextItem()
+                if let url = url, var prev = self.customDelegate[url] {
+                    prev = Array(prev.dropFirst())
+                    if prev.count > 0 {
+                        self.customDelegate[url] = prev
+                    }
+                    else {
+                        self.customDelegate.removeValue(forKey: url)
+                    }
+                }
+                let c = self.playCounts.first?.value ?? 0
+                if !self.loop && self.playCounts.values.allSatisfy({ $0 == c }) {
+                    // stop
+                }
+                else {
+                    self.player.play()
                 }
             }
         }
@@ -272,12 +347,15 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
                 basename = components.joined(separator: ".")
             }
             
+            
             if let imageitem = CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
-                if let imagestream = CloudFactory.shared[storage]?.get(fileId: imageitem.id ?? "")?.open() {
-                    imagestream.read(position: 0, length: Int(imageitem.size)) { data in
-                        if let data = data, let image = UIImage(data: data) {
-                            self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
-                                return image
+                DispatchQueue.global().async {
+                    if let imagestream = CloudFactory.shared[storage]?.get(fileId: imageitem.id ?? "")?.open() {
+                        imagestream.read(position: 0, length: Int(imageitem.size)) { data in
+                            if let data = data, let image = UIImage(data: data) {
+                                self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
+                                    return image
+                                }
                             }
                         }
                     }
@@ -289,6 +367,7 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
     }
     
     func play(parent: UIViewController) {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback)
             try AVAudioSession.sharedInstance().setActive(true)
@@ -302,37 +381,34 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         player.addObserver(self, forKeyPath: #keyPath(AVPlayer.status), options: [.new, .initial], context: nil)
         player.addObserver(self, forKeyPath: #keyPath(AVPlayer.currentItem.status), options:[.new, .initial], context: nil)
         player.addObserver(self, forKeyPath: #keyPath(AVPlayer.timeControlStatus), options:[.new, .old], context: nil)
-        player.addPeriodicTimeObserver(forInterval: CMTimeMake(value: 1, timescale: 1) , queue: DispatchQueue.main) { [weak self] time in
+        player.addPeriodicTimeObserver(forInterval: CMTimeMake(value: 1, timescale: 1) , queue: DispatchQueue.global()) { [weak self] time in
             guard self?.player.timeControlStatus == .playing, time.seconds > 1.0 else {
                 return
             }
-            if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = time.seconds
-                info[MPMediaItemPropertyPlaybackDuration] = self?.player.currentItem?.asset.duration.seconds
-                info[MPMediaItemPropertyArtwork] =
-                    self?.image
-                info[MPMediaItemPropertyTitle] = self?.playtitle
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
-            else {
-                var info = [String: Any]()
-                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = time.seconds
-                info[MPMediaItemPropertyPlaybackDuration] = self?.player.currentItem?.asset.duration.seconds
-                info[MPMediaItemPropertyArtwork] =
-                    self?.image
-                info[MPMediaItemPropertyTitle] = self?.playtitle
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            DispatchQueue.main.async {
+                if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+                    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = time.seconds
+                    info[MPMediaItemPropertyPlaybackDuration] = self?.player.currentItem?.asset.duration.seconds
+                    info[MPMediaItemPropertyArtwork] =
+                        self?.image
+                    info[MPMediaItemPropertyTitle] = self?.playtitle
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
+                else {
+                    var info = [String: Any]()
+                    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = time.seconds
+                    info[MPMediaItemPropertyPlaybackDuration] = self?.player.currentItem?.asset.duration.seconds
+                    info[MPMediaItemPropertyArtwork] =
+                        self?.image
+                    info[MPMediaItemPropertyTitle] = self?.playtitle
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                }
             }
         }
         
         let center = NotificationCenter.default
-        for pitem in self.player.items() {
-            center.addObserver(self, selector: #selector(newErrorLogEntry), name: .AVPlayerItemNewErrorLogEntry, object: pitem)
-            center.addObserver(self, selector: #selector(failedToPlayToEndTime), name: .AVPlayerItemFailedToPlayToEndTime, object: pitem)
-            center.addObserver(self, selector: #selector(didPlayToEndTime), name: .AVPlayerItemDidPlayToEndTime, object: pitem)
-        }
-        
         center.addObserver(forName: .avPlayerViewDisappear, object: playerViewController, queue: nil) { notification in
+            print("PlayerViewDisappear")
             if !CustomPlayerView.pipVideo {
                 self.finishDisplay()
             }
@@ -340,9 +416,13 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         
         setupRemoteTransportControls()
 
-        parent.present(playerViewController, animated: true) {
-            self.player.play()
+        enqueuePlayItem(needplay: true)
+        if loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
+            if self.playItems.count < 2 {
+                enqueuePlayItem()
+            }
         }
+        parent.present(self.playerViewController, animated: true, completion: nil)
     }
 
     @objc func appMovedToForeground() {
@@ -402,79 +482,50 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
         }
     }
 
-    func loopSetup() {
-        if self.shuffle {
-            self.playItems.shuffle()
-        }
-        let items = self.playItems.map({ (item: [String: Any])->AVPlayerItem in
-            let storage = item["storage"] as! String
-            let id = item["id"] as! String
-            let url = getURL(storage: storage, fileId: id)
-            let playitem = getPlayItem(url: url)
-            let pos: CMTime
-            if let stop = item["stop"] as? Double {
-                playitem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(stop, preferredTimescale: Int32(NSEC_PER_SEC))
-            }
-            if let start = item["start"] as? Double {
-                pos = CMTimeMakeWithSeconds(start, preferredTimescale: Int32(NSEC_PER_SEC))
-                playitem.seek(to: pos) { finished in
-                }
-            }
-            return playitem
-        })
-
-        let center = NotificationCenter.default
-        for item in items {
-            center.addObserver(self, selector: #selector(newErrorLogEntry), name: .AVPlayerItemNewErrorLogEntry, object: item)
-            center.addObserver(self, selector: #selector(failedToPlayToEndTime), name: .AVPlayerItemFailedToPlayToEndTime, object: item)
-            center.addObserver(self, selector: #selector(didPlayToEndTime), name: .AVPlayerItemDidPlayToEndTime, object: item)
-            player.insert(item, after: nil)
-        }
-    }
-    
     func nextTrack() {
-        print("nextTrack ", playCount)
-        print(player.items())
-        if playCount > 0 {
-            playCount -= 1
-        }
-        let url = prevURL
-        if player.items().count <= 2 {
-            if loop || UserDefaults.standard.bool(forKey: "keepOpenWhenDone") {
-                loopSetup()
+        let cururl = (self.player.currentItem?.asset as? AVURLAsset)?.url
+        DispatchQueue.global().async {
+            print("nextTrack ", self.playCounts)
+            print(self.player.items())
+            let url = self.prevURL
+            if self.player.items().count <= 2 {
+                self.enqueuePlayItem()
             }
-        }
-        if player.items().count <= 1 {
-            DispatchQueue.main.async {
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            }
-            iscancel = true
-            playerViewController.dismiss(animated: false) {
-                self.finishRemoteTransportControls()
-                for items in self.customDelegate {
-                    for delegate in items.value {
-                        delegate.item?.cancel()
-                        delegate.stream?.isLive = false
+            if self.player.items().count <= 1 && (!self.loop && !UserDefaults.standard.bool(forKey: "keepOpenWhenDone")) {
+                DispatchQueue.main.async {
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                    self.iscancel = true
+                    self.playerViewController.dismiss(animated: false) {
+                        self.finishRemoteTransportControls()
+                        for items in self.customDelegate {
+                            for delegate in items.value {
+                                delegate.item?.cancel()
+                                delegate.stream?.isLive = false
+                            }
+                        }
+                        self.customDelegate.removeAll()
+                        self.onFinish?(0)
                     }
                 }
-                self.customDelegate.removeAll()
-                self.onFinish?(0)
             }
-        }
-        else {
-            if let url = url, var prev = customDelegate[url] {
-                prev = Array(prev.dropFirst())
-                if prev.count > 0 {
-                    customDelegate[url] = prev
+            else {
+                if let url = cururl {
+                    self.playCounts[url] = self.playCounts[url]! + 1
                 }
-                else {
-                    customDelegate.removeValue(forKey: url)
+                if let url = url, var prev = self.customDelegate[url] {
+                    prev = Array(prev.dropFirst())
+                    if prev.count > 0 {
+                        self.customDelegate[url] = prev
+                    }
+                    else {
+                        self.customDelegate.removeValue(forKey: url)
+                    }
+                }
+                let c = self.playCounts.first?.value ?? 0
+                if !self.loop && self.playCounts.values.allSatisfy({ $0 == c }) {
+                    self.player.pause()
                 }
             }
-        }
-        if playCount == 0 {
-            player.pause()
-            playCount = playItems.count
         }
     }
     
@@ -531,7 +582,14 @@ class CustomPlayerView: NSObject, AVPlayerViewControllerDelegate {
             }
         }
         self.customDelegate.removeAll()
-        group.notify(queue: .main) {
+        group.notify(queue: .global()) {
+            DispatchQueue.main.asyncAfter(deadline: .now()+2) {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false)
+                } catch {
+                    print(error)
+                }
+            }
             self.onFinish?(ret)
         }
     }

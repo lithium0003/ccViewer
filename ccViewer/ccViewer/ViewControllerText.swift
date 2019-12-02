@@ -61,6 +61,8 @@ class ViewControllerText: UIViewController, UIPickerViewDelegate, UIPickerViewDa
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
         activityIndicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
         activityIndicator.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
+        activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
     }
     
     override func viewWillDisappear(_ animated: Bool) {

@@ -16,6 +16,7 @@ public enum CloudStorages: CaseIterable {
     case GoogleDrive
     case OneDrive
     case pCloud
+    case WebDAV
     case CryptCarotDAV
     case CryptRclone
     case Cryptomator
@@ -86,7 +87,8 @@ public class RemoteItem {
             self.subid = nil
         }
         else {
-            guard let origin = CloudFactory.shared.data.getData(storage: storage, fileId: id) else {
+            let item1 = CloudFactory.shared.data.getData(storage: storage, fileId: id)
+            guard let origin = item1 else {
                 return nil
             }
             guard let name = origin.name else {
@@ -201,6 +203,7 @@ public class CloudFactory {
             let classmap = Dictionary(uniqueKeysWithValues: CloudStorages.allCases.map() { (CloudFactory.getServiceName(service: $0), $0) })
             do {
                 if let d = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(sList) as? [String: String] {
+                    print(d)
                     let tList = d.map() { key, value -> (String, RemoteStorage?) in
                         guard let jsondata = value.data(using: .utf8) else {
                             return (key, nil)
@@ -245,6 +248,8 @@ public class CloudFactory {
             return UIImage(named: "onedrive", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .pCloud:
             return UIImage(named: "pcloud", in: Bundle(for: type(of: self)), compatibleWith: nil)
+        case .WebDAV:
+            return UIImage(named: "webdav", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .CryptCarotDAV:
             return UIImage(named: "carot", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .CryptRclone:
@@ -266,6 +271,8 @@ public class CloudFactory {
             return "OneDrive"
         case .pCloud:
             return "pCloud"
+        case .WebDAV:
+            return "WebDAV"
         case .CryptCarotDAV:
             return "CryptCarotDAV"
         case .CryptRclone:
@@ -289,6 +296,8 @@ public class CloudFactory {
             return OneDriveStorage(name: tagname)
         case .pCloud:
             return pCloudStorage(name: tagname)
+        case .WebDAV:
+            return WebDAVStorage(name: tagname)
         case .CryptCarotDAV:
             return CryptCarotDAV(name: tagname)
         case .CryptRclone:
@@ -325,38 +334,36 @@ public class CloudFactory {
 
     func loadChild(item: RemoteData, onFinish: @escaping ([RemoteData])->Void) {
         self[item.storage ?? ""]?.list(fileId: item.id ?? "") {
-            DispatchQueue.main.async {
-                var loadData = [RemoteData]()
-                let children = self.data.listData(storage: item.storage ?? "", parentID: item.id ?? "")
-                loadData += children.filter({ $0.folder })
-                DispatchQueue.global().async {
-                    onFinish(loadData)
-                }
+            var loadData = [RemoteData]()
+            let children = self.data.listData(storage: item.storage ?? "", parentID: item.id ?? "")
+            loadData += children.filter({ $0.folder })
+            DispatchQueue.global().async {
+                onFinish(loadData)
             }
         }
     }
     
     func findChild(storage: String, id: String, onFinish: @escaping ([RemoteData])->Void) {
-        DispatchQueue.main.async {
-            let children = self.data.listData(storage: storage, parentID: id)
-            DispatchQueue.global().async {
-                var loadData = [RemoteData]()
-                if children.count > 0 {
-                    for item in children.filter({ $0.folder }) {
-                        let group = DispatchGroup()
-                        group.enter()
-                        self.findChild(storage: item.storage ?? "", id: item.id ?? "") { newload in
-                            loadData += newload
-                            group.leave()
-                        }
-                        group.wait()
+        let children = self.data.listData(storage: storage, parentID: id)
+        DispatchQueue.global().async {
+            var loadData = [RemoteData]()
+            if children.count > 0 {
+                for item in children.filter({ $0.folder }) {
+                    let group = DispatchGroup()
+                    group.enter()
+                    self.findChild(storage: item.storage ?? "", id: item.id ?? "") { newload in
+                        loadData += newload
+                        group.leave()
                     }
-                    onFinish(loadData)
+                    group.wait()
                 }
-                else {
-                    if let item = self.data.getData(storage: storage, fileId: id) {
-                        loadData += [item]
-                    }
+                onFinish(loadData)
+            }
+            else {
+                if let item = self.data.getData(storage: storage, fileId: id) {
+                    loadData += [item]
+                }
+                DispatchQueue.global().async {
                     onFinish(loadData)
                 }
             }
@@ -590,18 +597,16 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     }
     
     func deleteItems(name: String) {
-        DispatchQueue.main.async {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "storage == %@", name)
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? context.fetch(fetchRequest) {
                 for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+                    context.delete(object as! NSManagedObject)
                 }
             }
             
-            try? viewContext.save()
+            try? context.save()
         }
     }
     
@@ -617,31 +622,29 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         onFinish?()
     }
  
-    // needs main thread
-    func deleteChild(parent: String) {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, self.storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-            for item in items {
-                viewContext.delete(item)
+    func deleteChild(parent: String, context: NSManagedObjectContext) {
+        context.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, self.storageName ?? "")
+            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
+                for item in items {
+                    context.delete(item)
+                }
             }
         }
     }
 
-    // needs main thread
-    func deleteChildRecursive(parent: String) {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, self.storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-            for item in items {
-                if let p = item.id {
-                    deleteChildRecursive(parent: p)
+    func deleteChildRecursive(parent: String, context: NSManagedObjectContext) {
+        context.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, self.storageName ?? "")
+            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
+                for item in items {
+                    if let p = item.id {
+                        self.deleteChildRecursive(parent: p, context: context)
+                    }
+                    context.delete(item)
                 }
-                viewContext.delete(item)
             }
         }
     }
@@ -649,46 +652,33 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
 
     public func list(fileId: String, onFinish: (() -> Void)?) {
         if fileId == "" {
-            let group = DispatchGroup()
-            var path = ""
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-
-                self.deleteChild(parent: fileId)
-                try? viewContext.save()
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            self.deleteChild(parent: fileId, context: backgroundContext)
+            backgroundContext.performAndWait {
+                try? backgroundContext.save()
             }
-            group.notify(queue: .global()){
-                self.ListChildren(onFinish: onFinish)
-            }
+            self.ListChildren(onFinish: onFinish)
         }
         else {
-            let group = DispatchGroup()
             var path = ""
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+
+            backgroundContext.performAndWait {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
+                if let result = try? backgroundContext.fetch(fetchRequest) {
                     if let items = result as? [RemoteData] {
                         path = items.first?.path ?? ""
                     }
                 }
                 
                 if path != "" {
-                    self.deleteChild(parent: fileId)
-                    
-                    try? viewContext.save()
+                    self.deleteChild(parent: fileId, context: backgroundContext)
                 }
             }
-            group.notify(queue: .global()){
+            backgroundContext.performAndWait {
                 if path != "" {
+                    try? backgroundContext.save()
                     self.ListChildren(fileId: fileId, path: path, onFinish: onFinish)
                 }
                 else {
@@ -703,27 +693,22 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             ListChildren(onFinish: onFinish)
         }
         else {
-            let group = DispatchGroup()
             var ids: [String] = []
-            DispatchQueue.main.async {
-                group.enter()
-                defer { group.leave() }
-                
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            backgroundContext.performAndWait {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "path == %@", path)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                     ids = items.filter { $0.id != nil }.map { $0.id! }
                 }
                 
                 for id in ids {
-                    self.deleteChild(parent: id)
-                    
-                    try? viewContext.save()
+                    self.deleteChild(parent: id, context: backgroundContext)
                 }
             }
-            group.notify(queue: .global()){
+            backgroundContext.perform {
+                try? backgroundContext.save()
+
                 if ids.isEmpty {
                     onFinish?()
                     return
@@ -740,12 +725,8 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             makeFolder(parentId: parentId, parentPath: "", newname: newname, onFinish: onFinish)
         }
         else{
-            let group = DispatchGroup()
             var path = ""
-            group.enter()
-            DispatchQueue.main.async {
-                defer { group.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -756,13 +737,24 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
                     }
                 }
             }
-            group.notify(queue: .global()){
-                if path != "" {
-                    self.makeFolder(parentId: parentId, parentPath: path, newname: newname, onFinish: onFinish)
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            path = items.first?.path ?? ""
+                        }
+                    }
                 }
-                else {
-                    onFinish?(nil)
-                }
+            }
+            if path != "" {
+                self.makeFolder(parentId: parentId, parentPath: path, newname: newname, onFinish: onFinish)
+            }
+            else {
+                onFinish?(nil)
             }
         }
     }

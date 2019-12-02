@@ -16,12 +16,12 @@ class NavigationControllerHide: UINavigationController {
         // Do any additional setup after loading the view.
     }
     
-    override var childForStatusBarStyle: UIViewController? {
-        return visibleViewController
+    override open var childForStatusBarStyle: UIViewController? {
+        return topViewController ?? super.childForStatusBarStyle
     }
     
-    override var childForStatusBarHidden: UIViewController? {
-        return visibleViewController
+    override open var childForStatusBarHidden: UIViewController? {
+        return topViewController ?? super.childForStatusBarHidden
     }
 
     /*

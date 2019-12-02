@@ -30,6 +30,7 @@
 		3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F987DEB2277608A0020A796 /* Cryptomator.swift */; };
 		3FA46CE223849615007ACC82 /* FileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE123849615007ACC82 /* FileCache.swift */; };
 		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
+		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
 		3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE23B1E2340B96200916DA6 /* UploadManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -70,6 +71,7 @@
 		3F987DEB2277608A0020A796 /* Cryptomator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cryptomator.swift; sourceTree = "<group>"; };
 		3FA46CE123849615007ACC82 /* FileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCache.swift; sourceTree = "<group>"; };
 		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
+		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
 		3FE23B1E2340B96200916DA6 /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -161,6 +163,7 @@
 				3C14C453225DBB1A0044E4A7 /* LocalStorage.swift */,
 				3C400921224190920028A45A /* OneDriveStorage.swift */,
 				3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */,
+				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
 			);
 			path = Storages;
 			sourceTree = "<group>";
@@ -277,6 +280,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */,
 				3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */,
 				3CA2C95E2235569800481DB5 /* cloud.xcdatamodeld in Sources */,
 				3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */,

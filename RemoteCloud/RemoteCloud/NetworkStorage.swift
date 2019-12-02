@@ -313,7 +313,7 @@ public class SlotStream: RemoteStream {
                     self.error = true
                     break
                 }
-                Thread.sleep(forTimeInterval: 1)
+                Thread.sleep(forTimeInterval: 0.1)
                 if start.timeIntervalSinceNow < -120 {
                     print("error on timeout")
                     self.error = true

@@ -51,15 +51,17 @@ extension TableViewControllerItems: SortItemsDelegate {
         result_base = folders
         result_base += files
 
-        // filter
-        let text = navigationItem.searchController?.searchBar.text ?? ""
-        if text.isEmpty {
-            result = result_base
-        } else {
-            result = result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+        DispatchQueue.main.async {
+            // filter
+            let text = self.navigationItem.searchController?.searchBar.text ?? ""
+            if text.isEmpty {
+                self.result = self.result_base
+            } else {
+                self.result = self.result_base.compactMap { ($0.name?.lowercased().contains(text.lowercased()) ?? false) ? $0 : nil }
+            }
+            
+            self.tableView.reloadData()
         }
-        
-        tableView.reloadData()
     }
 }
 
@@ -237,15 +239,6 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         
     }
 
-    override var prefersStatusBarHidden: Bool {
-        return false
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        setNeedsStatusBarAppearanceUpdate()
-    }
-    
     func restoreToolbarButton() {
         #if !targetEnvironment(macCatalyst)
         let castContext = GCKCastContext.sharedInstance()
@@ -297,15 +290,19 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
 
         self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
         self.DoSort()
-        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
-            CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
-                DispatchQueue.main.async {
-                    self.tableView.reloadData()
+        DispatchQueue.global().async {
+            if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+                CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
+                    DispatchQueue.main.async {
+                        self.tableView.reloadData()
+                    }
                 }
             }
+            self.editting = false
+            DispatchQueue.main.async {
+                self.tableView.reloadData()
+            }
         }
-        editting = false
-        self.tableView.reloadData()
     }
     
     override func didMove(toParent parent: UIViewController?) {
@@ -507,9 +504,9 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         self.tableView.reloadData()
         if subItem {
             (CloudFactory.shared[storageName] as? RemoteSubItem)?.listsubitem(fileId: self.rootFileId) {
-                DispatchQueue.main.async {
-                    self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
-                    self.DoSort()
+                self.result_base = CloudFactory.shared.data.listData(storage: self.storageName, parentID: self.rootFileId)
+                self.DoSort()
+                DispatchQueue.global().async {
                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                         CloudFactory.shared.data.getCloudMark(storage: self.storageName, parentID: self.rootFileId) {
                             DispatchQueue.main.async {
@@ -618,9 +615,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                                               style: .default,
                                               handler:{ action in
                                                 let pos = CloudFactory.shared.data.getMark(storage: item.storage, targetID: item.id)
+                                                let group = DispatchGroup()
                                                 if pos != nil {
-                                                    CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: nil)
-                                                    let group = DispatchGroup()
+                                                    group.enter()
+                                                   CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: nil) {
+                                                    group.leave()
+                                                    }
+                                                
                                                     self.activityIndicator.startAnimating()
                                                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                                                         CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: nil, group: group)
@@ -631,8 +632,10 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                                                     }
                                                 }
                                                 else {
-                                                    CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0)
-                                                    let group = DispatchGroup()
+                                                    group.enter()
+                                                    CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0) {
+                                                        group.leave()
+                                                    }
                                                     self.activityIndicator.startAnimating()
                                                     if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                                                         CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0, group: group)
@@ -927,22 +930,26 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 next?.rootPath = path
                 next?.rootFileId = result[indexPath.row].id ?? ""
                 next?.storageName = storageName
-                let newroot = CloudFactory.shared.data.listData(storage: storageName, parentID: next?.rootFileId ?? "")
+                let newroot = CloudFactory.shared.data.listData(storage: self.storageName, parentID: next?.rootFileId ?? "")
                 if newroot.count == 0 {
-                    activityIndicator.startAnimating()
-                    
-                    CloudFactory.shared[storageName]?.list(fileId: result[indexPath.row].id ?? "") {
-                        DispatchQueue.main.async {
-                            self.activityIndicator.stopAnimating()
-                            self.semaphore.signal()
-                            self.navigationController?.pushViewController(next!, animated: true)
+                    self.activityIndicator.startAnimating()
+                    DispatchQueue.global().async {
+                        CloudFactory.shared[self.storageName]?.list(fileId: self.result[indexPath.row].id ?? "") {
+                            DispatchQueue.main.async {
+                                self.activityIndicator.stopAnimating()
+                                self.semaphore.signal()
+                                self.navigationController?.pushViewController(next!, animated: true)
+                            }
                         }
                     }
                 }
                 else {
-                    semaphore.signal()
+                    self.semaphore.signal()
                     self.navigationController?.pushViewController(next!, animated: true)
                 }
+            }
+            else {
+                semaphore.signal()
             }
         }
         else if hasSubItem(name: result[indexPath.row].name) {
@@ -970,6 +977,9 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     self.navigationController?.pushViewController(next!, animated: true)
                 }
             }
+            else {
+                semaphore.signal()
+            }
         }
         else {
             if let item = CloudFactory.shared[storageName]?.get(fileId: result[indexPath.row].id ?? "") {
@@ -981,6 +991,9 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 else {
                     autoDetectRun(item: item)
                 }
+            }
+            else {
+                semaphore.signal()
             }
         }
     }
@@ -1098,9 +1111,12 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                             if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                                 CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0, group: group)
                             }
-                            group.notify(queue: .main) {
-                                CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0)
-                                self.tableView.reloadData()
+                            group.notify(queue: .global()) {
+                                CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0) {
+                                    DispatchQueue.main.async {
+                                        self.tableView.reloadData()
+                                    }
+                                }
                             }
                         }
                         guard let target = url else {
@@ -1174,9 +1190,12 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                             CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0, group: group)
                         }
-                        group.notify(queue: .main) {
-                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0)
-                            self.tableView.reloadData()
+                        group.notify(queue: .global()) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: 0) {
+                                DispatchQueue.main.async {
+                                    self.tableView.reloadData()
+                                }
+                            }
                         }
                     }
                     guard let target = url else {
@@ -1207,10 +1226,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                             CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
                         }
-                        group.notify(queue: .main) {
-                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
-                            self.activityIndicator.stopAnimating()
-                            self.tableView.reloadData()
+                        group.notify(queue: .global()) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos) {
+                                DispatchQueue.main.async {
+                                    self.activityIndicator.stopAnimating()
+                                    self.tableView.reloadData()
+                                }
+                            }
                         }
                     }
                 }
@@ -1303,11 +1325,12 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 DispatchQueue.main.async {
                     next?.imagedata = fixedImage
                     next?.modalPresentationStyle = .fullScreen
-                    self.downloadProgress.dismiss(animated: false, completion: nil)
-                    self.activityIndicator.startAnimating()
-                    self.semaphore.signal()
-                    self.present(next!, animated: true) {
-                        self.activityIndicator.stopAnimating()
+                    self.downloadProgress.dismiss(animated: false) {
+                        self.activityIndicator.startAnimating()
+                        self.semaphore.signal()
+                        self.present(next!, animated: true) {
+                            self.activityIndicator.stopAnimating()
+                        }
                     }
                 }
             }
@@ -1402,10 +1425,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
                             CloudFactory.shared.data.setCloudMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos, group: group)
                         }
-                        group.notify(queue: .main) {
-                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos)
-                            self.activityIndicator.stopAnimating()
-                            self.tableView.reloadData()
+                        group.notify(queue: .global()) {
+                            CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: self.rootFileId, position: pos) {
+                                DispatchQueue.main.async {
+                                    self.activityIndicator.stopAnimating()
+                                    self.tableView.reloadData()
+                                }
+                            }
                         }
                     }
                 }

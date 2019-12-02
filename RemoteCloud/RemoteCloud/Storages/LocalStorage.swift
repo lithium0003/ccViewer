@@ -40,50 +40,41 @@ public class LocalStorage: RemoteStorageBase {
             return
         }
         
-        DispatchQueue.main.async {
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        let backgroudContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        backgroudContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? backgroudContext.fetch(fetchRequest) {
                 for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+                    backgroudContext.delete(object as! NSManagedObject)
                 }
             }
         }
         
-        let group = DispatchGroup()
         for fileURL in fileURLs {
-            storeItem(item: fileURL, parentFileId: fileId, parentPath: path, group: group)
+            storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: backgroudContext)
         }
-        group.notify(queue: .main){
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            try? viewContext.save()
+        backgroudContext.perform {
+            try? backgroudContext.save()
             DispatchQueue.global().async {
                 onFinish?()
             }
         }
     }
     
-    func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, group: DispatchGroup?) {
+    func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
         guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path) else {
             return
         }
         let id = getIdFromURL(url: item)
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
-        group?.enter()
-        DispatchQueue.main.async {
-            defer {
-                group?.leave()
-            }
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        context.perform {
             var prevParent: String?
             var prevPath: String?
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
+            if let result = try? context.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
                         prevPath = item.path
@@ -91,7 +82,7 @@ public class LocalStorage: RemoteStorageBase {
                         prevPath = component?.dropLast().joined(separator: "/")
                         prevParent = item.parent
                     }
-                    viewContext.delete(object as! NSManagedObject)
+                    context.delete(object as! NSManagedObject)
                 }
             }
             
@@ -101,7 +92,7 @@ public class LocalStorage: RemoteStorageBase {
             guard t == .typeRegular || t == .typeDirectory else {
                 return
             }
-            let newitem = RemoteData(context: viewContext)
+            let newitem = RemoteData(context: context)
             newitem.storage = self.storageName
             newitem.id = id
             newitem.name = name
@@ -201,12 +192,11 @@ public class LocalStorage: RemoteStorageBase {
         
         do {
             try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
-            let group = DispatchGroup()
-            storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, group: group)
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
             let id = getIdFromURL(url: targetURL)
-            group.notify(queue: .main){
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                try? viewContext.save()
+            backgroundContext.perform {
+                try? backgroundContext.save()
                 DispatchQueue.global().async {
                     onFinish?(id)
                 }
@@ -229,13 +219,9 @@ public class LocalStorage: RemoteStorageBase {
         let name = fromURL.lastPathComponent
         var targetURL = documentsURL
         var parentPath = ""
-        let group1 = DispatchGroup()
         if toParentId != "" {
             targetURL = documentsURL.appendingPathComponent(toParentId, isDirectory: true)
-            group1.enter()
-            DispatchQueue.main.async {
-                defer { group1.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -246,42 +232,46 @@ public class LocalStorage: RemoteStorageBase {
                     }
                 }
             }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
+                    }
+                }
+            }
         }
-        group1.enter()
-        DispatchQueue.main.async {
-            defer { group1.leave() }
-            
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-            
+        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        backgroundContext.perform {
             let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest2) {
+            if let result = try? backgroundContext.fetch(fetchRequest2) {
                 for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+                    backgroundContext.delete(object as! NSManagedObject)
                 }
             }
         }
         targetURL = targetURL.appendingPathComponent(name)
-
-        group1.notify(queue: .global()) {
-            do {
-                try FileManager.default.moveItem(at: fromURL, to: targetURL)
-                let group2 = DispatchGroup()
-                DispatchQueue.main.async {
-                    self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, group: group2)
-                }
-                let id = self.getIdFromURL(url: targetURL)
-                group2.notify(queue: .main){
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(id)
-                    }
+        do {
+            try FileManager.default.moveItem(at: fromURL, to: targetURL)
+            DispatchQueue.main.async {
+                self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
+            }
+            let id = self.getIdFromURL(url: targetURL)
+            backgroundContext.perform {
+                try? backgroundContext.save()
+                DispatchQueue.global().async {
+                    onFinish?(id)
                 }
             }
-            catch {
-                onFinish?(nil)
-            }
+        }
+        catch {
+            onFinish?(nil)
         }
     }
     
@@ -291,20 +281,20 @@ public class LocalStorage: RemoteStorageBase {
 
         do {
             try FileManager.default.removeItem(at: targetURL)
-            DispatchQueue.main.async {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            backgroundContext.performAndWait {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
+                if let result = try? backgroundContext.fetch(fetchRequest) {
                     for object in result {
-                        viewContext.delete(object as! NSManagedObject)
+                        backgroundContext.delete(object as! NSManagedObject)
                     }
                 }
                 
-                self.deleteChildRecursive(parent: fileId)
-                
-                try? viewContext.save()
+                self.deleteChildRecursive(parent: fileId, context: backgroundContext)
+            }
+            backgroundContext.perform {
+                try? backgroundContext.save()
                 DispatchQueue.global().async {
                     onFinish?(true)
                 }
@@ -322,35 +312,28 @@ public class LocalStorage: RemoteStorageBase {
         
         do {
             try FileManager.default.moveItem(at: fromURL, to: newURL)
-            let group1 = DispatchGroup()
-            group1.enter()
             var parentPath: String?
             var parentId: String?
-            DispatchQueue.main.async {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            backgroundContext.perform {
                 let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest2) as? [RemoteData] {
+                if let result = try? backgroundContext.fetch(fetchRequest2) as? [RemoteData] {
                     for object in result {
                         parentPath = object.path
                         let component = parentPath?.components(separatedBy: "/")
                         parentPath = component?.dropLast().joined(separator: "/")
                         parentId = object.parent
-                        viewContext.delete(object)
+                        backgroundContext.delete(object)
                     }
                 }
-                group1.leave()
             }
-            group1.notify(queue: .global()) {
-                let group2 = DispatchGroup()
-                self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, group: group2)
+            self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+            backgroundContext.perform {
+                try? backgroundContext.save()
                 let id = self.getIdFromURL(url: newURL)
-                group2.notify(queue: .main){
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(id)
-                    }
+                DispatchQueue.global().async {
+                    onFinish?(id)
                 }
             }
         }
@@ -365,12 +348,11 @@ public class LocalStorage: RemoteStorageBase {
         
         do {
             try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path)
-            let group2 = DispatchGroup()
-            self.storeItem(item: targetURL, group: group2)
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            self.storeItem(item: targetURL, context: backgroundContext)
             let id = getIdFromURL(url: targetURL)
-            group2.notify(queue: .main){
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                try? viewContext.save()
+            backgroundContext.perform {
+                try? backgroundContext.save()
                 DispatchQueue.global().async {
                     onFinish?(id)
                 }
@@ -398,12 +380,8 @@ public class LocalStorage: RemoteStorageBase {
         newURL = newURL.appendingPathComponent(uploadname)
         
         var parentPath = ""
-        let group1 = DispatchGroup()
         if parentId != "" {
-            group1.enter()
-            DispatchQueue.main.async {
-                defer { group1.leave() }
-                
+            if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                 
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -411,6 +389,19 @@ public class LocalStorage: RemoteStorageBase {
                 if let result = try? viewContext.fetch(fetchRequest) {
                     if let items = result as? [RemoteData] {
                         parentPath = items.first?.path ?? ""
+                    }
+                }
+            }
+            else {
+                DispatchQueue.main.sync {
+                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    
+                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+                    if let result = try? viewContext.fetch(fetchRequest) {
+                        if let items = result as? [RemoteData] {
+                            parentPath = items.first?.path ?? ""
+                        }
                     }
                 }
             }
@@ -426,16 +417,13 @@ public class LocalStorage: RemoteStorageBase {
             
             UploadManeger.shared.UploadProgress(identifier: sessionId, possition: Int(fileSize))
             
-            let group2 = DispatchGroup()
-            group1.notify(queue: .global()) {
-                self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, group: group2)
-                let id = self.getIdFromURL(url: newURL)
-                group2.notify(queue: .main){
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    try? viewContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(id)
-                    }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+            let id = self.getIdFromURL(url: newURL)
+            backgroundContext.perform {
+                try? backgroundContext.save()
+                DispatchQueue.global().async {
+                    onFinish?(id)
                 }
             }
         }

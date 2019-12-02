@@ -35,6 +35,7 @@ class Encoder {
         let sound_fq = 48000.0
         let ch: Int
 
+        let bufferQueue: DispatchQueue
         var lpcmToAACConverter: AVAudioConverter? = nil
         var sound_buffer = Data()
         var sound_RDBs: [Data] = []
@@ -42,6 +43,7 @@ class Encoder {
 
         init(channel: Int) {
             ch = channel
+            bufferQueue = DispatchQueue(label: "bufferQueue \(channel)")
         }
         
         func process_sound(writer: TS_writer?, final: Bool = false) {
@@ -67,30 +69,35 @@ class Encoder {
                 }
                 let outBuffer = AVAudioCompressedBuffer(format: outputFormat, packetCapacity: 1, maximumPacketSize: 1024 * 2)
                 
-                let inputBlock : AVAudioConverterInputBlock = { (inNumPackets, outStatus) -> AVAudioBuffer? in
+                let inputBlock : AVAudioConverterInputBlock = { [weak self] (inNumPackets, outStatus) -> AVAudioBuffer? in
                     outStatus.pointee = .noDataNow
-                    let sample_size = MemoryLayout<Float>.size * 2
-                    if self.sound_buffer.count <= (final ? 0 : sample_size * 1024) {
+                    guard let self = self else {
                         return nil
                     }
-                    var samples = self.sound_buffer.count / sample_size
-                    if samples > 1024 {
-                        samples = 1024
+                    return self.bufferQueue.sync {
+                        let sample_size = MemoryLayout<Float>.size * 2
+                        if self.sound_buffer.count <= (final ? 0 : sample_size * 1024) {
+                            return nil
+                        }
+                        var samples = self.sound_buffer.count / sample_size
+                        if samples > 1024 {
+                            samples = 1024
+                        }
+                        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(samples)) else {
+                            return nil
+                        }
+                        guard let target = inputBuffer.floatChannelData else {
+                            return nil
+                        }
+                        let _ = self.sound_buffer.withUnsafeBytes { wav_data in
+                            memcpy(target.pointee, wav_data.baseAddress, samples*sample_size)
+                        }
+                        self.sound_buffer = self.sound_buffer.subdata(in: (samples*sample_size)..<self.sound_buffer.count)
+                        inputBuffer.frameLength = inputBuffer.frameCapacity
+                        outStatus.pointee = AVAudioConverterInputStatus.haveData
+                        let audioBuffer : AVAudioBuffer = inputBuffer
+                        return audioBuffer
                     }
-                    guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(samples)) else {
-                        return nil
-                    }
-                    guard let target = inputBuffer.floatChannelData else {
-                        return nil
-                    }
-                    let _ = self.sound_buffer.withUnsafeBytes { wav_data in
-                        memcpy(target.pointee, wav_data.baseAddress, samples*sample_size)
-                    }
-                    self.sound_buffer = self.sound_buffer.subdata(in: (samples*sample_size)..<self.sound_buffer.count)
-                    inputBuffer.frameLength = inputBuffer.frameCapacity
-                    outStatus.pointee = AVAudioConverterInputStatus.haveData
-                    let audioBuffer : AVAudioBuffer = inputBuffer
-                    return audioBuffer
                 }
                 var status: AVAudioConverterOutputStatus?
                 var error : NSError?
@@ -328,12 +335,20 @@ class Encoder {
     }
     
     func encode_sound(channel: Int, pcm_data: UnsafeBufferPointer<UInt8>, pts: Double) {
-        audios[channel].sound_buffer.append(pcm_data)
-        let sample_size = Double(MemoryLayout<Float>.size)
-        audios[channel].sound_pts = pts - Double(audios[channel].sound_buffer.count)/(sample_size*2)/audios[channel].sound_fq
-        if audios[channel].sound_buffer.count < Int(0.1*sample_size*2*audios[channel].sound_fq) {
-            return
+        let group = DispatchGroup()
+        group.enter()
+        audios[channel].bufferQueue.async {
+            defer {
+                group.leave()
+            }
+            self.audios[channel].sound_buffer.append(pcm_data)
+            let sample_size = Double(MemoryLayout<Float>.size)
+            self.audios[channel].sound_pts = pts - Double(self.audios[channel].sound_buffer.count)/(sample_size*2)/self.audios[channel].sound_fq
+            if self.audios[channel].sound_buffer.count < Int(0.1*sample_size*2*self.audios[channel].sound_fq) {
+                return
+            }
         }
+        group.wait()
         audios[channel].process_sound(writer: writer[channel+1])
     }
     

@@ -14,21 +14,34 @@ import CommonCrypto
 public class dataItems {
 
     public func listData(storage: String, parentID: String) -> [RemoteData]  {
-        let viewContext = persistentContainer.viewContext
-        
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-        fetchrequest.sortDescriptors = [NSSortDescriptor(key: "folder", ascending: false),
-                                        NSSortDescriptor(key: "name", ascending: true)]
-        do{
-            return try viewContext.fetch(fetchrequest) as! [RemoteData]
+        if Thread.isMainThread {
+            let viewContext = persistentContainer.viewContext
+            
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
+            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "folder", ascending: false),
+                                            NSSortDescriptor(key: "name", ascending: true)]
+            do{
+                return try viewContext.fetch(fetchrequest) as! [RemoteData]
+            }
+            catch{
+                return []
+            }
         }
-        catch{
-            return []
+        else {
+            return DispatchQueue.main.sync {
+                listData(storage: storage, parentID: parentID)
+            }
         }
     }
 
     public func getMark(storage: String, targetID: String) -> Double? {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync {
+                getMark(storage: storage, targetID: targetID)
+            }
+        }
+        
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
             return nil
@@ -36,36 +49,20 @@ public class dataItems {
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
 
-        var position: Double?
-        if !Thread.isMainThread {
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.main.async {
-                let viewContext = self.persistentContainer.viewContext
-                
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-                fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-                
-                position = try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
-                group.leave()
-            }
-            group.wait()
-        }
-        else {
-            let viewContext = self.persistentContainer.viewContext
-            
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-            
-            position = try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
-        }
-        return position
+        let viewContext = persistentContainer.viewContext
+        
+        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
+        fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
+        
+        return try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
     }
     
     public func getCloudMark(storage: String, parentID: String, onFinish: @escaping ()->Void) {
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            onFinish()
+            DispatchQueue.global().async {
+                onFinish()
+            }
             return
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
@@ -78,17 +75,17 @@ public class dataItems {
         ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
             guard error == nil else {
                 print("\(String(describing: error?.localizedDescription))")
-                onFinish()
+                DispatchQueue.global().async {
+                    onFinish()
+                }
                 return
             }
-            DispatchQueue.main.async {
-                let viewContext = self.persistentContainer.viewContext
-                
+            self.persistentContainer.performBackgroundTask { context in
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
+                if let result = try? context.fetch(fetchRequest) {
                     for object in result {
-                        viewContext.delete(object as! NSManagedObject)
+                        context.delete(object as! NSManagedObject)
                     }
                 }
 
@@ -97,7 +94,7 @@ public class dataItems {
                     let id = ckRecord["targetId"] as String?
                     
                     if let pos = pos {
-                        let newitem = Mark(context: viewContext)
+                        let newitem = Mark(context: context)
                         newitem.id = id
                         newitem.storage = storage
                         newitem.parent = parentID
@@ -105,8 +102,10 @@ public class dataItems {
                     }
                 }
                 
-                try? viewContext.save()
-                onFinish()
+                try? context.save()
+                DispatchQueue.global().async {
+                    onFinish()
+                }
             }
         })
     }
@@ -217,48 +216,50 @@ public class dataItems {
     }
     
     public func uploadCloudPlaylist(onFinish: @escaping ()->Void) {
-        var serialStart = Int64(0)
-        var serialEnd = Int64(0)
-        let group = DispatchGroup()
-        var saveItems = [CKRecord]()
-        group.enter()
-        DispatchQueue.main.async {
-            let viewContext = self.persistentContainer.viewContext
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-            if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-                if let forid = result.first {
-                    serialStart = forid.index
-                    serialEnd = forid.serial
-                }
+        if !Thread.isMainThread {
+            DispatchQueue.main.async {
+                self.uploadCloudPlaylist(onFinish: onFinish)
             }
-
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchrequest.predicate = NSPredicate(format: "serial BETWEEN {%lld, %lld}", serialStart, serialEnd)
-            if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
-                for item in data {
-                    let ckRecord = CKRecord(recordType: "PlayList")
-                    ckRecord["id"] = item.id
-                    ckRecord["storage"] = item.storage
-                    ckRecord["folder"] = item.folder
-                    ckRecord["index"] = item.index
-                    ckRecord["serial"] = item.serial
-                    saveItems += [ckRecord]
-                }
-            }
-
-            let ckRecord = CKRecord(recordType: "PlayList")
-            ckRecord["id"] = ""
-            ckRecord["storage"] = ""
-            ckRecord["folder"] = ""
-            ckRecord["index"] = serialStart
-            ckRecord["serial"] = serialEnd
-            saveItems += [ckRecord]
-
-            group.leave()
+            return
         }
         
-        group.notify(queue: .global()) {
+        var serialStart = Int64(0)
+        var serialEnd = Int64(0)
+        var saveItems = [CKRecord]()
+        
+        let viewContext = self.persistentContainer.viewContext
+        let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+        fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
+        if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
+            if let forid = result.first {
+                serialStart = forid.index
+                serialEnd = forid.serial
+            }
+        }
+
+        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+        fetchrequest.predicate = NSPredicate(format: "serial BETWEEN {%lld, %lld}", serialStart, serialEnd)
+        if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
+            for item in data {
+                let ckRecord = CKRecord(recordType: "PlayList")
+                ckRecord["id"] = item.id
+                ckRecord["storage"] = item.storage
+                ckRecord["folder"] = item.folder
+                ckRecord["index"] = item.index
+                ckRecord["serial"] = item.serial
+                saveItems += [ckRecord]
+            }
+        }
+
+        let ckRecord = CKRecord(recordType: "PlayList")
+        ckRecord["id"] = ""
+        ckRecord["storage"] = ""
+        ckRecord["folder"] = ""
+        ckRecord["index"] = serialStart
+        ckRecord["serial"] = serialEnd
+        saveItems += [ckRecord]
+
+        DispatchQueue.global().async {
             let ckQuery = CKQuery(recordType: "PlayList", predicate: NSPredicate(value: true))
             
             self.subGetCurrentPlaylist(q: ckQuery) { ckRecords in
@@ -279,18 +280,17 @@ public class dataItems {
             onFinish()
             return
         }
+        let backgroudContext = persistentContainer.newBackgroundContext()
         operation.resultsLimit = 100
         operation.recordFetchedBlock = { ckRecord in
-            DispatchQueue.main.async {
-                let viewContext = self.persistentContainer.viewContext
-                
+            backgroudContext.perform {
                 let id = ckRecord["id"] as String?
                 let storage = ckRecord["storage"] as String?
                 let folder = ckRecord["folder"] as String?
                 let index = ckRecord["index"] as Int64?
                 let serial = ckRecord["serial"] as Int64?
                 
-                let newitem = PlayList(context: viewContext)
+                let newitem = PlayList(context: backgroudContext)
                 newitem.id = id
                 newitem.storage = storage
                 newitem.folder = folder
@@ -301,9 +301,8 @@ public class dataItems {
         operation.queryCompletionBlock = { cursor, error in
             guard error == nil else {
                 print("\(String(describing: error?.localizedDescription))")
-                DispatchQueue.main.async {
-                    let viewContext = self.persistentContainer.viewContext
-                    try? viewContext.save()
+                backgroudContext.perform {
+                    try? backgroudContext.save()
                 }
                 onFinish()
                 return
@@ -313,9 +312,8 @@ public class dataItems {
                 self.subGetCloudPlaylist(cursor: cursor, onFinish: onFinish)
                 return
             }
-            DispatchQueue.main.async {
-                let viewContext = self.persistentContainer.viewContext
-                try? viewContext.save()
+            backgroudContext.perform {
+                try? backgroudContext.save()
             }
             onFinish()
         }
@@ -373,27 +371,16 @@ public class dataItems {
     }
 
     public func touchPlaylist(items: [[String: Any]]) {
-        if !Thread.isMainThread {
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.main.async {
-                self.touchPlaylist(items: items)
-                group.leave()
-            }
-            group.wait()
-        }
-        else {
+        persistentContainer.performBackgroundTask { context in
             let serial = Int64(Date().timeIntervalSince1970 * 1000)
-            let viewContext = self.persistentContainer.viewContext
-            
             let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
             fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-            if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
+            if let result = try? context.fetch(fetchRequest1) as? [PlayList] {
                 if let forid = result.first {
                     forid.serial = serial
                 }
                 else {
-                    let forid = PlayList(context: viewContext)
+                    let forid = PlayList(context: context)
                     forid.folder = ""
                     forid.id = ""
                     forid.storage = ""
@@ -406,165 +393,162 @@ public class dataItems {
                 if let id = item["id"] as? String, let storage = item["storage"] as? String, let folder = item["folder"] as? String, let index = item["index"] as? Int64 {
                     let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
                     fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@ && index == %lld", id, storage, folder, index)
-                    if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
+                    if let data = try? context.fetch(fetchrequest) as? [PlayList] {
                         if let target = data.first {
                             target.serial = serial
                         }
                     }
                 }
             }
-            try? viewContext.save()
+            try? context.save()
         }
     }
     
     public func getPlaylist() -> [[String: Any]] {
-        var result = [[String: Any]]()
         if !Thread.isMainThread {
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.main.async {
-                result = self.getPlaylist()
-                group.leave()
+            return DispatchQueue.main.sync {
+                self.getPlaylist()
             }
-            group.wait()
         }
-        else {
-            let viewContext = self.persistentContainer.viewContext
+        let viewContext = self.persistentContainer.viewContext
 
-            var startSerial = Int64(0)
-            var endSerial = Int64(0)
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-            if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-                if let forid = result.first {
-                    endSerial = forid.serial
-                    startSerial = forid.index
-                }
+        var result = [[String: Any]]()
+        var startSerial = Int64(0)
+        var endSerial = Int64(0)
+        let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+        fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
+        if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
+            if let forid = result.first {
+                endSerial = forid.serial
+                startSerial = forid.index
             }
+        }
 
-            let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchRequest2.predicate = NSPredicate(format: "NOT serial BETWEEN {%lld, %lld}", startSerial, endSerial)
-            if let result = try? viewContext.fetch(fetchRequest2) as? [PlayList] {
-                for item in result {
-                    viewContext.delete(item)
-                }
+        let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+        fetchRequest2.predicate = NSPredicate(format: "NOT serial BETWEEN {%lld, %lld}", startSerial, endSerial)
+        if let result = try? viewContext.fetch(fetchRequest2) as? [PlayList] {
+            for item in result {
+                viewContext.delete(item)
             }
-            try? viewContext.save()
+        }
+        try? viewContext.save()
 
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchrequest.predicate = NSPredicate(format: "id != %@ && storage != %@ && serial BETWEEN {%lld, %lld}", "", "", startSerial, endSerial)
-            if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
-                result = data.map { item in
-                    var ret = [String: Any]()
-                    ret["id"] = item.id
-                    ret["storage"] = item.storage
-                    ret["folder"] = item.folder
-                    ret["index"] = item.index
-                    return ret
-                }
+        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+        fetchrequest.predicate = NSPredicate(format: "id != %@ && storage != %@ && serial BETWEEN {%lld, %lld}", "", "", startSerial, endSerial)
+        if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
+            result = data.map { item in
+                var ret = [String: Any]()
+                ret["id"] = item.id
+                ret["storage"] = item.storage
+                ret["folder"] = item.folder
+                ret["index"] = item.index
+                return ret
             }
         }
         return result
     }
 
     public func updatePlaylist(prevItem: [String: Any], newItem: [String: Any]) {
-        let viewContext = persistentContainer.viewContext
-        let serial = Int64(Date().timeIntervalSince1970 * 1000)
+        persistentContainer.performBackgroundTask { context in
+            let serial = Int64(Date().timeIntervalSince1970 * 1000)
 
-        let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-        if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-            if let forid = result.first {
-                forid.serial = serial
+            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
+            if let result = try? context.fetch(fetchRequest1) as? [PlayList] {
+                if let forid = result.first {
+                    forid.serial = serial
+                }
+                else {
+                    let forid = PlayList(context: context)
+                    forid.folder = ""
+                    forid.id = ""
+                    forid.storage = ""
+                    forid.index = serial
+                    forid.serial = serial
+                }
             }
             else {
-                let forid = PlayList(context: viewContext)
+                let forid = PlayList(context: context)
                 forid.folder = ""
                 forid.id = ""
                 forid.storage = ""
                 forid.index = serial
                 forid.serial = serial
             }
-        }
-        else {
-            let forid = PlayList(context: viewContext)
-            forid.folder = ""
-            forid.id = ""
-            forid.storage = ""
-            forid.index = serial
-            forid.serial = serial
-        }
-        try? viewContext.save()
+            try? context.save()
 
-        var newData: PlayList
-        if let id = prevItem["id"] as? String, let storage = prevItem["storage"] as? String, let folder = prevItem["folder"] as? String {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            if let index = prevItem["index"] as? Int64 {
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@ && index == %lld", id, storage, folder, index)
-            }
-            else {
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", id, storage, folder)
-            }
-            if let result = try? viewContext.fetch(fetchRequest) as? [PlayList] {
-                newData = result.first ?? PlayList(context: viewContext)
-                for object in result.dropFirst() {
-                    viewContext.delete(object)
+            var newData: PlayList
+            if let id = prevItem["id"] as? String, let storage = prevItem["storage"] as? String, let folder = prevItem["folder"] as? String {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
+                if let index = prevItem["index"] as? Int64 {
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@ && index == %lld", id, storage, folder, index)
+                }
+                else {
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", id, storage, folder)
+                }
+                if let result = try? context.fetch(fetchRequest) as? [PlayList] {
+                    newData = result.first ?? PlayList(context: context)
+                    for object in result.dropFirst() {
+                        context.delete(object)
+                    }
+                }
+                else {
+                    newData = PlayList(context: context)
                 }
             }
             else {
-                newData = PlayList(context: viewContext)
+                newData = PlayList(context: context)
             }
-        }
-        else {
-            newData = PlayList(context: viewContext)
-        }
-        if let newid = newItem["id"] as? String, let newstorage = newItem["storage"] as? String, let newfolder = newItem["folder"] as? String {
-            newData.id = newid
-            newData.storage = newstorage
-            newData.folder = newfolder
-            if let index = newItem["index"] as? Int64 {
-                newData.index = index
+            if let newid = newItem["id"] as? String, let newstorage = newItem["storage"] as? String, let newfolder = newItem["folder"] as? String {
+                newData.id = newid
+                newData.storage = newstorage
+                newData.folder = newfolder
+                if let index = newItem["index"] as? Int64 {
+                    newData.index = index
+                }
+                else {
+                    newData.index = Int64(Date().timeIntervalSince1970 * 1000)
+                }
+                newData.serial = serial
             }
             else {
-                newData.index = Int64(Date().timeIntervalSince1970 * 1000)
+                context.delete(newData)
             }
-            newData.serial = serial
+            try? context.save()
         }
-        else {
-            viewContext.delete(newData)
-        }
-        try? viewContext.save()
     }
     
-    public func setMark(storage: String, targetID: String, parentID: String, position: Double?) {
+    public func setMark(storage: String, targetID: String, parentID: String, position: Double?, onFinish: @escaping ()->Void) {
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
+            onFinish()
             return
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
 
-        let viewContext = persistentContainer.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-        if let result = try? viewContext.fetch(fetchRequest) {
-            for object in result {
-                viewContext.delete(object as! NSManagedObject)
+        persistentContainer.performBackgroundTask { context in
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
+            if let result = try? context.fetch(fetchRequest) {
+                for object in result {
+                    context.delete(object as! NSManagedObject)
+                }
             }
-        }
-        
-        if let position = position {
-            let newitem = Mark(context: viewContext)
-            newitem.id = target
-            newitem.storage = storage
-            newitem.parent = parentID
-            newitem.position = position
             
-            try? viewContext.save()
-        }
-        else {
-            try? viewContext.save()
+            if let position = position {
+                let newitem = Mark(context: context)
+                newitem.id = target
+                newitem.storage = storage
+                newitem.parent = parentID
+                newitem.position = position
+                
+                try? context.save()
+            }
+            else {
+                try? context.save()
+            }
+            onFinish()
         }
     }
 
@@ -652,6 +636,11 @@ public class dataItems {
     }
     
     public func getImage(storage: String, parentId: String, baseName: String) -> RemoteData? {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync {
+                self.getImage(storage: storage, parentId: parentId, baseName: baseName)
+            }
+        }
         let viewContext = persistentContainer.viewContext
         
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -680,7 +669,37 @@ public class dataItems {
         return nil
     }
     
+    public func getData(storage: String, fileId: String, onFinish: @escaping (RemoteData?)->Void) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async {
+                let viewContext = self.persistentContainer.viewContext
+                
+                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+                let ret = ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+                DispatchQueue.global().async {
+                    onFinish(ret)
+                }
+            }
+        }
+        else {
+            let viewContext = self.persistentContainer.viewContext
+            
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            let ret = ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+            DispatchQueue.global().async {
+                onFinish(ret)
+            }
+        }
+    }
+    
     public func getData(storage: String, fileId: String) -> RemoteData?  {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync {
+                self.getData(storage: storage, fileId: fileId)
+            }
+        }
         let viewContext = persistentContainer.viewContext
         
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -689,6 +708,11 @@ public class dataItems {
     }
     
     public func getData(path: String) -> RemoteData?  {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync {
+                self.getData(path: path)
+            }
+        }
         let viewContext = persistentContainer.viewContext
         
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
