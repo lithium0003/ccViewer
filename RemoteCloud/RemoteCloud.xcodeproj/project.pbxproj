@@ -31,6 +31,7 @@
 		3FA46CE223849615007ACC82 /* FileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE123849615007ACC82 /* FileCache.swift */; };
 		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
 		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
+		3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE215872394F39300CD2A19 /* FilesStorage.swift */; };
 		3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE23B1E2340B96200916DA6 /* UploadManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -72,6 +73,7 @@
 		3FA46CE123849615007ACC82 /* FileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCache.swift; sourceTree = "<group>"; };
 		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
+		3FE215872394F39300CD2A19 /* FilesStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesStorage.swift; sourceTree = "<group>"; };
 		3FE23B1E2340B96200916DA6 /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -164,6 +166,7 @@
 				3C400921224190920028A45A /* OneDriveStorage.swift */,
 				3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */,
 				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
+				3FE215872394F39300CD2A19 /* FilesStorage.swift */,
 			);
 			path = Storages;
 			sourceTree = "<group>";
@@ -288,6 +291,7 @@
 				3FA46CE223849615007ACC82 /* FileCache.swift in Sources */,
 				3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */,
 				3C14C452225CE19E0044E4A7 /* CueSheet.swift in Sources */,
+				3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */,
 				3C0654A122384BED003BD932 /* CryptCarotDAV.swift in Sources */,
 				3C40091E22413C340028A45A /* DropBoxStorage.swift in Sources */,
 				3F3ABABD2273119D002A8D16 /* pCloudStorage.swift in Sources */,

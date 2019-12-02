@@ -154,7 +154,7 @@ class TableViewControllerRoot: UITableViewController {
             
             let alart0 = UIAlertController(title: "Remove Item", message: NSString(format: NSLocalizedString("Select 'Just hide on menu' / 'Log out'", comment: "") as NSString, name) as String, preferredStyle: .alert)
 
-            let hideAction = UIAlertAction(title: NSLocalizedString("Just hide on manu", comment: ""), style: .default) { action in
+            let hideAction = UIAlertAction(title: NSLocalizedString("Just hide on menu", comment: ""), style: .default) { action in
                 let hideItem = self.storage[indexPath.row]
                 if let hideIndex = self.storageShow.firstIndex(of: hideItem) {
                     self.storageShow.remove(at: hideIndex)

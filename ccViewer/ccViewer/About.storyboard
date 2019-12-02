@@ -24,7 +24,7 @@
                                         <subviews>
                                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="app" translatesAutoresizingMaskIntoConstraints="NO" id="XSb-oB-TLM">
                                                 <rect key="frame" x="0.0" y="0.0" width="128" height="128"/>
-                                                <color key="backgroundColor" systemColor="systemIndigoColor" red="0.34509803919999998" green="0.33725490200000002" blue="0.83921568629999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                                <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                                 <constraints>
                                                     <constraint firstAttribute="width" constant="128" id="QcD-OK-JgC"/>
                                                     <constraint firstAttribute="height" constant="128" id="wtY-dV-dHT"/>
@@ -144,7 +144,7 @@
                                     <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" textAlignment="natural" translatesAutoresizingMaskIntoConstraints="NO" id="Ief-KP-b3p">
                                         <rect key="frame" x="0.0" y="50" width="394" height="758"/>
                                         <color key="backgroundColor" systemColor="systemBackgroundColor" cocoaTouchSystemColor="whiteColor"/>
-                                        <mutableString key="text">FFmpeg version 4.2.1  GNU LESSER GENERAL PUBLIC LICENSE
+                                        <string key="text">FFmpeg version 4.2.1  GNU LESSER GENERAL PUBLIC LICENSE
 Version 2.1, February 1999
 Copyright (C) 1991, 1999 Free Software Foundation, Inc.
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
@@ -153,7 +153,7 @@ of this license document, but changing it is not allowed.
   Google Cast SDK (iOS Sender v4.4.6)  Google Cast SDK Additional Developer Terms of Service
 https://developers.google.com/cast/docs/terms
 Chrome Sender, Media Player Library and Receiver use the Closure library, which is licensed under the Apache 2.0 License, and the lit-html library, which is licensed under the BSD 3-Clause License.
-</mutableString>
+</string>
                                         <color key="textColor" systemColor="labelColor" cocoaTouchSystemColor="darkTextColor"/>
                                         <fontDescription key="fontDescription" type="system" pointSize="14"/>
                                         <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>

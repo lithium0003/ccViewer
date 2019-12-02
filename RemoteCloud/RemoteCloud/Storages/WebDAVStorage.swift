@@ -498,7 +498,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
     
     override func authorize(onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "authorize(google:\(storageName ?? ""))")
+        os_log("%{public}@", log: log, type: .debug, "authorize(WebDAV:\(storageName ?? ""))")
         
         DispatchQueue.main.async {
             if let controller = UIApplication.topViewController() {

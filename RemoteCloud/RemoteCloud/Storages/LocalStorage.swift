@@ -122,47 +122,40 @@ public class LocalStorage: RemoteStorageBase {
         let targetURL = documentsURL.appendingPathComponent(fileId)
         print(targetURL)
 
-        guard let attr = try? FileManager.default.attributesOfItem(atPath: targetURL.path) else {
-            return
-        }
-        let maxlen = Int(truncating: attr[.size] as? NSNumber ?? 0)
-        
-        guard let stream = InputStream(url: targetURL) else {
-            onFinish?(nil)
-            return
-        }
-        stream.open()
-        defer {
-            stream.close()
-        }
-        
+        var ret: Data?
         let reqOffset = Int(start ?? 0)
-        var offset = 0
-        while offset < reqOffset {
-            var buflen = reqOffset - offset
-            if buflen > 1024*1024 {
-                buflen = 1024*1024
+        do {
+            let hFile = try FileHandle(forReadingFrom: targetURL)
+            defer {
+                do {
+                    if #available(iOS 13.0, *) {
+                        try hFile.close()
+                    } else {
+                        hFile.closeFile()
+                    }
+                }
+                catch {
+                    print(error)
+                }
             }
-            var buf:[UInt8] = [UInt8](repeating: 0, count: buflen)
-            let len = stream.read(&buf, maxLength: buf.count)
-            if len <= 0 {
-                print(stream.streamError!)
-                onFinish?(nil)
-                return
+            if #available(iOS 13.0, *) {
+                try hFile.seek(toOffset: UInt64(reqOffset))
+            } else {
+                hFile.seek(toFileOffset: UInt64(reqOffset))
             }
-            offset += len
+            if let size = length {
+                ret = hFile.readData(ofLength: Int(size))
+            }
+            else {
+                ret = hFile.readDataToEndOfFile()
+            }
         }
-        
-        let len = Int(length ?? Int64(maxlen - reqOffset))
-        
-        var buf:[UInt8] = [UInt8](repeating: 0, count: len)
-        let rlen = stream.read(&buf, maxLength: buf.count)
-        if rlen <= 0 {
-            print(stream.streamError!)
-            onFinish?(nil)
-            return
+        catch {
+            print(error)
         }
-        onFinish?(Data(buf))
+        DispatchQueue.global().async {
+            onFinish?(ret)
+        }
     }
     
     func getIdFromURL(url: URL) -> String {
@@ -259,9 +252,7 @@ public class LocalStorage: RemoteStorageBase {
         targetURL = targetURL.appendingPathComponent(name)
         do {
             try FileManager.default.moveItem(at: fromURL, to: targetURL)
-            DispatchQueue.main.async {
-                self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
-            }
+            self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
             let id = self.getIdFromURL(url: targetURL)
             backgroundContext.perform {
                 try? backgroundContext.save()

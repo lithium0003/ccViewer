@@ -12,6 +12,7 @@ import CoreData
 
 public enum CloudStorages: CaseIterable {
     case Local
+    case Files
     case DropBox
     case GoogleDrive
     case OneDrive
@@ -258,6 +259,8 @@ public class CloudFactory {
             return UIImage(named: "cryptomator", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .Local:
             return UIImage(named: "local", in: Bundle(for: type(of: self)), compatibleWith: nil)
+        case .Files:
+            return UIImage(named: "files", in: Bundle(for: type(of: self)), compatibleWith: nil)
         }
     }
 
@@ -281,6 +284,8 @@ public class CloudFactory {
             return "Cryptomator"
         case .Local:
             return "Local"
+        case .Files:
+            return "Files"
         }
     }
 
@@ -306,6 +311,8 @@ public class CloudFactory {
             return Cryptomator(name: tagname)
         case .Local:
             return LocalStorage(name: tagname)
+        case .Files:
+            return FilesStorage(name: tagname)
         }
     }
 
