@@ -309,6 +309,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         super.didMove(toParent: parent)
         if parent == nil {
             gone = false
+            semaphore.signal()
         }
     }
 
@@ -934,7 +935,10 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 if newroot.count == 0 {
                     self.activityIndicator.startAnimating()
                     DispatchQueue.global().async {
-                        CloudFactory.shared[self.storageName]?.list(fileId: self.result[indexPath.row].id ?? "") {
+                        CloudFactory.shared[self.storageName]?.list(fileId: self.result[indexPath.row].id ?? "") { [weak self] in
+                            guard let self = self else {
+                                return
+                            }
                             DispatchQueue.main.async {
                                 self.activityIndicator.stopAnimating()
                                 self.semaphore.signal()
@@ -964,7 +968,10 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 if newroot.count == 0 {
                     activityIndicator.startAnimating()
                     
-                    (CloudFactory.shared[storageName] as? RemoteSubItem)?.listsubitem(fileId: result[indexPath.row].id ?? "") {
+                    (CloudFactory.shared[storageName] as? RemoteSubItem)?.listsubitem(fileId: result[indexPath.row].id ?? "") { [weak self] in
+                        guard let self = self else {
+                            return
+                        }
                         DispatchQueue.main.async {
                             self.activityIndicator.stopAnimating()
                             self.semaphore.signal()
@@ -1314,6 +1321,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             guard self.downloadProgress.isLive else {
                 self.semaphore.signal()
                 stream.isLive = false
+                item.cancel()
                 return
             }
             DispatchQueue.main.async {
@@ -1359,6 +1367,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             guard self.downloadProgress.isLive else {
                 self.semaphore.signal()
                 stream.isLive = false
+                item.cancel()
                 return
             }
             DispatchQueue.main.async {

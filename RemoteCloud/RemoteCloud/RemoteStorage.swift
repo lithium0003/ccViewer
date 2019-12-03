@@ -583,7 +583,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     var cancelTime = Date(timeIntervalSince1970: 0)
 
     public func cancel() {
-        cancelTime = Date(timeIntervalSinceNow: 0.1)
+        cancelTime = Date(timeIntervalSinceNow: 0.5)
     }
     
     public func config() -> String {
@@ -661,16 +661,15 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         if fileId == "" {
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             self.deleteChild(parent: fileId, context: backgroundContext)
-            backgroundContext.performAndWait {
+            backgroundContext.perform {
                 try? backgroundContext.save()
+                self.ListChildren(onFinish: onFinish)
             }
-            self.ListChildren(onFinish: onFinish)
         }
         else {
             var path = ""
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-
-            backgroundContext.performAndWait {
+            backgroundContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
                 if let result = try? backgroundContext.fetch(fetchRequest) {
@@ -683,7 +682,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
                     self.deleteChild(parent: fileId, context: backgroundContext)
                 }
             }
-            backgroundContext.performAndWait {
+            backgroundContext.perform {
                 if path != "" {
                     try? backgroundContext.save()
                     self.ListChildren(fileId: fileId, path: path, onFinish: onFinish)
@@ -702,7 +701,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         else {
             var ids: [String] = []
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            backgroundContext.performAndWait {
+            backgroundContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "path == %@", path)
                 if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {

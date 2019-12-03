@@ -96,6 +96,7 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
         super.didMove(toParent: parent)
         if parent == nil {
             gone = false
+            semaphore.signal()
         }
     }
 

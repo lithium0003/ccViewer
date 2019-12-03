@@ -313,15 +313,6 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         return .WebDAV
     }
 
-    public override func cancel() {
-        if let acceptRange = acceptRange, !acceptRange {
-            cancelTime = Date(timeIntervalSinceNow: 10)
-        }
-        else {
-            super.cancel()
-        }
-    }
-    
     var cache_accessUsername = ""
     var accessUsername: String {
         if let name = storageName {
@@ -377,6 +368,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     var recvData: [Int: Data] = [:]
     var headerHandler: [Int: (URLResponse)->URLSession.ResponseDisposition] = [:]
     
+    let wholeQueue = DispatchQueue(label: "WholeReading")
     var wholeReading: [URL] = []
     
     public func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -1040,9 +1032,8 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             }
         }
         //print(url)
-        
-        if wholeReading.contains(url) {
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 1..<5)) {
+        if wholeQueue.sync(execute: { wholeReading.contains(url) }) {
+            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<1)) {
                 if self.cancelTime.timeIntervalSinceNow > 0 {
                     self.cancelTime = Date(timeIntervalSinceNow: 0.5)
                     onFinish?(nil)
@@ -1065,33 +1056,34 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             return
         }
         lastCall = Date()
-        wholeReading += [url]
-        
+        wholeQueue.async {
+            self.wholeReading += [url]
+        }
+
         var request: URLRequest
         request = URLRequest(url: url)
         
-        os_log("%{public}@", log: log, type: .debug, "readFile(WebDAV:\(storageName ?? "") \(fileId) whole read")
+        os_log("%{public}@", log: log, type: .debug, "readFile(WebDAV:\(storageName ?? "") \(fileId) whole read \(start ?? 0) \(length ?? -1)")
 
         let task = dataSession.dataTask(with: request)
-        let timer1 = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { t in
-            if self.cancelTime.timeIntervalSinceNow > 0 {
-                print("cancel")
-                self.cancelTime = Date(timeIntervalSinceNow: 1)
-                onFinish?(nil)
-                task.cancel()
-                return
+        var timer1: Timer?
+        DispatchQueue.main.async {
+            timer1 = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { t in
+                if self.cancelTime.timeIntervalSinceNow > 0 {
+                    print("cancel")
+                    task.cancel()
+                    self.cancelTime = Date(timeIntervalSinceNow: 0.5)
+                    onFinish?(nil)
+                    return
+                }
             }
         }
         dataTasks[task.taskIdentifier] = { data, error in
-            self.callSemaphore.signal()
-            timer1.invalidate()
-            var waittime = self.callWait
             if let error = error {
                 print(error)
-                if (error as NSError).code == -1009 {
-                    waittime += 30
-                }
             }
+            self.callSemaphore.signal()
+            timer1?.invalidate()
             if let d = data {
                 CloudFactory.shared.cache.saveFile(storage: self.storageName!, id: fileId, data: d)
                 let s = Int(start ?? 0)

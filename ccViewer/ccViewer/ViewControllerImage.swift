@@ -243,6 +243,7 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
             self.isDownloading = false
             guard self.downloadProgress.isLive else {
                 stream.isLive = false
+                self.items[idx].cancel()
                 return
             }
             DispatchQueue.main.async {
@@ -362,6 +363,7 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
             }) { data in
                 guard self.downloadProgress.isLive else {
                     stream.isLive = false
+                    self.items[self.itemIdx].cancel()
                     return
                 }
                 DispatchQueue.main.async {

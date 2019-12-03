@@ -238,6 +238,7 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
     override func didMove(toParent parent: UIViewController?) {
         if parent == nil {
             gone = false
+            semaphore.signal()
         }
     }
 

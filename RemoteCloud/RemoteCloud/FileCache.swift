@@ -30,12 +30,16 @@ public class FileCache {
                 group.leave()
                 return
             }
-            var targetURL: URL?
             self.persistentContainer.performBackgroundTask { context in
+                defer {
+                    group.leave()
+                }
+                var targetURL: URL?
                 let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
                 fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == 0", storage, id)
                 do{
-                    guard let item = try context.fetch(fetchrequest).first as? FileCacheItem else {
+                    let items = try context.fetch(fetchrequest)
+                    guard let item = items.first as? FileCacheItem else {
                         return
                     }
                     if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
@@ -65,42 +69,42 @@ public class FileCache {
                     }
                 }
                 catch{
-                    return
+                    print(error)
                 }
-            }
-            if let target = targetURL {
-                do {
-                    let hFile = try FileHandle(forReadingFrom: target)
-                    defer {
-                        do {
-                            if #available(iOS 13.0, *) {
-                                try hFile.close()
-                            } else {
-                                hFile.closeFile()
+                if let target = targetURL {
+                    do {
+                        let hFile = try FileHandle(forReadingFrom: target)
+                        defer {
+                            do {
+                                if #available(iOS 13.0, *) {
+                                    try hFile.close()
+                                } else {
+                                    hFile.closeFile()
+                                }
+                            }
+                            catch {
+                                print(error)
                             }
                         }
-                        catch {
-                            print(error)
+                        if #available(iOS 13.0, *) {
+                            try hFile.seek(toOffset: UInt64(offset))
+                        } else {
+                            hFile.seek(toFileOffset: UInt64(offset))
                         }
-                    }
-                    if #available(iOS 13.0, *) {
-                        try hFile.seek(toOffset: UInt64(offset))
-                    } else {
-                        hFile.seek(toFileOffset: UInt64(offset))
-                    }
-                    if size < 0 {
-                        ret = hFile.readDataToEndOfFile()
+                        if size < 0 {
+                            ret = hFile.readDataToEndOfFile()
+                            return
+                        }
+                        ret = hFile.readData(ofLength: Int(size))
                         return
                     }
-                    ret = hFile.readData(ofLength: Int(size))
-                    return
-                }
-                catch {
-                    print(error)
+                    catch {
+                        print(error)
+                    }
                 }
             }
         }
-        let _ = group.wait(timeout: .now()+2)
+        let _ = group.wait()
         return ret
     }
     
@@ -123,7 +127,8 @@ public class FileCache {
                 let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
                 fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld", storage, id, offset)
                 do{
-                    guard let item = try context.fetch(fetchrequest).first as? FileCacheItem else {
+                    let items = try context.fetch(fetchrequest)
+                    guard let item = items.first as? FileCacheItem else {
                         return
                     }
                     if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
@@ -153,12 +158,13 @@ public class FileCache {
                     }
                 }
                 catch{
+                    print(error)
                     return
                 }
             }
 
         }
-        let _ = group.wait(timeout: .now()+2)
+        let _ = group.wait()
         return ret
     }
 
@@ -166,7 +172,7 @@ public class FileCache {
         if getCacheSize() > cacheMaxSize {
             increseFreeSpace()
         }
-
+        
         do {
             let size = Int64(data.count)
             let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
