@@ -18,10 +18,29 @@ class HTTPserver {
     init?(baseUrl: URL, port: UInt16) {
         signal(SIGPIPE) { s in print("signal SIGPIPE") }
         
+        var hints = addrinfo()
+        memset(&hints, 0, MemoryLayout.size(ofValue: hints))
+        hints.ai_family = AF_INET6
+        hints.ai_socktype = SOCK_STREAM
+        hints.ai_flags = AI_PASSIVE
+
+        var ai: addrinfo
+        var res: UnsafeMutablePointer<addrinfo>? = nil
+        let err = getaddrinfo(nil, "\(port)", &hints, &res)
+        guard err == 0 else {
+            perror("getaddrinfo() failed: \(err)")
+            return nil
+        }
+        guard let resp = res else {
+            perror("getaddrinfo() failed: nullpointer")
+            return nil
+        }
+        ai = resp.pointee
+        
         self.baseUrl = baseUrl
         self.port = port
         
-        sockfd = socket(AF_INET, SOCK_STREAM, 0)
+        sockfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol)
         guard sockfd >= 0 else {
             perror("ERROR opening socket")
             return nil
@@ -33,13 +52,7 @@ class HTTPserver {
             return nil
         }
         
-        var serv_addr = sockaddr_in()
-        serv_addr.sin_family = sa_family_t(AF_INET)
-        serv_addr.sin_addr.s_addr = INADDR_ANY
-        serv_addr.sin_port = CFSwapInt16(port)
-        
-        let p = withUnsafePointer(to: &serv_addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { $0 } }
-        guard bind(sockfd, p, socklen_t(MemoryLayout.size(ofValue: serv_addr))) >= 0 else {
+        guard bind(sockfd, ai.ai_addr, ai.ai_addrlen) >= 0 else {
             perror("ERROR on binding")
             return nil
         }

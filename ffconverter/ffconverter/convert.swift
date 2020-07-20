@@ -261,11 +261,18 @@ class convert {
         guard let host = HTTPserver.getWiFiAddress() else {
             return nil
         }
+        let fixedHost: String
+        if host.contains(":") {
+            fixedHost = "[\(host)]"
+        }
+        else {
+            fixedHost = host
+        }
 
         let item = info.item
         if let id = get_items(item: item.path) {
             onReady(true)
-            return URL(string: "http://\(local ? "localhost" : host):\(port)/\(id)/stream.m3u8")!
+            return URL(string: "http://\(local ? "localhost" : fixedHost):\(port)/\(id)/stream.m3u8")!
         }
         
         let randID = UUID().uuidString
@@ -294,7 +301,7 @@ class convert {
             }
             items[item.path] = randID
         }
-        let playURL = URL(string: "http://\(local ? "localhost" : host):\(port)/\(randID)/stream.m3u8")!
+        let playURL = URL(string: "http://\(local ? "localhost" : fixedHost):\(port)/\(randID)/stream.m3u8")!
         DispatchQueue.global().async {
             let bridge = StreamBridgeConvert(info: info, name: item.name, encoder: encoder)
             bridge.onSelect = onSelect
