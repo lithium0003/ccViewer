@@ -69,6 +69,26 @@ class TableViewControllerRoot: UITableViewController {
         }
     }
 
+    func reload() {
+        let allStorages = CloudFactory.shared.storages
+        if let prev1 = UserDefaults.standard.array(forKey: "ShowingStorages"), let prevShowing = prev1 as? [String] {
+            storageShow = prevShowing
+        }
+        else {
+            storageShow = allStorages
+        }
+        if let prev0 = UserDefaults.standard.array(forKey: "AllStorages"), let prevAll = prev0 as? [String] {
+            storage = prevAll
+            let newStorage = allStorages.filter { !storage.contains($0) }
+            storage.append(contentsOf: newStorage)
+            storageShow = storage.filter { storageShow.contains($0) || newStorage.contains($0) }
+        }
+        else {
+            storage = allStorages
+        }
+        tableView.reloadData()
+    }
+
     func saveListItems() {
         UserDefaults.standard.set(storage, forKey: "AllStorages")
         UserDefaults.standard.set(storageShow, forKey: "ShowingStorages")

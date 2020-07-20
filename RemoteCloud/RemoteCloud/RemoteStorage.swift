@@ -181,7 +181,10 @@ public class RemoteStream {
     public func read(position: Int64, length: Int, onProgress: ((Int)->Bool)? = nil, onFinish: @escaping (Data?) -> Void) {
         read_queue.async {
             let fixlen = (Int64(length) + position >= self.size) ? Int(self.size - position) : length
-            onFinish(self.read(position: position, length: fixlen, onProgress: onProgress))
+            let data = self.read(position: position, length: fixlen, onProgress: onProgress)
+            DispatchQueue.global().async {
+                onFinish(data)
+            }
         }
     }
     
@@ -198,8 +201,14 @@ public class CloudFactory {
     public var urlSessionDidFinishCallback: ((URLSession)->Void)?
 
     private init() {
+        storageList = [:]
+        initializeDatabase()
+    }
+
+    public func initializeDatabase() {
         os_log("%{public}@", log: log, type: .info, "CloudFactory(init)")
         storageList = [:]
+
         if let sList = getKeyChain(key: "remoteStorageList") {
             let classmap = Dictionary(uniqueKeysWithValues: CloudStorages.allCases.map() { (CloudFactory.getServiceName(service: $0), $0) })
             do {
@@ -426,6 +435,13 @@ public class CloudFactory {
         let _ = storageList.map() { delStorage(tagname: $0.key) }
     }
     
+    public func removeAllAuth() {
+        if delAllKeyChain() {
+            storageList = [:]
+            storageList["Local"] = CloudFactory.createInstance(service: .Local, tagname: "Local")
+        }
+    }
+
     func getKeyChain(key: String) -> Data? {
         let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrAccount as String: key,
@@ -484,6 +500,32 @@ public class CloudFactory {
         }
     }
     
+    func delAllKeyChain() -> Bool {
+        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrSynchronizable as String: kCFBooleanTrue as Any]
+        let dic2: [String: Any] = [kSecClass as String: kSecClassGenericPassword]
+        let dic3: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrSynchronizable as String: kCFBooleanTrue as Any,
+                                  kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+
+        if SecItemDelete(dic as CFDictionary) == errSecSuccess {
+            print("削除成功")
+        } else {
+            print("削除失敗")
+        }
+        if SecItemDelete(dic2 as CFDictionary) == errSecSuccess {
+            print("削除成功")
+        } else {
+            print("削除失敗")
+        }
+        if SecItemDelete(dic3 as CFDictionary) == errSecSuccess {
+            print("削除成功")
+        } else {
+            print("削除失敗")
+        }
+        return true
+    }
+
     func delKeyChain(key: String) -> Bool {
         let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrAccount as String: key]

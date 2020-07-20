@@ -79,8 +79,9 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     NSLocalizedString("Player control", comment: ""),   //7
                     NSLocalizedString("Cast converter", comment: ""),   //8
                     NSLocalizedString("Network cache", comment: ""),    //9
-                    NSLocalizedString("Help", comment: "")              //10
-                    ]
+                    NSLocalizedString("Help", comment: ""),             //10
+                    NSLocalizedString("Delete", comment: ""),           //11
+    ]
     let settings = [["Password"],
                     [NSLocalizedString("Run one more", comment: "")],
                     [NSLocalizedString("Use Image viewer", comment: ""),
@@ -106,8 +107,9 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
                      NSLocalizedString("Version", comment: ""),
-                     NSLocalizedString("About", comment: "")]
-                    ]
+                     NSLocalizedString("About", comment: "")],
+                    [NSLocalizedString("Clear all Auth and Cache", comment: "")],
+    ]
     
     // MARK: - Table view data source
 
@@ -312,6 +314,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             default:
                 break;
             }
+        case 11:
+            break
         default:
             break;
         }
@@ -394,6 +398,13 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                 default:
                     break
                 }
+        case 11:
+            switch indexPath.row {
+            case 0:
+                deleteAllData()
+            default:
+                break
+            }
         default:
             break
         }
@@ -453,6 +464,46 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
         // Pass the selected object to the new view controller.
     }
     */
+    
+    // MARK: - internal
+    
+    func deleteAllData() {
+        let alert = UIAlertController(title: NSLocalizedString("Clear all Auth and Cache", comment: ""),
+                                      message: NSLocalizedString("Delete all Auth infomation, Delete all internal cache, Delete all user setting in this app", comment: ""),
+                                      preferredStyle: .alert)
+        let cancelAction = UIAlertAction(title: NSLocalizedString("Abort", comment: ""), style: .cancel)
+        let defaultAction = UIAlertAction(title: NSLocalizedString("Delete", comment: ""),
+                                          style: .destructive,
+                                          handler:{ action in
+                                            DispatchQueue.global().async {
+                                                self.doDelete {
+                                                    DispatchQueue.main.async {
+                                                        CloudFactory.shared.initializeDatabase()
+                                                        self.navigationController?.popToRootViewController(animated: true)
+                                                        (self.navigationController?.viewControllers.first as? TableViewControllerRoot)?.reload()
+                                                    }
+                                                }
+                                            }
+        })
+        alert.addAction(cancelAction)
+        alert.addAction(defaultAction)
+
+        present(alert, animated: true)
+    }
+    
+    func doDelete(onFinish: @escaping ()->Void) {
+        defer {
+            onFinish()
+        }
+        CloudFactory.shared.removeAllAuth()
+        
+        print(UserDefaults.standard.dictionaryRepresentation().keys.count)
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
+        print(UserDefaults.standard.dictionaryRepresentation().keys.count)
+        
+        CloudFactory.shared.cache.deleteAllCache()
+    }
+
 }
 
 extension TableViewControllerSetting: UIPopoverPresentationControllerDelegate {

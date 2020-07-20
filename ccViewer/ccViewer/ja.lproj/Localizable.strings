@@ -89,3 +89,8 @@
 "Not use" = "使用しない";
 "Current cache size" = "使用キャッシュ量";
 "Cache limit" = "最大キャッシュサイズ";
+
+"Abort" = "中止";
+"Delete" = "削除";
+"Clear all Auth and Cache" = "全ての認証情報とキャッシュの削除";
+"Delete all Auth infomation, Delete all internal cache, Delete all user setting in this app" = "全ての認証情報、内部キャッシュ、このアプリの設定を削除します";

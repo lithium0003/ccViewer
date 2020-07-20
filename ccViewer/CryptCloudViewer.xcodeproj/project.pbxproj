@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 52;
+	objectVersion = 50;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -60,8 +60,8 @@
 		3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; };
 		3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */; };
-		3F48A078237AFDFF008B6690 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; };
-		3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F48A076237AFD99008B6690 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; };
+		3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F84578A238E5039004E78EC /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F845789238E5039004E78EC /* SceneDelegate.swift */; };
 		3F84578C238E622C004E78EC /* About.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3F84578B238E622C004E78EC /* About.storyboard */; };
 		3F84578E238E6896004E78EC /* ViewControllerAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F84578D238E6896004E78EC /* ViewControllerAbout.swift */; };
@@ -94,7 +94,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				3F48A079237AFDFF008B6690 /* GoogleCast.framework in Embed Frameworks */,
+				3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */,
 				3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */,
 				3F19BC20232455C80040ED19 /* ffplayer.framework in Embed Frameworks */,
 				3F19BC1D232455C80040ED19 /* ffconverter.framework in Embed Frameworks */,
@@ -163,29 +163,14 @@
 		3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		3F19BBD9232420450040ED19 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		3F19BBDB232420670040ED19 /* libc++.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
-		3F19BBE6232422390040ED19 /* strip_unused_archs.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = strip_unused_archs.sh; sourceTree = "<group>"; };
-		3F19BBE8232422390040ED19 /* utf.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = utf.html; sourceTree = "<group>"; };
-		3F19BBE9232422390040ED19 /* stl.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = stl.html; sourceTree = "<group>"; };
-		3F19BBEA232422390040ED19 /* libresample.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = libresample.html; sourceTree = "<group>"; };
-		3F19BBEB232422390040ED19 /* zlib.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = zlib.html; sourceTree = "<group>"; };
-		3F19BBEC232422390040ED19 /* dynamic_annotations.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = dynamic_annotations.html; sourceTree = "<group>"; };
-		3F19BBED232422390040ED19 /* tz.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = tz.html; sourceTree = "<group>"; };
-		3F19BBEE232422390040ED19 /* kissfft.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = kissfft.html; sourceTree = "<group>"; };
-		3F19BBEF232422390040ED19 /* oss_licenses_index.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = oss_licenses_index.txt; sourceTree = "<group>"; };
-		3F19BBF0232422390040ED19 /* pcre.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = pcre.html; sourceTree = "<group>"; };
-		3F19BBF1232422390040ED19 /* icu.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = icu.html; sourceTree = "<group>"; };
-		3F19BBF2232422390040ED19 /* eigen3.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = eigen3.html; sourceTree = "<group>"; };
-		3F19BBF3232422390040ED19 /* re2.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = re2.html; sourceTree = "<group>"; };
-		3F19BBF4232422390040ED19 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GoogleCast.framework; sourceTree = "<group>"; };
 		3F19BC1B232455C80040ED19 /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F19BC1E232455C80040ED19 /* ffplayer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffplayer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F19BC21232455C80040ED19 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimePickerKeyboard.swift; sourceTree = "<group>"; };
-		3F48A076237AFD99008B6690 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.6_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		3F754D5224C6164D00BF2636 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GoogleCast.framework; sourceTree = "<group>"; };
 		3F845789238E5039004E78EC /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		3F84578B238E622C004E78EC /* About.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = About.storyboard; sourceTree = "<group>"; };
 		3F84578D238E6896004E78EC /* ViewControllerAbout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerAbout.swift; sourceTree = "<group>"; };
-		3F9151D5236C191600E5EF65 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.5_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
 		3F92E7022336B1F700D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3FA954D52322EC22005B086A /* ViewControllerConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerConvert.swift; sourceTree = "<group>"; };
 		3FC2F2382381355800EB747C /* ccViewer.help */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ccViewer.help; sourceTree = "<group>"; };
@@ -212,7 +197,7 @@
 				3F19BBC623241FD90040ED19 /* CoreGraphics.framework in Frameworks */,
 				3F19BBC423241FCF0040ED19 /* CoreData.framework in Frameworks */,
 				3F19BBC023241FBE0040ED19 /* CFNetwork.framework in Frameworks */,
-				3F48A078237AFDFF008B6690 /* GoogleCast.framework in Frameworks */,
+				3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */,
 				3F19BBBE23241FB60040ED19 /* AVFoundation.framework in Frameworks */,
 				3F19BBBC23241FAC0040ED19 /* AudioToolbox.framework in Frameworks */,
 				3F19BBBA23241FA30040ED19 /* Accelerate.framework in Frameworks */,
@@ -242,8 +227,7 @@
 		3CA2C9482234956100481DB5 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				3F9151D5236C191600E5EF65 /* GoogleCast.framework */,
-				3F19BBE4232422390040ED19 /* GoogleCastSDK-ios-4.4.4_dynamic */,
+				3F754D5224C6164D00BF2636 /* GoogleCast.framework */,
 				3F19BBDB232420670040ED19 /* libc++.tbd */,
 				3F19BBD9232420450040ED19 /* UIKit.framework */,
 				3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */,
@@ -271,7 +255,6 @@
 		3CFCF68C222F347900843054 = {
 			isa = PBXGroup;
 			children = (
-				3F48A076237AFD99008B6690 /* GoogleCast.framework */,
 				3F19BC21232455C80040ED19 /* RemoteCloud.framework */,
 				3F19BC1E232455C80040ED19 /* ffplayer.framework */,
 				3F19BC1B232455C80040ED19 /* ffconverter.framework */,
@@ -350,44 +333,6 @@
 				3CFCF6BD222F347B00843054 /* Info.plist */,
 			);
 			path = ccViewerUITests;
-			sourceTree = "<group>";
-		};
-		3F19BBE4232422390040ED19 /* GoogleCastSDK-ios-4.4.4_dynamic */ = {
-			isa = PBXGroup;
-			children = (
-				3F19BBE5232422390040ED19 /* Tools */,
-				3F19BBE7232422390040ED19 /* OpenSourceLicenses */,
-				3F19BBF4232422390040ED19 /* GoogleCast.framework */,
-			);
-			name = "GoogleCastSDK-ios-4.4.4_dynamic";
-			path = "../GoogleCastSDK-ios-4.4.4_dynamic";
-			sourceTree = "<group>";
-		};
-		3F19BBE5232422390040ED19 /* Tools */ = {
-			isa = PBXGroup;
-			children = (
-				3F19BBE6232422390040ED19 /* strip_unused_archs.sh */,
-			);
-			path = Tools;
-			sourceTree = "<group>";
-		};
-		3F19BBE7232422390040ED19 /* OpenSourceLicenses */ = {
-			isa = PBXGroup;
-			children = (
-				3F19BBE8232422390040ED19 /* utf.html */,
-				3F19BBE9232422390040ED19 /* stl.html */,
-				3F19BBEA232422390040ED19 /* libresample.html */,
-				3F19BBEB232422390040ED19 /* zlib.html */,
-				3F19BBEC232422390040ED19 /* dynamic_annotations.html */,
-				3F19BBED232422390040ED19 /* tz.html */,
-				3F19BBEE232422390040ED19 /* kissfft.html */,
-				3F19BBEF232422390040ED19 /* oss_licenses_index.txt */,
-				3F19BBF0232422390040ED19 /* pcre.html */,
-				3F19BBF1232422390040ED19 /* icu.html */,
-				3F19BBF2232422390040ED19 /* eigen3.html */,
-				3F19BBF3232422390040ED19 /* re2.html */,
-			);
-			path = OpenSourceLicenses;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -803,7 +748,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 64;
+				CURRENT_PROJECT_VERSION = 66;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -818,7 +763,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				OTHER_LDFLAGS = (
 					"-ObjC",
 					"-lc++",
@@ -838,7 +783,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 64;
+				CURRENT_PROJECT_VERSION = 66;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -853,7 +798,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				OTHER_LDFLAGS = (
 					"-ObjC",
 					"-lc++",
