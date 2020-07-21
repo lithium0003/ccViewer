@@ -353,6 +353,9 @@ public class FFPlayerViewController: UIViewController {
 
     override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         if UserDefaults.standard.bool(forKey: "ForceLandscape") {
+            if UserDefaults.standard.bool(forKey: "LandscapeCameraLeft") {
+                return .landscapeRight
+            }
             return .landscapeLeft
         }
         return .all

@@ -24,6 +24,23 @@ class NavigationControllerHide: UINavigationController {
         return topViewController ?? super.childForStatusBarHidden
     }
 
+    override open var shouldAutorotate: Bool {
+        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
+            return false
+        }
+        return true
+    }
+    
+    override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        if UserDefaults.standard.bool(forKey: "ForceLandscape") {
+            if UserDefaults.standard.bool(forKey: "LandscapeCameraLeft") {
+                return .landscapeRight
+            }
+            return .landscapeLeft
+        }
+        return .all
+    }
+
     /*
     // MARK: - Navigation
 

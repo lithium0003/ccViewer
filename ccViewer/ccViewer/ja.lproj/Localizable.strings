@@ -24,6 +24,7 @@
 "Use Media viewer" = "メディアで使用";
 "Lock rotation" = "画面回転をロックする";
 "Force landscape" = "強制的に横画面にする";
+"Landscape with camera left" = "横画面でカメラが左側";
 "Software decode" = "ソフトウエア デコーダー";
 "Use FFmpeg Media viewer" = "FFmpegプレーヤーを使用する";
 "Prior Media viewer is FFmpeg" = "優先してFFmpegを使用する";

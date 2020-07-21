@@ -178,19 +178,3 @@ extension UIApplication {
         return controller2
     }
 }
-
-extension UINavigationController {
-    override open var shouldAutorotate: Bool {
-        if UserDefaults.standard.bool(forKey: "MediaViewerRotation") {
-            return false
-        }
-        return true
-    }
-    
-    override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        if UserDefaults.standard.bool(forKey: "ForceLandscape") {
-            return .landscapeLeft
-        }
-        return .all
-    }
-}

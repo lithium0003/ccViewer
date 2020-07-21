@@ -88,7 +88,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                      NSLocalizedString("Use PDF viewer", comment: ""),
                      NSLocalizedString("Use Media viewer", comment: ""),
                      NSLocalizedString("Lock rotation", comment: ""),
-                     NSLocalizedString("Force landscape", comment: "")],
+                     NSLocalizedString("Force landscape", comment: ""),
+                     NSLocalizedString("Landscape with camera left", comment: "")],
                     [NSLocalizedString("Use FFmpeg Media viewer", comment: ""),
                      NSLocalizedString("Prior Media viewer is FFmpeg", comment: "")],
                     [NSLocalizedString("Save last play position", comment: ""),
@@ -182,6 +183,10 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                 aSwitch.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
                 aSwitch.isOn = UserDefaults.standard.bool(forKey: "ForceLandscape")
                 aSwitch.tag = 11
+            case 5:
+                aSwitch.isEnabled = UIDevice.current.userInterfaceIdiom == .phone && UserDefaults.standard.bool(forKey: "ForceLandscape")
+                aSwitch.isOn = UserDefaults.standard.bool(forKey: "LandscapeCameraLeft")
+                aSwitch.tag = 15
             default:
                 break
             }
@@ -361,12 +366,20 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
             present(v, animated: false) {
                 v.dismiss(animated: false, completion: nil)
             }
+            tableView.reloadData()
         case 12:
             UserDefaults.standard.set(value, forKey: "noOverlaySubtitles")
         case 13:
             UserDefaults.standard.set(value, forKey: "autoSelectStreams")
         case 14:
             UserDefaults.standard.set(value, forKey: "keepOpenWhenDone")
+        case 15:
+            UserDefaults.standard.set(value, forKey: "LandscapeCameraLeft")
+            let v = UIViewController()
+            v.modalPresentationStyle = .fullScreen
+            present(v, animated: false) {
+                v.dismiss(animated: false, completion: nil)
+            }
         default:
             break
         }
