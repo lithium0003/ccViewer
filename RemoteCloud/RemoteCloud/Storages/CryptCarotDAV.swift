@@ -337,7 +337,7 @@ public class CryptCarotDAV: ChildStorage {
         guard status == kCCSuccess else {
             return ""
         }
-        var encrypted = withUnsafePointer(to: &outBytes, { Data( buffer: UnsafeBufferPointer(start: $0, count: outLength)) })
+        var encrypted = Data(bytes: outBytes, count: outLength)
         if encrypted.count >= BlockSizeByte * 2 {
             let pos = encrypted.count - BlockSizeByte * 2
             let cryptbuf1 = encrypted.subdata(in: pos..<pos+BlockSizeByte)
@@ -411,7 +411,7 @@ public class CryptCarotDAV: ChildStorage {
             guard status == kCCSuccess else {
                 return nil
             }
-            var cryptbuf1 = withUnsafePointer(to: &outBytes, { Data( buffer: UnsafeBufferPointer(start: $0, count: outLength)) })
+            var cryptbuf1 = Data(bytes: outBytes, count: outLength)
             cryptbuf1.replaceSubrange(0..<lastblock.count, with: lastblock)
             crypt = crypt.subdata(in: 0..<pos)
             crypt.append(cryptbuf1)
@@ -441,7 +441,7 @@ public class CryptCarotDAV: ChildStorage {
         guard status == kCCSuccess else {
             return nil
         }
-        let plain = withUnsafePointer(to: &outBytes, { Data( buffer: UnsafeBufferPointer(start: $0, count: outLength)) })
+        let plain = Data(bytes: outBytes, count: outLength)
         return String(data: plain, encoding: .utf8)?.replacingOccurrences(of: "\0", with: "")
     }
     
@@ -629,7 +629,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         guard status == kCCSuccess else {
             return nil
         }
-        return withUnsafePointer(to: &outBytes, { Data( buffer: UnsafeBufferPointer(start: $0, count: outLength)) })
+        return Data(bytes: outBytes, count: outLength)
     }
     
     override func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
