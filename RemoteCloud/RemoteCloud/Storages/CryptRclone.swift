@@ -575,7 +575,7 @@ public class CryptRclone: ChildStorage {
         let password = getKeyChain(key: "\(storageName ?? "")_password") ?? ""
         let salt: Data
         if let saltstr = getKeyChain(key: "\(storageName ?? "")_salt"), saltstr != "" {
-            salt = saltstr.data(using: .ascii)!
+            salt = saltstr.data(using: .utf8)!
         }
         else {
             salt = defaultSalt
@@ -585,7 +585,7 @@ public class CryptRclone: ChildStorage {
         DispatchQueue.global().async {
             var key = [UInt8](repeating: 0, count: keysize)
             if password != "" {
-                key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .ascii)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
+                key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .utf8)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
             }
             self.dataKey = Array(key[0..<32])
             self.nameKey = Array(key[32..<64])
@@ -1622,7 +1622,7 @@ class Secretbox {
     static let Sigma = [UInt8]("expand 32-byte k".data(using: .ascii)!)
     static let Overhead = 16
     
-    class func HSala20(input: [UInt8], k: [UInt8], c: [UInt8]) -> [UInt8]? {
+    class func HSalsa20(input: [UInt8], k: [UInt8], c: [UInt8]) -> [UInt8]? {
         let round = 20
         guard input.count == 16 else {
             return nil
@@ -1767,7 +1767,7 @@ class Secretbox {
         return ret
     }
     
-    class func SalaCore(input: [UInt8], k: [UInt8], c: [UInt8]) -> [UInt8]? {
+    class func SalsaCore(input: [UInt8], k: [UInt8], c: [UInt8]) -> [UInt8]? {
         let round = 20
         guard input.count == 16 else {
             return nil
@@ -1953,7 +1953,7 @@ class Secretbox {
         return ret
     }
     
-    class func SalaCore208(intext: UnsafeMutableBufferPointer<UInt32>, outtext: UnsafeMutableBufferPointer<UInt32>) {
+    class func SalsaCore208(intext: UnsafeMutableBufferPointer<UInt32>, outtext: UnsafeMutableBufferPointer<UInt32>) {
         let round = 8
         guard intext.count == 16, outtext.count == 16 else {
             return
@@ -2118,7 +2118,7 @@ class Secretbox {
         var offset = 0
         let inlen = input.endIndex - input.startIndex
         while inlen - offset >= 64 {
-            guard let block = SalaCore(input: inCounter, k: key, c: Sigma) else {
+            guard let block = SalsaCore(input: inCounter, k: key, c: Sigma) else {
                 return
             }
             for i in 0..<64 {
@@ -2135,7 +2135,7 @@ class Secretbox {
             offset += 64
         }
         if inlen - offset > 0 {
-            guard let block = SalaCore(input: inCounter, k: key, c: Sigma) else {
+            guard let block = SalsaCore(input: inCounter, k: key, c: Sigma) else {
                 return
             }
             for i in 0..<inlen - offset {
@@ -2152,7 +2152,7 @@ class Secretbox {
             return nil
         }
         
-        guard let subkey = HSala20(input: Array(nonce[0..<16]), k: key, c: Sigma) else {
+        guard let subkey = HSalsa20(input: Array(nonce[0..<16]), k: key, c: Sigma) else {
             return nil
         }
         var counter = [UInt8](repeating: 0, count: 16)
@@ -2324,7 +2324,7 @@ class SCrypt {
             for i in 0..<sc.count {
                 sc[i] = B[k+i] ^ x[i]
             }
-            Secretbox.SalaCore208(intext: sc, outtext: x)
+            Secretbox.SalsaCore208(intext: sc, outtext: x)
             for i in 0..<16 {
                 y[m+i] = x[i]
             }
@@ -2333,7 +2333,7 @@ class SCrypt {
             for i in 0..<sc.count {
                 sc[i] = B[k+i] ^ x[i]
             }
-            Secretbox.SalaCore208(intext: sc, outtext: x)
+            Secretbox.SalsaCore208(intext: sc, outtext: x)
             for i in 0..<16 {
                 y[m+n+i] = x[i]
             }
