@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 52;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -60,8 +60,8 @@
 		3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; };
 		3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */; };
-		3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; };
-		3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; };
+		3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F84578A238E5039004E78EC /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F845789238E5039004E78EC /* SceneDelegate.swift */; };
 		3F84578C238E622C004E78EC /* About.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3F84578B238E622C004E78EC /* About.storyboard */; };
 		3F84578E238E6896004E78EC /* ViewControllerAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F84578D238E6896004E78EC /* ViewControllerAbout.swift */; };
@@ -748,7 +748,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 69;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -783,7 +783,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 69;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;

@@ -94,3 +94,6 @@
 "Delete" = "削除";
 "Clear all Auth and Cache" = "全ての認証情報とキャッシュの削除";
 "Delete all Auth infomation, Delete all internal cache, Delete all user setting in this app" = "全ての認証情報、内部キャッシュ、このアプリの設定を削除します";
+
+"Purge cache" = "キャッシュを消去";
+"Delete all internal cache" = "内部キャッシュをすべて削除します";

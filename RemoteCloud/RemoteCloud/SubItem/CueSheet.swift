@@ -210,28 +210,28 @@ class RemoteWaveFile {
         var ret = Data()
         ret += "RIFF".data(using: .ascii)!
         var ChunkSize = UInt32(wavbytes + 36)
-        ret += Data(buffer: UnsafeBufferPointer(start: &ChunkSize, count: 1))
+        ret += withUnsafePointer(to: &ChunkSize, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         ret += "WAVE".data(using: .ascii)!
         
         ret += "fmt ".data(using: .ascii)!
         var SubChunk1Size = UInt32(16)
-        ret += Data(buffer: UnsafeBufferPointer(start: &SubChunk1Size, count: 1))
+        ret += withUnsafePointer(to: &SubChunk1Size, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var AudioFormat = UInt16(1)
-        ret += Data(buffer: UnsafeBufferPointer(start: &AudioFormat, count: 1))
+        ret += withUnsafePointer(to: &AudioFormat, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var NumChannels = UInt16(wavFormat.NumChannels)
-        ret += Data(buffer: UnsafeBufferPointer(start: &NumChannels, count: 1))
+        ret += withUnsafePointer(to: &NumChannels, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var SampleRate = UInt32(wavFormat.SampleRate)
-        ret += Data(buffer: UnsafeBufferPointer(start: &SampleRate, count: 1))
+        ret += withUnsafePointer(to: &SampleRate, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var ByteRate = UInt32(wavFormat.ByteRate)
-        ret += Data(buffer: UnsafeBufferPointer(start: &ByteRate, count: 1))
+        ret += withUnsafePointer(to: &ByteRate, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var BlockAlign = UInt16(wavFormat.BlockAlign)
-        ret += Data(buffer: UnsafeBufferPointer(start: &BlockAlign, count: 1))
+        ret += withUnsafePointer(to: &BlockAlign, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         var BitsPerSample = UInt16(wavFormat.BitsPerSample)
-        ret += Data(buffer: UnsafeBufferPointer(start: &BitsPerSample, count: 1))
+        ret += withUnsafePointer(to: &BitsPerSample, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
 
         ret += "data".data(using: .ascii)!
         var SubChunk2Size = UInt32(wavbytes)
-        ret += Data(buffer: UnsafeBufferPointer(start: &SubChunk2Size, count: 1))
+        ret += withUnsafePointer(to: &SubChunk2Size, { Data( buffer: UnsafeBufferPointer(start: $0, count: 1)) })
         
         return ret
     }

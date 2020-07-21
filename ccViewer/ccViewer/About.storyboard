@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="15505" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="xtF-rE-Hxd">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="16097.2" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="xtF-rE-Hxd">
     <device id="retina6_1" orientation="portrait" appearance="light"/>
     <dependencies>
         <deployment identifier="iOS"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="15510"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="16087"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
@@ -144,16 +144,16 @@
                                     <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" textAlignment="natural" translatesAutoresizingMaskIntoConstraints="NO" id="Ief-KP-b3p">
                                         <rect key="frame" x="0.0" y="50" width="394" height="758"/>
                                         <color key="backgroundColor" systemColor="systemBackgroundColor" cocoaTouchSystemColor="whiteColor"/>
-                                        <string key="text">FFmpeg version 4.2.1  GNU LESSER GENERAL PUBLIC LICENSE
+                                        <mutableString key="text">FFmpeg version 4.3.1  GNU LESSER GENERAL PUBLIC LICENSE
 Version 2.1, February 1999
 Copyright (C) 1991, 1999 Free Software Foundation, Inc.
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 Everyone is permitted to copy and distribute verbatim copies
 of this license document, but changing it is not allowed.
-  Google Cast SDK (iOS Sender v4.4.6)  Google Cast SDK Additional Developer Terms of Service
+  Google Cast SDK (iOS Sender v4.4.7)  Google Cast SDK Additional Developer Terms of Service
 https://developers.google.com/cast/docs/terms
 Chrome Sender, Media Player Library and Receiver use the Closure library, which is licensed under the Apache 2.0 License, and the lit-html library, which is licensed under the BSD 3-Clause License.
-</string>
+</mutableString>
                                         <color key="textColor" systemColor="labelColor" cocoaTouchSystemColor="darkTextColor"/>
                                         <fontDescription key="fontDescription" type="system" pointSize="14"/>
                                         <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
@@ -186,6 +186,6 @@ Chrome Sender, Media Player Library and Receiver use the Closure library, which 
         </scene>
     </scenes>
     <resources>
-        <image name="app" width="341.33334350585938" height="341.33334350585938"/>
+        <image name="app" width="340" height="340"/>
     </resources>
 </document>

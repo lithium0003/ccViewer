@@ -1564,7 +1564,7 @@ public class Cryptomator: ChildStorage {
         }
         
         var parentPath1: String?
-        var parentId = c.parent
+        let parentId = c.parent
         if parentId != "" {
             if Thread.isMainThread {
                 let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
