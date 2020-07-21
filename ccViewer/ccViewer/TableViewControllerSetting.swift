@@ -103,7 +103,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     [NSLocalizedString("Ignore overlay subtiles", comment: ""),
                      NSLocalizedString("Auto select streams", comment: "")],
                     [NSLocalizedString("Current cache size", comment: ""),
-                     NSLocalizedString("Cache limit", comment: "")],
+                     NSLocalizedString("Cache limit", comment: ""),
+                     NSLocalizedString("Purge cache", comment: "")],
                     [NSLocalizedString("View online help", comment: ""),
                      NSLocalizedString("View privacy policy", comment: ""),
                      NSLocalizedString("Version", comment: ""),
@@ -302,6 +303,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                     cell.detailTextLabel?.text = NSLocalizedString("Not use", comment: "")
                 }
                 cell.accessoryType = .disclosureIndicator
+            case 2:
+                break;
             default:
                 break
             }
@@ -395,6 +398,8 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
                         }
                     }
                     present(contentVC, animated: true, completion: nil)
+                case 2:
+                    deleteCache()
                 default:
                     break
                 }
@@ -466,7 +471,28 @@ class TableViewControllerSetting: UITableViewController, UITextFieldDelegate {
     */
     
     // MARK: - internal
-    
+
+    func deleteCache() {
+        let alert = UIAlertController(title: NSLocalizedString("Purge cache", comment: ""),
+                                      message: NSLocalizedString("Delete all internal cache", comment: ""),
+                                      preferredStyle: .alert)
+        let cancelAction = UIAlertAction(title: NSLocalizedString("Abort", comment: ""), style: .cancel)
+        let defaultAction = UIAlertAction(title: NSLocalizedString("Delete", comment: ""),
+                                          style: .destructive,
+                                          handler:{ action in
+                                            DispatchQueue.global().async {
+                                                CloudFactory.shared.cache.deleteAllCache()
+                                                DispatchQueue.main.asyncAfter(deadline: .now()+2) {
+                                                    self.tableView.reloadData()
+                                                }
+                                            }
+        })
+        alert.addAction(cancelAction)
+        alert.addAction(defaultAction)
+
+        present(alert, animated: true)
+    }
+
     func deleteAllData() {
         let alert = UIAlertController(title: NSLocalizedString("Clear all Auth and Cache", comment: ""),
                                       message: NSLocalizedString("Delete all Auth infomation, Delete all internal cache, Delete all user setting in this app", comment: ""),

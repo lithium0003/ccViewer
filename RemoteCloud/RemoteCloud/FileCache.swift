@@ -341,14 +341,16 @@ public class FileCache {
             do {
                 if let items = try context.fetch(fetchrequest) as? [FileCacheItem], items.count > 0 {
                     var delItems = [FileCacheItem]()
-                    self.diskQueue.async {
-                        for item in items {
-                            if delSize > incSize {
-                                break
-                            }
-                            guard let target = item.filename?.uuidString else {
-                                continue
-                            }
+                    for item in items {
+                        if delSize > incSize {
+                            break
+                        }
+                        guard let target = item.filename?.uuidString else {
+                            continue
+                        }
+                        delSize += Int(item.chunkSize)
+                        delItems += [item]
+                        self.diskQueue.async {
                             let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
                             do {
                                 try FileManager.default.removeItem(at: target_path)
@@ -356,8 +358,6 @@ public class FileCache {
                             catch {
                                 print(error)
                             }
-                            delSize += Int(item.chunkSize)
-                            delItems += [item]
                         }
                     }
                     for item in delItems {
