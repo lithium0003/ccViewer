@@ -261,17 +261,24 @@ class ViewControllerWebDAV: UIViewController, UITextFieldDelegate, URLSessionTas
                 return
             }
             
-            guard let url = URL(string: uri) else {
-                DispatchQueue.main.async {
-                    self.activityIndicatorView.stopAnimating()
-                }
-                return
+            /* Only check HEAD for non-Caddy webdav servers */
+            if server.contains("Caddy") {
+                done = true
+                onFinish(uri, user, pass)
+            } else {
+           
+               guard let url = URL(string: uri) else {
+                    DispatchQueue.main.async {
+                        self.activityIndicatorView.stopAnimating()
+                    }
+                    return
+               }
+                var request: URLRequest = URLRequest(url: url)
+                request.httpMethod = "HEAD"
+                let task = dataSession.dataTask(with: request)
+                testState = 1
+                task.resume()
             }
-            var request: URLRequest = URLRequest(url: url)
-            request.httpMethod = "HEAD"
-            let task = dataSession.dataTask(with: request)
-            testState = 1
-            task.resume()
         }
         else if testState == 1 {
             done = true
