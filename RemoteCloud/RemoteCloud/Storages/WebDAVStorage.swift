@@ -262,6 +262,14 @@ class ViewControllerWebDAV: UIViewController, UITextFieldDelegate, URLSessionTas
             }
             
             /* Only check HEAD for non-Caddy webdav servers */
+            guard let server = response.allHeaderFields["Server"] as? String else {
+                print(response)
+                DispatchQueue.main.async {
+                    self.activityIndicatorView.stopAnimating()
+                }
+                return
+            }
+            
             if server.contains("Caddy") {
                 done = true
                 onFinish(uri, user, pass)
