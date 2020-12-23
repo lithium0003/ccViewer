@@ -268,10 +268,6 @@ class ViewControllerWebDAV: UIViewController, UITextFieldDelegate, URLSessionTas
                 return
             }
             
-            /*
-                `rclone serve webdav` does not return Server field, but do suport HEAD request.
-                Caddyv2+webdav, on the contrary, returns Server field, but does NOT support HEAD.
-            */
             if let server = response.allHeaderFields["Server"] as? String {
                 /* Only check HEAD for non-Caddy webdav servers */
                 if server.contains("Caddy") {
@@ -284,6 +280,7 @@ class ViewControllerWebDAV: UIViewController, UITextFieldDelegate, URLSessionTas
             let task = dataSession.dataTask(with: request)
             testState = 1
             task.resume()
+
         }
         else if testState == 1 {
             done = true
