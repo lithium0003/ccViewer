@@ -141,6 +141,7 @@ public class Cryptomator: ChildStorage {
     let ROOT_DIR_ID = ""
     let LONG_NAME_FILE_EXT = ".lng"
     let masterkey_filename = "masterkey.cryptomator"
+    let V7_DIR = "dir.c9r"
 
     enum ItemType {
         case regular
@@ -470,7 +471,7 @@ public class Cryptomator: ChildStorage {
                 onFinish?(false)
                 return
             }
-            guard let dirIdHash = self.resolveDirectory(dirId: self.ROOT_DIR_ID) else {
+            guard let dirIdHash = self.getDirHash(dirId: self.ROOT_DIR_ID) else {
                 return
             }
 
@@ -506,7 +507,7 @@ public class Cryptomator: ChildStorage {
     var pDirCache = [String:(Date, [RemoteItem])]()
 
     func removeDirCache(dirId: String) {
-        guard let dirIdHash = self.resolveDirectory(dirId: dirId) else {
+        guard let dirIdHash = self.getDirHash(dirId: dirId) else {
             return
         }
         let path_str = [self.DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))].joined(separator: "\n")
@@ -519,7 +520,7 @@ public class Cryptomator: ChildStorage {
             guard let dirId = dirId else {
                 return
             }
-            guard let dirIdHash = self.resolveDirectory(dirId: dirId) else {
+            guard let dirIdHash = self.getDirHash(dirId: dirId) else {
                 return
             }
             let path_str = [self.DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))].joined(separator: "\n")
@@ -770,12 +771,13 @@ public class Cryptomator: ChildStorage {
     }
     
     func subListChildren(dirId: String, fileId: String, path: String, onFinish: (() -> Void)?) {
-        guard let dirIdHash = resolveDirectory(dirId: dirId) else {
+        guard let dirIdHash = getDirHash(dirId: dirId) else {
             onFinish?()
             return
         }
         let group = DispatchGroup()
-        
+        // dirIDHash was used to create folder corresponding to the folder named by dirID
+        // So next step is to traverse that folder [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]
         group.enter()
         findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) { items in
             defer {
@@ -783,56 +785,51 @@ public class Cryptomator: ChildStorage {
             }
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             for item in items {
-                if item.name.hasSuffix(self.LONG_NAME_FILE_EXT) {
-                    // long name
-                    group.enter()
-                    self.resolveMetadataFile(shortName: item.name) { orgname in
-                        defer {
-                            group.leave()
-                        }
-                        guard let orgname = orgname else {
-                            return
-                        }
-                        let (t, encryptedName) = self.decodeFilename(encryptedName: orgname)
-                        guard t != .broken else {
-                            return
-                        }
-                        guard let decryptedName = self.decryptFilename(ciphertextName: encryptedName, dirId: dirId) else {
-                            return
-                        }
-                        if t == .directory {
-                            self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
-                        }
-                        else if t == .regular {
-                            self.storeItem(parentId: fileId,item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
-                        }
+           
+                var encodedName: String = String(item.name)
+                var t: ItemType = .broken
+                var encryptedName: String = String(item.name)
+                
+                if ( self.version == 6) {
+                    if item.name.hasSuffix(self.LONG_NAME_FILE_EXT) {
                         group.enter()
-                        backgroundContext.perform {
-                            group.leave()
+                        self.resolveMetadataFile(shortName: item.name) { orgname in
+                            defer {
+                                group.leave()
+                            }
+                            guard let orgname = orgname else {return}
+                            encodedName = orgname
                         }
                     }
-                }
-                else {
-                    let (t, encryptedName) = self.decodeFilename(encryptedName: item.name)
-                    guard t != .broken else {
+                } else {    // self.version == 7
+                    // This only indicates parent folder is actually a folder
+                    // TODO - Add shortened name support
+                    // TODO - Add symlink support
+                    if (    encodedName == "dir.c9r" ||
+                            encodedName.hasSuffix(".c9s") ||
+                            encodedName == "symlink.c9r" ) {
                         continue
                     }
-                    guard let decryptedName = self.decryptFilename(ciphertextName: encryptedName, dirId: dirId) else {
-                        continue
-                    }
-                    if t == .directory {
-                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
-                    }
-                    else if t == .regular {
-                        self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
-                    }
-                    group.enter()
-                    backgroundContext.perform {
-                        group.leave()
-                    }
+                    
+                    t = item.isFolder ? .directory : .regular
+
+                } // end self.version check
+                
+                (t, encryptedName) = self.decodeFilename(encodedName: encodedName, t: t)
+                guard t != .broken else { return}
+                guard let decryptedName = self.decryptFilename(ciphertextName: encryptedName, dirId: dirId) else { return}
+                if t == .directory {
+                    self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
                 }
-            }
-        }
+                else if t == .regular {
+                    self.storeItem(parentId: fileId,item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
+                }
+                group.enter()
+                backgroundContext.perform {
+                    group.leave()
+                }
+            } // End of findParentStorage closure
+        } // End of findParentStorage
         group.notify(queue: .global()) {
             onFinish?()
         }
@@ -850,8 +847,21 @@ public class Cryptomator: ChildStorage {
             self.subListChildren(dirId: id, fileId: fileId, path: path, onFinish: onFinish)
         }
     }
+       
+    func decodeFilename(encodedName: String, t: ItemType) -> (ItemType, String) {
+        if ( self.version == 7) {
+             if encodedName.hasSuffix(".c9r") {
+                return (t, String(encodedName.dropLast(4)))
+            } else {
+                return (.broken, encodedName)
+            }
+        } else {
+            return decodeFilename(encryptedName: encodedName)
+        }
+    }
     
     func decodeFilename(encryptedName: String) -> (ItemType, String) {
+        
         if encryptedName.count % 8 == 0 {
             if encryptedName.allSatisfy("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567=".contains) {
                 return (.regular, encryptedName)
@@ -943,7 +953,7 @@ public class Cryptomator: ChildStorage {
         return encoded + LONG_NAME_FILE_EXT
     }
     
-    func resolveDirectory(dirId: String) -> String? {
+    func getDirHash(dirId: String) -> String? { // Encrypt UUID
         guard let inputdata = dirId.data(using: .utf8) else {
             return nil
         }
@@ -955,7 +965,14 @@ public class Cryptomator: ChildStorage {
         let length = Int(CC_SHA1_DIGEST_LENGTH)
         var digest = [UInt8](repeating: 0, count: length)
         let _ = encryptedBytes.withUnsafeBytes { CC_SHA1($0.baseAddress!, CC_LONG(encryptedBytes.count), &digest) }
-        return BASE32.base32encode(input: Data(digest))
+        if self.version == 6 {
+            return BASE32.base32encode(input: Data(digest))
+        } else {
+            // TODO - Verify in V7, Directory name is still encoded with Base32?
+            return BASE32.base32encode(input: Data(digest))
+//            return BASE64.base64urlencode(input: Data(digest))
+          
+        }
     }
     
     func encryptFilename(cleartextName: String, dirId: String) -> String? {
@@ -976,16 +993,13 @@ public class Cryptomator: ChildStorage {
     }
     
     func decryptFilename(ciphertextName: String, dirId: String) -> String? {
-        guard let encryptedBytes = BASE32.base32decode(input: ciphertextName) else {
-            return nil
-        }
-        guard let associatedData = dirId.data(using: .utf8) else {
-            return nil
-        }
+        
+        guard let associatedData = dirId.data(using: .utf8) else { return nil}
         let associatedBytes = [UInt8](associatedData)
-        guard let cleartextBytes = AES_SIV.decrypt(ctrKey: encryptionMasterKey, macKey: macMasterKey, ciphertext: [UInt8](encryptedBytes), associatedData: [associatedBytes]) else {
-            return nil
-        }
+        
+        guard let encryptedBytes = self.version == 6 ? BASE32.base32decode(input: ciphertextName) : BASE64.base64urldecode(input: ciphertextName) else { return nil }
+        guard let cleartextBytes = AES_SIV.decrypt(ctrKey: encryptionMasterKey, macKey: macMasterKey, ciphertext: [UInt8](encryptedBytes), associatedData: [associatedBytes]) else { return nil}
+
         return String(bytes: cleartextBytes, encoding: .utf8)
     }
     
@@ -1003,8 +1017,8 @@ public class Cryptomator: ChildStorage {
         os_log("%{public}@", log: log, type: .debug, "resolveFileId(cryptomator:\(storageName ?? "")) \(fileId)")
         let fixFileId = (fileId == "") ? "/" : fileId
         let array = fixFileId.components(separatedBy: "/")
-        let parentDirId = array[0]
-        let deflateDirId = array[1]
+        let parentDirId = array[0]      // Parent UUID
+        let deflateDirId = array[1]     // folder's name in BASE32/64
 
         if deflateDirId == "" {
             onFinish?("")
@@ -1022,33 +1036,69 @@ public class Cryptomator: ChildStorage {
             }
         }
         
-        guard let dirIdHash = resolveDirectory(dirId: parentDirId) else {
+        guard let dirIdHash = getDirHash(dirId: parentDirId) else {
             onFinish?(nil)
             return
         }
+
+        /*
+         Use parent folder's HASH to access/traverse storage, match file name specificied by folder's name in BASE32/64, and then read this folder's UUID in the matching file.
+         In V6, the folder UUID is stored in item.id; in V7, the folder UUID is stored in item.id/dir.c9r. https://github.com/cryptomator/cryptofs/issues/64
+      
+         Example below -
+         fileId = "bb26ccca-3726-4c1c-b4eb-d58802d03d66/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+         Parent folder UUID - bb26ccca-3726-4c1c-b4eb-d58802d03d66
+         File containing this folder's UUID - 0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======
+         
+         item.id = "/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+         item.path = "rclone:/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+         */
+        let group = DispatchGroup()
+        group.enter()
         findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) { items in
+            
+            defer {
+                group.leave()
+            }
+            
             for item in items {
-                if item.name == deflateDirId {
-                    item.read() { data in
-                        guard let data = data else {
-                            onFinish?(nil)
-                            return
+                if item.name != deflateDirId { continue }
+
+                var tempItem: RemoteItem = item
+                if self.version == 7 {
+                    group.enter()
+                        
+                    guard let uuidItem = CloudFactory.shared[self.baseRootStorage]?.get(fileId: (item.id + self.V7_DIR)), self.version == 7 else {                        defer {
+                            group.leave()
                         }
-                        guard let id = String(bytes: data, encoding: .utf8) else {
-                            onFinish?(nil)
-                            return
-                        }
-                        os_log("%{public}@", log: self.log, type: .debug, "resolveFileId(cryptomator:\(self.storageName ?? "")) \(fileId)->\(id)")
-                        self.pDirIdCache[fileId] = (Date(), id)
+
+                        onFinish?(nil)
+                        return
+                    }
+                    tempItem = uuidItem
+                }
+
+                tempItem.read() { data in
+                    var id: String? = nil
+                    defer {
                         onFinish?(id)
                     }
-                    return
+                    guard let data = data else {return}
+                    guard let tempid = String(bytes: data, encoding: .utf8) else { return}
+                    id = tempid
+                        
+                    os_log("%{public}@", log: self.log, type: .debug, "resolveFileId(cryptomator:\(self.storageName ?? "")) \(fileId)->\(String(describing: id))")
+                    self.pDirIdCache[fileId] = (Date(), id) as? (Date, String)
                 }
+            } // end item in items loop
+            
+            group.notify( queue: .global()) {
+                onFinish?(nil)
             }
-            onFinish?(nil)
-        }
+        } //End of findParentStorage
     }
     
+
     public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
         os_log("%{public}@", log: log, type: .debug, "makeFolder(\(String(describing: type(of: self))):\(storageName ?? "") \(parentId)(\(parentPath)) \(newname)")
 
@@ -1057,12 +1107,12 @@ public class Cryptomator: ChildStorage {
             return
         }
 
-        resolveDirId(fileId: parentId) { parentDirId in
+        resolveDirId(fileId: parentId) { parentDirId in // Get parent folder UUID from parent encrypted filename
             guard let parentDirId = parentDirId else {
                 onFinish?(nil)
                 return
             }
-            guard let parentIdHash = self.resolveDirectory(dirId: parentDirId) else {
+            guard let parentIdHash = self.getDirHash(dirId: parentDirId) else {
                 onFinish?(nil)
                 return
             }
@@ -1073,19 +1123,20 @@ public class Cryptomator: ChildStorage {
                 }
                 let baseItem = items[0]
                 
-                // generate encrypted name
+                // generate encrypted BASE name from clear folder name and its parent folder UUID
                 guard let encFilename = self.encryptFilename(cleartextName: newname, dirId: parentDirId) else {
                     onFinish?(nil)
                     return
                 }
                 let encDirname = "0" + encFilename
-                // generate new dirid
+                // generate UUID for the folder, encrypt the UUID, and use the UUID to create folder in storage.
+                // Later on, as long as you get the UUID from encDirname content, you can locate the folder and then traverse all files in it.
                 let newDirId = UUID().uuidString.lowercased()
-                guard let dirIdHash = self.resolveDirectory(dirId: newDirId) else {
+                guard let dirIdHash = self.getDirHash(dirId: newDirId) else {
                     onFinish?(nil)
                     return
                 }
-                // make directory for new dirid
+                // make directory for encrypted UUID
                 self.makeParentStorage(path: [self.DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) { item in
                     guard item != nil else {
                         onFinish?(nil)
@@ -1130,6 +1181,7 @@ public class Cryptomator: ChildStorage {
                         output.write(content, maxLength: content.count)
                     }
                     
+                    // Upload new folder UUID as content
                     s.upload(parentId: baseItem.id, sessionId: UUID().uuidString, uploadname: deflatedName ?? encDirname, target: target) { newBaseId in
                         guard let newBaseId = newBaseId else {
                             onFinish?(nil)
@@ -1207,7 +1259,7 @@ public class Cryptomator: ChildStorage {
         let parentDirId = array[0]
         let deflateId = array[1]
 
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
+        guard let parentIdHash = getDirHash(dirId: parentDirId) else {
             onFinish?(false)
             return
         }
@@ -1250,7 +1302,7 @@ public class Cryptomator: ChildStorage {
                         onFinish?(false)
                         return
                     }
-                    guard let dirIdHash = self.resolveDirectory(dirId: dirId) else {
+                    guard let dirIdHash = self.getDirHash(dirId: dirId) else {
                         onFinish?(false)
                         return
                     }
@@ -1553,7 +1605,7 @@ public class Cryptomator: ChildStorage {
         let parentDirId = array[0]
         let deflateId = array[1]
         
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
+        guard let parentIdHash = getDirHash(dirId: parentDirId) else {
             onFinish?(nil)
             return
         }
@@ -1744,7 +1796,7 @@ public class Cryptomator: ChildStorage {
         let parentDirId = array[0]
         let deflateId = array[1]
         
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
+        guard let parentIdHash = getDirHash(dirId: parentDirId) else {
             onFinish?(nil)
             return
         }
@@ -1848,7 +1900,7 @@ public class Cryptomator: ChildStorage {
         let parentDirId = array[0]
         let deflateId = array[1]
         
-        guard let parentIdHash = self.resolveDirectory(dirId: parentDirId) else {
+        guard let parentIdHash = self.getDirHash(dirId: parentDirId) else {
             onFinish?(nil)
             return
         }
@@ -1858,7 +1910,7 @@ public class Cryptomator: ChildStorage {
                 onFinish?(nil)
                 return
             }
-            guard let toParentIdHash = self.resolveDirectory(dirId: toParentDirId) else {
+            guard let toParentIdHash = self.getDirHash(dirId: toParentDirId) else {
                 onFinish?(nil)
                 return
             }
@@ -2022,7 +2074,7 @@ public class Cryptomator: ChildStorage {
                     group.leave()
                 }
             }
-            guard let dirIdHash = self.resolveDirectory(dirId: dirId) else {
+            guard let dirIdHash = self.getDirHash(dirId: dirId) else {
                 try? FileManager.default.removeItem(at: target)
                 onFinish?(nil)
                 return
@@ -2166,7 +2218,7 @@ public class Cryptomator: ChildStorage {
             return
         }
         
-        guard let dirIdHash = resolveDirectory(dirId: dirId) else {
+        guard let dirIdHash = getDirHash(dirId: dirId) else {
             onFinish?(nil)
             return
         }
@@ -2247,6 +2299,22 @@ public class CryptomatorRemoteItem: RemoteItem {
         super.init(storage: storage, id: id)
     }
     
+    init?(remoteStorage: Cryptomator, id: String) {
+
+        self.remoteStorage = remoteStorage
+        super.init(storage: self.remoteStorage.storageName ?? "", id: id)
+        
+    }
+/*
+    public override func read(start: Int64? = nil, length: Int64? = nil, onFinish: ((Data?) -> Void)?) {
+        if self.remoteStorage.version == 6 {
+            return super.read(start: start, length: length, onFinish: onFinish)
+
+        } else {
+            
+        }
+    }
+  */
     public override func open() -> RemoteStream {
         return RemoteCryptomatorStream(remote: self)
     }
@@ -2561,6 +2629,29 @@ public class RemoteCryptomatorStream: SlotStream {
                 }
             }
         }
+    }
+}
+
+class BASE64 {
+    public class func base64urlencode(input: Data) -> String? {
+        var base64Encoded: String?
+        
+        base64Encoded = input.base64EncodedString()
+        base64Encoded = base64Encoded?.replacingOccurrences(of: "+", with: "-")
+        base64Encoded = base64Encoded?.replacingOccurrences(of: "/", with: "_")
+        
+        return base64Encoded;
+    }
+    
+    public class func base64urldecode(input: String) -> Data? {
+
+        var base64Encoded = input
+        
+        base64Encoded = base64Encoded.replacingOccurrences(of: "-", with: "+")
+        base64Encoded = base64Encoded.replacingOccurrences(of: "_", with: "/")
+        
+        return Data(base64Encoded: base64Encoded, options: Data.Base64DecodingOptions(rawValue: 0));
+    
     }
 }
 
