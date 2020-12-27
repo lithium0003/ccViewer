@@ -625,13 +625,13 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         var prop: [String: String] = [:]
         
         func parserDidStartDocument(_ parser: XMLParser) {
-            print("parser Start")
+            os_log("%{public}@", log: OSLog.default, type: .debug, "parser Start")
         }
         
         func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
             switch elementName {
             case let str where str.hasSuffix(":multistatus"):
-                print("start")
+                os_log("%{public}@", log: OSLog.default, type: .debug, "start")
             case let str where str.hasSuffix(":response"):
                 response.append([:])
             case let str where str.hasSuffix(":propstat"):
@@ -677,7 +677,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
             switch elementName {
             case let str where str.hasSuffix(":multistatus"):
-                print("end")
+                os_log("%{public}@", log: OSLog.default, type: .debug, "end")
             case let str where str.hasSuffix(":propstat"):
                 response[response.count-1]["propstat"] = curProp
             case let str where str.hasSuffix(":prop"):
@@ -689,7 +689,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
         
         func parserDidEndDocument(_ parser: XMLParser) {
-            print("parser End")
+            os_log("%{public}@", log: OSLog.default, type: .debug, "parser End")
             onFinish?(response)
         }
         

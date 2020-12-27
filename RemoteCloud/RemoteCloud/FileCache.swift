@@ -124,6 +124,10 @@ public class FileCache {
                 defer {
                     group.leave()
                 }
+                
+                // Fix CoreData merge conflict shows managed object version change not data
+                context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+
                 let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
                 fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld", storage, id, offset)
                 do{
