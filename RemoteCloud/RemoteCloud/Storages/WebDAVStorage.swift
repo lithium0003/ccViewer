@@ -534,6 +534,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         super.logout()
     }
 
+    /* Generate RemoteData item from WebDAV records */
     func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -579,6 +580,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+
             if let result = try? context.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
@@ -625,13 +627,13 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         var prop: [String: String] = [:]
         
         func parserDidStartDocument(_ parser: XMLParser) {
-            os_log("%{public}@", log: OSLog.default, type: .debug, "parser Start")
+            //os_log("%{public}@", log: OSLog.default, type: .debug, "parser Start")
         }
         
         func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
             switch elementName {
-            case let str where str.hasSuffix(":multistatus"):
-                os_log("%{public}@", log: OSLog.default, type: .debug, "start")
+//            case let str where str.hasSuffix(":multistatus"):
+                //os_log("%{public}@", log: OSLog.default, type: .debug, "start")
             case let str where str.hasSuffix(":response"):
                 response.append([:])
             case let str where str.hasSuffix(":propstat"):
@@ -676,8 +678,8 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         
         func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
             switch elementName {
-            case let str where str.hasSuffix(":multistatus"):
-                os_log("%{public}@", log: OSLog.default, type: .debug, "end")
+//            case let str where str.hasSuffix(":multistatus"):
+  //              os_log("%{public}@", log: OSLog.default, type: .debug, "end")
             case let str where str.hasSuffix(":propstat"):
                 response[response.count-1]["propstat"] = curProp
             case let str where str.hasSuffix(":prop"):
@@ -689,7 +691,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
         
         func parserDidEndDocument(_ parser: XMLParser) {
-            os_log("%{public}@", log: OSLog.default, type: .debug, "parser End")
+            //os_log("%{public}@", log: OSLog.default, type: .debug, "parser End")
             onFinish?(response)
         }
         
@@ -794,6 +796,8 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         listFolder(path: fileId) { result in
             if let items = result {
                 let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let itemcount = items.count
+                os_log("%{public}@", log: self.log, type: .debug, "store \(itemcount) items(WebDAV:\(self.storageName ?? "") \(fileId)")
                 for item in items {
                     self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
                 }
