@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 52;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -14,7 +14,6 @@
 		3C06934A2253DBD50040DC0B /* ProductManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0693472253DBD40040DC0B /* ProductManager.swift */; };
 		3C06934B2253DBD50040DC0B /* PurchaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0693482253DBD50040DC0B /* PurchaceManager.swift */; };
 		3C06934C2253DBD50040DC0B /* PurchaceViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0693492253DBD50040DC0B /* PurchaceViewController.swift */; };
-		3C06934E2253E2610040DC0B /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C06934D2253E2610040DC0B /* StoreKit.framework */; };
 		3C0D4419224B106C001FCAAC /* TableViewControllerItemsEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D4418224B106C001FCAAC /* TableViewControllerItemsEdit.swift */; };
 		3C0D441D224C4949001FCAAC /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C0D441C224C4949001FCAAC /* AuthenticationServices.framework */; };
 		3C40091222401D020028A45A /* CustomPlayerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C40091122401D020028A45A /* CustomPlayerViewController.swift */; };
@@ -53,21 +52,18 @@
 		3F19BBD82324203C0040ED19 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD72324203C0040ED19 /* SystemConfiguration.framework */; };
 		3F19BBDA232420450040ED19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBD9232420450040ED19 /* UIKit.framework */; };
 		3F19BBDC232420670040ED19 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BBDB232420670040ED19 /* libc++.tbd */; };
-		3F19BC1C232455C80040ED19 /* ffconverter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1B232455C80040ED19 /* ffconverter.framework */; };
-		3F19BC1D232455C80040ED19 /* ffconverter.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1B232455C80040ED19 /* ffconverter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		3F19BC1F232455C80040ED19 /* ffplayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1E232455C80040ED19 /* ffplayer.framework */; };
-		3F19BC20232455C80040ED19 /* ffplayer.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC1E232455C80040ED19 /* ffplayer.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; };
 		3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F19BC21232455C80040ED19 /* RemoteCloud.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F3D274423743B00009A4C52 /* TimePickerKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3D274323743B00009A4C52 /* TimePickerKeyboard.swift */; };
-		3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; };
-		3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3F84578A238E5039004E78EC /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F845789238E5039004E78EC /* SceneDelegate.swift */; };
 		3F84578C238E622C004E78EC /* About.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3F84578B238E622C004E78EC /* About.storyboard */; };
 		3F84578E238E6896004E78EC /* ViewControllerAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F84578D238E6896004E78EC /* ViewControllerAbout.swift */; };
 		3F92E7032336B1F700D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7022336B1F700D1FF9B /* Media.xcassets */; };
 		3FA954D62322EC22005B086A /* ViewControllerConvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D52322EC22005B086A /* ViewControllerConvert.swift */; };
 		3FC2F2392381355800EB747C /* ccViewer.help in Resources */ = {isa = PBXBuildFile; fileRef = 3FC2F2382381355800EB747C /* ccViewer.help */; };
+		8F8DFF2025A03469001033CA /* GoogleCast.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; };
+		8F8DFF2125A0346A001033CA /* GoogleCast.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3F754D5224C6164D00BF2636 /* GoogleCast.framework */; platformFilter = ios; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		8F8DFF2925A0A874001033CA /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F8DFF2825A0A874001033CA /* MapKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,10 +90,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				3F754D5524C6174A00BF2636 /* GoogleCast.framework in Embed Frameworks */,
+				8F8DFF2125A0346A001033CA /* GoogleCast.framework in Embed Frameworks */,
 				3F19BC23232455C80040ED19 /* RemoteCloud.framework in Embed Frameworks */,
-				3F19BC20232455C80040ED19 /* ffplayer.framework in Embed Frameworks */,
-				3F19BC1D232455C80040ED19 /* ffconverter.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -114,7 +108,6 @@
 		3C0693472253DBD40040DC0B /* ProductManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProductManager.swift; sourceTree = "<group>"; };
 		3C0693482253DBD50040DC0B /* PurchaceManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PurchaceManager.swift; sourceTree = "<group>"; };
 		3C0693492253DBD50040DC0B /* PurchaceViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PurchaceViewController.swift; sourceTree = "<group>"; };
-		3C06934D2253E2610040DC0B /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		3C0D4418224B106C001FCAAC /* TableViewControllerItemsEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableViewControllerItemsEdit.swift; sourceTree = "<group>"; };
 		3C0D441C224C4949001FCAAC /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		3C40091122401D020028A45A /* CustomPlayerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomPlayerViewController.swift; sourceTree = "<group>"; };
@@ -174,6 +167,13 @@
 		3F92E7022336B1F700D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3FA954D52322EC22005B086A /* ViewControllerConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewControllerConvert.swift; sourceTree = "<group>"; };
 		3FC2F2382381355800EB747C /* ccViewer.help */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ccViewer.help; sourceTree = "<group>"; };
+		8F26615F258A1656008297AA /* CryptCloudViewerDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CryptCloudViewerDebug.entitlements; sourceTree = "<group>"; };
+		8F266162258A16F8008297AA /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		8F266165258A170F008297AA /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		8F26616E258A28AE008297AA /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.4.7_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		8F60E4E6258AE18700A8EB54 /* GoogleCast.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GoogleCast.framework; path = "../GoogleCastSDK-ios-4.5.3_dynamic/GoogleCast.framework"; sourceTree = "<group>"; };
+		8F60E4EC258AE7FE00A8EB54 /* GoogleCastSDK */ = {isa = PBXFileReference; lastKnownFileType = folder; name = GoogleCastSDK; path = ../GoogleCastSDK; sourceTree = "<group>"; };
+		8F8DFF2825A0A874001033CA /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -182,28 +182,26 @@
 			buildActionMask = 2147483647;
 			files = (
 				3F19BBDC232420670040ED19 /* libc++.tbd in Frameworks */,
-				3F19BC1C232455C80040ED19 /* ffconverter.framework in Frameworks */,
 				3F19BBDA232420450040ED19 /* UIKit.framework in Frameworks */,
 				3F19BBD82324203C0040ED19 /* SystemConfiguration.framework in Frameworks */,
 				3F19BC22232455C80040ED19 /* RemoteCloud.framework in Frameworks */,
+				8F8DFF2925A0A874001033CA /* MapKit.framework in Frameworks */,
 				3F19BBD62324202F0040ED19 /* Security.framework in Frameworks */,
 				3F19BBD4232420280040ED19 /* QuartzCore.framework in Frameworks */,
-				3F19BC1F232455C80040ED19 /* ffplayer.framework in Frameworks */,
 				3F19BBD2232420200040ED19 /* MediaPlayer.framework in Frameworks */,
 				3F19BBD0232420180040ED19 /* MediaAccessibility.framework in Frameworks */,
+				8F8DFF2025A03469001033CA /* GoogleCast.framework in Frameworks */,
 				3F19BBCC23241FF20040ED19 /* Foundation.framework in Frameworks */,
 				3F19BBCA23241FE90040ED19 /* CoreText.framework in Frameworks */,
 				3F19BBC823241FE10040ED19 /* CoreMedia.framework in Frameworks */,
 				3F19BBC623241FD90040ED19 /* CoreGraphics.framework in Frameworks */,
 				3F19BBC423241FCF0040ED19 /* CoreData.framework in Frameworks */,
 				3F19BBC023241FBE0040ED19 /* CFNetwork.framework in Frameworks */,
-				3F754D5424C6174A00BF2636 /* GoogleCast.framework in Frameworks */,
 				3F19BBBE23241FB60040ED19 /* AVFoundation.framework in Frameworks */,
 				3F19BBBC23241FAC0040ED19 /* AudioToolbox.framework in Frameworks */,
 				3F19BBBA23241FA30040ED19 /* Accelerate.framework in Frameworks */,
 				3CC48515225719160003C44A /* CloudKit.framework in Frameworks */,
 				3C0D441D224C4949001FCAAC /* AuthenticationServices.framework in Frameworks */,
-				3C06934E2253E2610040DC0B /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +225,12 @@
 		3CA2C9482234956100481DB5 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				8F8DFF2825A0A874001033CA /* MapKit.framework */,
+				8F60E4EC258AE7FE00A8EB54 /* GoogleCastSDK */,
+				8F26616E258A28AE008297AA /* GoogleCast.framework */,
+				8F60E4E6258AE18700A8EB54 /* GoogleCast.framework */,
+				8F266165258A170F008297AA /* ffconverter.framework */,
+				8F266162258A16F8008297AA /* ffconverter.framework */,
 				3F754D5224C6164D00BF2636 /* GoogleCast.framework */,
 				3F19BBDB232420670040ED19 /* libc++.tbd */,
 				3F19BBD9232420450040ED19 /* UIKit.framework */,
@@ -246,7 +250,6 @@
 				3F19BBBB23241FAC0040ED19 /* AudioToolbox.framework */,
 				3F19BBB923241FA30040ED19 /* Accelerate.framework */,
 				3CC48514225719160003C44A /* CloudKit.framework */,
-				3C06934D2253E2610040DC0B /* StoreKit.framework */,
 				3C0D441C224C4949001FCAAC /* AuthenticationServices.framework */,
 			);
 			name = Frameworks;
@@ -255,6 +258,7 @@
 		3CFCF68C222F347900843054 = {
 			isa = PBXGroup;
 			children = (
+				8F26615F258A1656008297AA /* CryptCloudViewerDebug.entitlements */,
 				3F19BC21232455C80040ED19 /* RemoteCloud.framework */,
 				3F19BC1E232455C80040ED19 /* ffplayer.framework */,
 				3F19BC1B232455C80040ED19 /* ffconverter.framework */,
@@ -345,8 +349,8 @@
 				3CFCF691222F347A00843054 /* Sources */,
 				3CFCF692222F347A00843054 /* Frameworks */,
 				3CFCF693222F347A00843054 /* Resources */,
-				3CA2C9552234980C00481DB5 /* Embed Frameworks */,
 				3F9151E5236C463100E5EF65 /* ShellScript */,
+				3CA2C9552234980C00481DB5 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -400,8 +404,8 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1010;
-				LastUpgradeCheck = 1100;
-				ORGANIZATIONNAME = lithium03;
+				LastUpgradeCheck = 1230;
+				ORGANIZATIONNAME = apogeios;
 				TargetAttributes = {
 					3CFCF694222F347A00843054 = {
 						CreatedOnToolsVersion = 10.1;
@@ -504,7 +508,8 @@
 /* Begin PBXShellScriptBuildPhase section */
 		3F9151E5236C463100E5EF65 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
+			alwaysOutOfDate = 1;
+			buildActionMask = 12;
 			files = (
 			);
 			inputFileListPaths = (
@@ -517,7 +522,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nif [ \"${PLATFORM_NAME}\" = \"iphoneos\" ]; then\n    ${SRCROOT}/../GoogleCastSDK/Tools/strip_unused_archs.sh\nfi\n";
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\nset -x\n\n${SRCROOT}/../GoogleCastSDK/Tools/strip_unused_archs.sh\n\necho \"Print log here\"\n\n#${PROJECT_DIR}/GoogleCastSDK/Tools/strip_unused_archs.sh\n\n#if [ \"${PLATFORM_NAME}\" = \"iphoneos\" ]; then\n#    ${SRCROOT}/../GoogleCastSDK/Tools/strip_unused_archs.sh\n#fi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -651,6 +656,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -660,6 +666,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -676,7 +683,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -713,6 +720,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -722,6 +730,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -732,7 +741,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -746,19 +755,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CryptCloudViewerDebug.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 70;
-				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
 				);
-				GCC_OPTIMIZATION_LEVEL = fast;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				INFOPLIST_FILE = ccViewer/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -768,12 +777,14 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewer;
+				PRODUCT_BUNDLE_IDENTIFIER = apogeios.ccviewer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTS_MACCATALYST = YES;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_WORKSPACE = YES;
 			};
 			name = Debug;
 		};
@@ -782,18 +793,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ccViewer/ccViewer.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 70;
-				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
 				);
-				GCC_OPTIMIZATION_LEVEL = fast;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				INFOPLIST_FILE = ccViewer/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -803,12 +814,14 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewer;
+				PRODUCT_BUNDLE_IDENTIFIER = apogeios.ccviewer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTS_MACCATALYST = YES;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_WORKSPACE = YES;
 			};
 			name = Release;
 		};
@@ -818,7 +831,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				INFOPLIST_FILE = ccViewerTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -828,7 +841,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CryptCloudViewer.app/CryptCloudViewer";
 			};
 			name = Debug;
@@ -839,7 +852,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				INFOPLIST_FILE = ccViewerTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -849,7 +862,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CryptCloudViewer.app/CryptCloudViewer";
 			};
 			name = Release;
@@ -859,7 +872,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				INFOPLIST_FILE = ccViewerUITests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -869,7 +882,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = ccViewer;
 			};
 			name = Debug;
@@ -879,7 +892,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
+				DEVELOPMENT_TEAM = RBCU3NX86X;
 				INFOPLIST_FILE = ccViewerUITests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -889,7 +902,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ccViewerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = ccViewer;
 			};
 			name = Release;

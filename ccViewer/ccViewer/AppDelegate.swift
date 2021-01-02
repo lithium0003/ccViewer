@@ -12,7 +12,7 @@ import UserNotifications
 import AVFoundation
 
 import RemoteCloud
-import ffplayer
+//import ffplayer
 
 #if !targetEnvironment(macCatalyst)
 import GoogleCast
@@ -38,6 +38,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 try FileManager.default.removeItem(at: fileURL)
             }
         } catch  { print(error) }
+        
+        // TODO - Set user defaults
+        UserDefaults.standard.register(
+            defaults: [
+                "FFplayer"      : false,
+                "savePlaypos"   : false,
+                "resumePlaypos" : false,
+                "cloudPlaypos"  : false,
+                "cloudPlaylist" : false
+            ])
 
         // MARK: google chromecast
         #if !targetEnvironment(macCatalyst)
@@ -130,12 +140,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillResignActive(_ application: UIApplication) {
         // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
         // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
-        FFPlayerViewController.inFocus = false
+//Andy        FFPlayerViewController.inFocus = false
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-        FFPlayerViewController.inFocus = true
+//Andy        FFPlayerViewController.inFocus = true
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

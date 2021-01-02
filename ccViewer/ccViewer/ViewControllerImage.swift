@@ -8,11 +8,32 @@
 
 import UIKit
 import RemoteCloud
+import MapKit
+
+/* Placeholder - this one does not work as UIImage strips most meta data. */
+extension UIImage {
+
+    func getExifData() -> CFDictionary? {
+        var exifData: CFDictionary? = nil
+        if let data = self.jpegData(compressionQuality: 1.0) {
+            data.withUnsafeBytes {
+                let bytes = $0.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                if let cfData = CFDataCreate(kCFAllocatorDefault, bytes, data.count),
+                    let source = CGImageSourceCreateWithData(cfData, nil) {
+                    exifData = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                }
+            }
+        }
+        return exifData
+    }
+}
 
 class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInteractionControllerDelegate {
 
     @IBOutlet weak var scrollView: UIScrollView!
-
+    @IBOutlet weak var tableView: UITableView!
+    @IBOutlet weak var mapView: MKMapView!
+    
     @IBOutlet weak var doubleTapGesture: UITapGestureRecognizer!
     @IBOutlet weak var singleTapGesture: UITapGestureRecognizer!
     
@@ -40,6 +61,19 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         d.transitioningDelegate = self
         return d
     }()
+    
+    func getExifData() -> [CFString : Any]? {
+        // let data :Data = imagedata.jpegData(compressionQuality: 1.0)!
+        // Apple strips most of metadata from UImage for security concern, so raw data it is.
+        let data = self.data[itemIdx]!
+        let options = [kCGImageSourceShouldCache as String: kCFBooleanFalse]
+        if let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) {
+            let exifData = CGImageSourceCopyPropertiesAtIndex(source, 0, options as CFDictionary) as? [CFString : Any]
+//            debugPrint(exifData ?? nil)
+            return exifData
+        }
+        return nil
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -54,6 +88,18 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         imageView = UIImageView(image: imagedata)
         imageView.contentMode = .scaleAspectFit
         scrollView.addSubview(imageView)
+        
+        let exifData = getExifData()
+        let exifDict = exifData?[kCGImagePropertyExifDictionary] as? [CFString : Any]
+        let exifGPS = exifData?[kCGImagePropertyGPSDictionary] as? [CFString : Any]
+        print( "Name = \(self.items[itemIdx].name), Create date = \(exifDict?[kCGImagePropertyExifDateTimeDigitized]), GPS = \(exifGPS?[kCGImagePropertyGPSAltitude]), \(exifGPS?[kCGImagePropertyGPSLatitude]), \(exifGPS?[kCGImagePropertyGPSLongitude])")
+        
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = CLLocationCoordinate2DMake(exifGPS?[kCGImagePropertyGPSLatitude] as! CLLocationDegrees, exifGPS?[kCGImagePropertyGPSLongitude] as! CLLocationDegrees)
+        let region = MKCoordinateRegion(center: annotation.coordinate, latitudinalMeters: 1000, longitudinalMeters: 1000)
+                
+        mapView.addAnnotation(annotation)
+        mapView.setRegion(region, animated: false)
         
         activityIndicator.center = view.center
         if #available(iOS 13.0, *) {
