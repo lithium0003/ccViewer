@@ -422,8 +422,9 @@
                         <rect key="frame" x="0.0" y="0.0" width="428" height="926"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="bottom" misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FTx-HB-jL8">
-                                <rect key="frame" x="0.0" y="432" width="428" height="460"/>
+                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" ambiguous="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FTx-HB-jL8">
+                                <rect key="frame" x="-1" y="373" width="428" height="509"/>
+                                <viewLayoutGuide key="safeArea" id="eMW-6c-nnf"/>
                                 <gestureRecognizers/>
                                 <connections>
                                     <outletCollection property="gestureRecognizers" destination="U6F-t4-boc" appends="YES" id="DOA-Zq-mq6"/>
@@ -434,30 +435,33 @@
                                 </connections>
                             </scrollView>
                             <mapView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="top" fixedFrame="YES" mapType="standard" zoomEnabled="NO" scrollEnabled="NO" rotateEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="TBE-J3-SLq">
-                                <rect key="frame" x="-7" y="58" width="428" height="230"/>
+                                <rect key="frame" x="0.0" y="44" width="428" height="284"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                             </mapView>
-                            <tableView clipsSubviews="YES" contentMode="scaleToFill" fixedFrame="YES" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" translatesAutoresizingMaskIntoConstraints="NO" id="8Ml-Rk-7qw">
-                                <rect key="frame" x="-7" y="284" width="428" height="128"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="center" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Digitalized Date" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" highlighted="YES" adjustsFontSizeToFit="NO" id="tws-mu-5yH">
+                                <rect key="frame" x="0.0" y="336" width="429" height="21"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
-                                <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                            </tableView>
+                                <edgeInsets key="layoutMargins" top="8" left="8" bottom="8" right="8"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="18"/>
+                                <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="d9V-2V-V9D"/>
                         <color key="backgroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
-                            <constraint firstItem="FTx-HB-jL8" firstAttribute="top" secondItem="d9V-2V-V9D" secondAttribute="top" id="KeF-Wg-MMG"/>
+                            <constraint firstItem="tws-mu-5yH" firstAttribute="bottom" secondItem="FTx-HB-jL8" secondAttribute="top" constant="-16" id="KeF-Wg-MMG"/>
                             <constraint firstItem="d9V-2V-V9D" firstAttribute="trailing" secondItem="FTx-HB-jL8" secondAttribute="trailing" id="PgT-x3-uBq"/>
                             <constraint firstItem="FTx-HB-jL8" firstAttribute="leading" secondItem="d9V-2V-V9D" secondAttribute="leading" id="Tpi-FD-WOt"/>
-                            <constraint firstItem="d9V-2V-V9D" firstAttribute="bottom" secondItem="FTx-HB-jL8" secondAttribute="bottom" id="qki-Jh-tkJ"/>
+                            <constraint firstItem="FTx-HB-jL8" firstAttribute="bottom" secondItem="pBc-O1-St0" secondAttribute="bottom" constant="-44" id="qki-Jh-tkJ"/>
                         </constraints>
                     </view>
                     <connections>
                         <outlet property="doubleTapGesture" destination="U6F-t4-boc" id="ekc-mI-cn6"/>
+                        <outlet property="exifDigitalizedDate" destination="tws-mu-5yH" id="9qh-9G-4w1"/>
                         <outlet property="mapView" destination="TBE-J3-SLq" id="B1c-YO-0fm"/>
                         <outlet property="scrollView" destination="FTx-HB-jL8" id="72N-vX-EOa"/>
                         <outlet property="singleTapGesture" destination="KYa-0L-HVl" id="6CB-dd-7lW"/>
-                        <outlet property="tableView" destination="8Ml-Rk-7qw" id="gpl-1W-mLI"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="2ki-Db-TTl" userLabel="First Responder" sceneMemberID="firstResponder"/>
