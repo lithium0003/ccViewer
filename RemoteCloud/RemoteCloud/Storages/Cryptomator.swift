@@ -142,6 +142,10 @@ public class Cryptomator: ChildStorage {
     let LONG_NAME_FILE_EXT = ".lng"
     let masterkey_filename = "masterkey.cryptomator"
     let V7_DIR = "dir.c9r"
+    let V7_SYMLINK = "symlink.c9r"
+    let V7_SHORT_SUFFIX = "c9s"
+    let V7_SHORT_FILE = "contents.c9r"
+    let V7_SHORT_NAME = "name.c9s"
 
     enum ItemType {
         case regular
@@ -728,8 +732,8 @@ public class Cryptomator: ChildStorage {
     }
 
     func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, context: NSManagedObjectContext) {
-        os_log("%{public}@", log: log, type: .debug, "storeItem(cryptomator:\(storageName ?? "")) \(name)")
-        
+        os_log("%{public}@", log: log, type: .debug, "storeItem(cryptomator:\(storageName ?? "")) \(name); \(dirId)/\(deflatedName)")
+
         context.perform {
             let newid = "\(dirId)/\(deflatedName)"
             let newname = name
@@ -740,10 +744,20 @@ public class Cryptomator: ChildStorage {
 
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
+                        
+            // Will this be faster than simple fetchRequest?
+            // XCode 12.3. Must use custom predicate in data model editor instead of picking fields directly.
+            let fetchRequestTemplate = CloudFactory.shared.data.persistentContainer.managedObjectModel.fetchRequestFromTemplate(withName: "fetchByIDAndStorage", substitutionVariables: ["STORAGE" : self.storageName ?? "", "ID" : newid]) as! NSFetchRequest<RemoteData>
+            
+            if let result = try? context.fetch(fetchRequestTemplate) {
+//            if let result = try? context.fetch(fetchRequest) {
+                let itemcount = result.count
+                os_log("%{public}@", log: self.log, type: .debug, "Delete \(itemcount) old items (cryptomator:\(self.storageName ?? "")) \(name); \(newid)")
                 for object in result {
-                    context.delete(object as! NSManagedObject)
+                    context.delete(object as NSManagedObject)
                 }
+            } else {
+                os_log("%{public}@", log: self.log, type: .debug, "FAILED fetch before deleting (cryptomator:\(self.storageName ?? "")) \(name); \(newid)")
             }
             
             let newitem = RemoteData(context: context)
@@ -803,25 +817,40 @@ public class Cryptomator: ChildStorage {
                     }
                 } else {    // self.version == 7
                     // This only indicates parent folder is actually a folder
-                    // TODO - Add shortened name support
+                    // TODO - verify shortened name support
                     // TODO - Add symlink support
                     if (    encodedName == "dir.c9r" ||
-                            encodedName.hasSuffix(".c9s") ||
                             encodedName == "symlink.c9r" ) {
                         continue
                     }
-                    
-                    t = item.isFolder ? .directory : .regular
+                    if item.name.hasSuffix(self.V7_SHORT_SUFFIX) {
+                        group.enter()
+                        self.resolveMetadataFile(item: item) { (type, orgname) in
+                            defer {
+                                group.leave()
+                            }
+                            guard let orgname = orgname else {return}
+                            encodedName = orgname
+                            t = type
+                        }
+                    } else {
+                        t = item.isFolder ? .directory : .regular
+                    }
 
                 } // end self.version check
                 
                 (t, encryptedName) = self.decodeFilename(encodedName: encodedName, t: t)
                 guard t != .broken else { return}
                 guard let decryptedName = self.decryptFilename(ciphertextName: encryptedName, dirId: dirId) else { return}
+                
+                // Skip files started with "."
+                if ( decryptedName.hasPrefix(".")) {continue}
+                
                 if t == .directory {
                     self.storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
                 }
                 else if t == .regular {
+
                     self.storeItem(parentId: fileId,item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
                 }
                 group.enter()
@@ -850,11 +879,16 @@ public class Cryptomator: ChildStorage {
        
     func decodeFilename(encodedName: String, t: ItemType) -> (ItemType, String) {
         if ( self.version == 7) {
-             if encodedName.hasSuffix(".c9r") {
+            if encodedName.hasSuffix(".c9r") {
                 return (t, String(encodedName.dropLast(4)))
-            } else {
-                return (.broken, encodedName)
             }
+            
+            // Should not run into this case.
+            if encodedName.hasSuffix(self.V7_SHORT_SUFFIX) {
+                
+            }
+            return (.broken, encodedName)
+
         } else {
             return decodeFilename(encryptedName: encodedName)
         }
@@ -887,6 +921,71 @@ public class Cryptomator: ChildStorage {
             return (.broken, encryptedName)
         }
         return (.broken, encryptedName)
+    }
+    
+    func resolveMetadataFile(item: RemoteItem, onFinish: @escaping (ItemType, String?)->Void) {
+        var inflatedName: String? = nil
+        var itemType: ItemType = .broken
+        
+        var nameItem: RemoteItem = item
+        let nameGroup = DispatchGroup()
+        let nameSem = DispatchSemaphore(value: 0)
+
+        if ( self.version == 7) {
+            let array = item.id.components(separatedBy: "/")
+            nameGroup.enter()
+            findParentStorage(path: [array[1], array[2], array[3], item.name]) { items in
+                defer {
+                    nameGroup.leave()
+                    nameSem.signal()
+                }
+                for item in items {
+                    if item.name == self.V7_DIR {
+                        itemType = .directory
+                        continue
+                    }
+                    if item.name == self.V7_SYMLINK {
+                        itemType = .symlink
+                        continue
+                    }
+                    
+                    if item.name == self.V7_SHORT_FILE {
+                        itemType = .regular
+                        continue
+                    }
+                    
+                    if item.name == self.V7_SHORT_NAME {
+                        nameItem = item
+                    }
+                }
+            }
+        } else {    // self.version = 6
+            nameGroup.enter()
+            findParentStorage(path: [METADATA_DIR_NAME, String(item.name.prefix(2)), String(item.name.dropFirst(2).prefix(2))]) { items in
+                defer {
+                    nameGroup.leave()
+                    nameSem.signal()
+                }
+                guard items.count > 0 else { return}
+                nameItem = items[0]
+            }
+        }
+        
+        nameGroup.enter()
+        nameSem.wait()
+        nameItem.read() { data in
+            defer {
+                nameGroup.leave()
+            }
+            guard let data = data else {return}
+            guard let tempInflatedName = String(bytes: data, encoding: .utf8) else { return}
+            inflatedName = tempInflatedName
+        }
+        
+        nameGroup.notify(queue: .global()) {
+            onFinish(itemType, inflatedName)
+        }
+        
     }
     
     func resolveMetadataFile(shortName: String, onFinish: @escaping (String?)->Void) {
@@ -1011,8 +1110,79 @@ public class Cryptomator: ChildStorage {
         return CryptomatorRemoteItem(path: path)
     }
     
-    var pDirIdCache = [String: (Date, String)]()
+    func resolveDirUUIDFile(dirIdHash: String, deflateDirId: String, onFinish: @escaping (String?)->Void) {
+        findParentStorage(path: [self.DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), deflateDirId]) { items in
+            for item in items {
+                if item.name != self.V7_DIR {continue}
+                item.read() { data in
+                    guard let data = data else {
+                        onFinish(nil)
+                        return
+                    }
+                    onFinish(String(bytes: data, encoding: .utf8))
+                    return
+                }
+            }
+            onFinish(nil)
+        }
+    }
     
+    func resolveUUIDFromItem( item: RemoteItem, onFinish: @escaping (String?)->Void) {
+        var id: String? = nil
+        var uuidItem: RemoteItem = item
+        let uuidGroup = DispatchGroup()
+        let uuidSem = DispatchSemaphore(value: 0)
+
+        if ( self.version == 7) {
+            let deflateDirID = item.name
+            let array = item.id.components(separatedBy: "/")
+            uuidGroup.enter()
+            findParentStorage(path: [array[1], array[2], array[3], deflateDirID]) { items in
+                defer {
+                    uuidGroup.leave()
+                    uuidSem.signal()
+                }
+                for item in items {
+                    if item.name != self.V7_DIR {continue}
+                    uuidItem = item
+                    return
+                }
+            }
+        } else {
+            uuidSem.signal()
+        }
+        
+        uuidGroup.enter()
+        uuidSem.wait()
+        uuidItem.read() { data in
+            defer {
+                uuidGroup.leave()
+                
+            }
+            guard let data = data else {return}
+            guard let tempid = String(bytes: data, encoding: .utf8) else { return}
+            id = tempid
+        }
+        
+        uuidGroup.notify(queue: .global()) {
+            onFinish(id)
+        }
+    }
+    
+
+    var pDirIdCache = [String: (Date, String)]()
+    /*
+     Use parent folder's HASH to access/traverse storage, match file name specificied by folder's name in BASE32/64, and then read this folder's UUID in the matching file.
+     In V6, the folder UUID is stored in item.id; in V7, the folder UUID is stored in item.id/dir.c9r. https://github.com/cryptomator/cryptofs/issues/64
+  
+     Example below -
+     fileId = "bb26ccca-3726-4c1c-b4eb-d58802d03d66/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+     Parent folder UUID - bb26ccca-3726-4c1c-b4eb-d58802d03d66
+     File containing this folder's UUID - 0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======
+     
+     item.id = "/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+     item.path = "rclone:/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
+     */
     func resolveDirId(fileId: String, onFinish: ((String?)->Void)?) {
         os_log("%{public}@", log: log, type: .debug, "resolveFileId(cryptomator:\(storageName ?? "")) \(fileId)")
         let fixFileId = (fileId == "") ? "/" : fileId
@@ -1024,7 +1194,7 @@ public class Cryptomator: ChildStorage {
             onFinish?("")
             return
         }
-        
+
         if let (d, id) = pDirIdCache[fileId] {
             if Date(timeIntervalSinceNow: -5*60) > d {
                 pDirIdCache[fileId] = nil
@@ -1041,61 +1211,67 @@ public class Cryptomator: ChildStorage {
             return
         }
 
-        /*
-         Use parent folder's HASH to access/traverse storage, match file name specificied by folder's name in BASE32/64, and then read this folder's UUID in the matching file.
-         In V6, the folder UUID is stored in item.id; in V7, the folder UUID is stored in item.id/dir.c9r. https://github.com/cryptomator/cryptofs/issues/64
-      
-         Example below -
-         fileId = "bb26ccca-3726-4c1c-b4eb-d58802d03d66/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
-         Parent folder UUID - bb26ccca-3726-4c1c-b4eb-d58802d03d66
-         File containing this folder's UUID - 0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======
-         
-         item.id = "/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
-         item.path = "rclone:/d/S7/3BUXDLCW4X4IOZBQ4X4BNOLJ273A4T/0ALUAELRDZQI3W3UWPE5JOWMJJQ6PRLEHRAJJDDU56M======"
-         */
+        var id: String? = nil
+        var uuidItem: RemoteItem? = nil
+        
         let group = DispatchGroup()
+        let sem = DispatchSemaphore.init(value: 0)
         group.enter()
         findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) { items in
-            
-            defer {
-                group.leave()
-            }
-            
+
+            /* This for loop runs as a concurrent task in global queue */
             for item in items {
                 if item.name != deflateDirId { continue }
+                /*
+                if (self.version == 6) {
+                    uuidItem = item
+                    sem.signal()
+                } else {
+                    let deflateDirID = item.name
+                    let array = item.id.components(separatedBy: "/")
 
-                var tempItem: RemoteItem = item
-                if self.version == 7 {
                     group.enter()
-                        
-                    guard let uuidItem = CloudFactory.shared[self.baseRootStorage]?.get(fileId: (item.id + self.V7_DIR)), self.version == 7 else {                        defer {
+                    self.findParentStorage(path: [array[1], array[2], array[3], deflateDirID]) { items in
+                        for item in items {
+                            if item.name != self.V7_DIR {continue}
+                            uuidItem = item
+                            
+                            sem.signal()
                             group.leave()
+                            return
                         }
-
-                        onFinish?(nil)
-                        return
                     }
-                    tempItem = uuidItem
-                }
+                }*/
 
-                tempItem.read() { data in
-                    var id: String? = nil
-                    defer {
-                        onFinish?(id)
-                    }
-                    guard let data = data else {return}
-                    guard let tempid = String(bytes: data, encoding: .utf8) else { return}
-                    id = tempid
-                        
-                    os_log("%{public}@", log: self.log, type: .debug, "resolveFileId(cryptomator:\(self.storageName ?? "")) \(fileId)->\(String(describing: id))")
-                    self.pDirIdCache[fileId] = (Date(), id) as? (Date, String)
+                
+                group.enter()
+                self.resolveUUIDFromItem(item: item) { dirUUID in
+                    id = dirUUID
+                    group.leave()
                 }
+                break
             } // end item in items loop
             
-            group.notify( queue: .global()) {
-                onFinish?(nil)
-            }
+            group.leave()
         } //End of findParentStorage
+        
+        /*
+        group.enter()
+        sem.wait()      // Wait till matching item is found.
+        uuidItem!.read() { data in
+            guard let data = data else { return}
+            guard let tempid = String(bytes: data, encoding: .utf8) else { return}
+            id = tempid
+            group.leave()
+        }*/
+
+        group.notify( queue: .global()) {
+            defer { onFinish?(id)}
+ 
+            guard let id = id else { return}
+            os_log("%{public}@", log: self.log, type: .debug, "resolveFileId(cryptomator:\(self.storageName ?? "")) \(fileId)->\(String(describing: id))")
+            self.pDirIdCache[fileId] = (Date(), id)
+        }
     }
     
 
