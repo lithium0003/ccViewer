@@ -949,7 +949,13 @@ class TableViewControllerItemsEdit: UITableViewController, UISearchResultsUpdati
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
             cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes)"
             if let storage = result[indexPath.row].storage, let id = result[indexPath.row].id {
+                #if CLOUDMARK
                 let localpos = CloudFactory.shared.data.getMark(storage: storage, targetID: id)
+                #else
+                //TODO - skip it
+                var localpos : Double? = nil
+                #endif
+
                 if localpos != nil {
                     cell.backgroundColor = UIColor(named: "DidPlayColor")
                 }

@@ -9,7 +9,9 @@
 import UIKit
 
 import RemoteCloud
-import ffplayer
+#if FFPLAYER
+//import ffplayer
+#endif
 
 class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdating {
 
@@ -232,11 +234,13 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
             }
 
             if playItems.count > 0 {
+                #if FFPLAYER
                 Player.play(parent: self, items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop")) { finish in
                     DispatchQueue.main.async {
                         self.tableView.reloadData()
                     }
                 }
+                #endif
             }
         }
     }
@@ -682,6 +686,7 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
     }
 
     func playFFmpeg(item: RemoteItem, onFinish: @escaping (Bool)->Void) {
+        #if FFPLAYER
         Player.play(parent: self, item: item, start: nil) { position in
             DispatchQueue.main.async {
                 self.navigationController?.popToViewController(self, animated: true)
@@ -689,6 +694,7 @@ class TableViewControllerPlaylist: UITableViewController, UISearchResultsUpdatin
                 self.tableView.reloadData()
             }
         }
+        #endif
     }
     
     func fallbackView(item: RemoteItem) {

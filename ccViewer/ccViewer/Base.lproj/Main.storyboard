@@ -434,7 +434,7 @@
                                     <outletCollection property="gestureRecognizers" destination="iyG-lM-p3D" appends="YES" id="923-O5-qfU"/>
                                 </connections>
                             </scrollView>
-                            <mapView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="top" fixedFrame="YES" mapType="standard" zoomEnabled="NO" scrollEnabled="NO" rotateEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="TBE-J3-SLq">
+                            <mapView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="top" fixedFrame="YES" mapType="hybrid" zoomEnabled="NO" scrollEnabled="NO" rotateEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="TBE-J3-SLq">
                                 <rect key="frame" x="0.0" y="44" width="428" height="284"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                             </mapView>

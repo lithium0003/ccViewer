@@ -12,7 +12,9 @@ import UserNotifications
 import AVFoundation
 
 import RemoteCloud
-//import ffplayer
+#if FFPLAYER
+import ffplayer
+#endif
 
 #if !targetEnvironment(macCatalyst)
 import GoogleCast
