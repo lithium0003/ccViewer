@@ -10,7 +10,9 @@ import UIKit
 import AVFoundation
 import AVKit
 
-import ffconverter
+#if FFCONVERTER
+//import ffconverter
+#endif
 import RemoteCloud
 
 class ConvertPlayerView: NSObject, AVPlayerViewControllerDelegate {

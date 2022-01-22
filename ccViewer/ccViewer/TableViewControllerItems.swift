@@ -10,8 +10,13 @@ import UIKit
 import PDFKit
 
 import RemoteCloud
+#if FFPLAYER
 import ffplayer
+#endif
+
+#if FFCONVERTER
 import ffconverter
+#endif
 
 #if !targetEnvironment(macCatalyst)
 import GoogleCast
@@ -241,6 +246,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
 
     func restoreToolbarButton() {
         #if !targetEnvironment(macCatalyst)
+        #if FFCONVERTER
         let castContext = GCKCastContext.sharedInstance()
         if Converter.IsCasting() && (castContext.castState == .connected || castContext.castState == .connecting) {
             if let castButton = castButton {
@@ -253,6 +259,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else {
             toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem]
         }
+        #endif
         #else
         toolbarItems = [playlistItem, flexible, playloopItem, flexible, playallItem, flexible, playshuffleItem, flexible, editlistItem, flexible, playCastItem]
         #endif
@@ -276,12 +283,16 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else {
             playshuffleItem.image = UIImage(named: "shuffle")
         }
+        #if FFCONVERTER
         if Converter.IsCasting() {
             playCastItem.image = UIImage(named: "cast_on")
         }
         else {
             playCastItem.image = UIImage(named: "cast")
         }
+        #else
+        playCastItem.image = UIImage(named: "cast")
+        #endif
 
         restoreToolbarButton()
         
@@ -334,6 +345,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
     }
     
     @objc func barButtonPlayCastTapped(_ sender: UIBarButtonItem) {
+        #if FFCONVERTER
         if Converter.IsCasting() {
             Converter.Stop()
             activityIndicator.stopAnimating()
@@ -383,6 +395,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         else {
             playCastItem.image = UIImage(named: "cast")
         }
+        #endif
     }
 
     @objc func barButtonPlayListTapped(_ sender: UIBarButtonItem) {
@@ -491,11 +504,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             }
             
             if playItems.count > 0 {
+                #if FFPLAYER
                 Player.play(parent: self, items: playItems, shuffle: UserDefaults.standard.bool(forKey: "playshuffle"), loop: UserDefaults.standard.bool(forKey: "playloop")) { finish in
                     DispatchQueue.main.async {
                         self.tableView.reloadData()
                     }
                 }
+                #endif
             }
         }
     }
@@ -897,7 +912,11 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             cell.detailTextLabel?.lineBreakMode = .byWordWrapping
             cell.detailTextLabel?.text = "\(tStr) \t\(sStr2) (\(sStr) bytes) \t\(result[indexPath.row].subinfo ?? "")"
             if let storage = result[indexPath.row].storage, let id = result[indexPath.row].id {
+                #if CLOUDMARK
                 let localpos = CloudFactory.shared.data.getMark(storage: storage, targetID: id)
+                #else
+                var localpos: Double? = nil
+                #endif
                 if localpos != nil {
                     cell.backgroundColor = UIColor(named: "DidPlayColor")
                 }
@@ -1012,17 +1031,25 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         if UserDefaults.standard.bool(forKey: "ImageViewer") && pict_exts.contains(item.ext) {
             
             displayImageViewer(item: item)
+            return
         }
         else if UserDefaults.standard.bool(forKey: "PDFViewer") && (item.ext == "pdf") {
             displayPDFViewer(item: item)
+            return
         }
-        else if Converter.IsCasting() {
+        #if FFCONVERTER
+        if Converter.IsCasting() {
             semaphore.signal()
             playConverter(item: item) { fin in
             }
+            return
         }
-        else if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") &&
+        #endif
+
+        #if FFPLAYER
+        if UserDefaults.standard.bool(forKey: "FFplayer") && UserDefaults.standard.bool(forKey: "firstFFplayer") &&
             !Converter.IsCasting() {
+
             semaphore.signal()
             playFFmpeg(item: item) { finish in
                 if finish {
@@ -1036,10 +1063,14 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     self.autoDetectRun(item: item)
                 }
             }
+            return
         }
-        else if UserDefaults.standard.bool(forKey: "MediaViewer") && media_exts.contains(item.ext)  {
+        #endif
+        
+        if UserDefaults.standard.bool(forKey: "MediaViewer") && media_exts.contains(item.ext)  {
             
             displayMediaViewer(item: item, fallback: true)
+            return
         }
         else {
             DispatchQueue.main.async {
@@ -1062,11 +1093,13 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     return
                 }
             }
+            #if FFCONVERTER
             if Converter.IsCasting() {
                 DispatchQueue.global().asyncAfter(deadline: .now()+1) {
                     self.waitToPlay(target: target, onFind: onFind)
                 }
             }
+            #endif
             return
         }
         
@@ -1082,6 +1115,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
             DispatchQueue.global().async {
                 let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
                 let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+                #if FFCONVERTER
                 let info = ConvertIteminfo(item: item)
                 if skip > 0 {
                     info.startpos = Double(skip)
@@ -1146,6 +1180,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
 
                     }
                 }
+                #endif
                 if(url == nil) {
                     DispatchQueue.main.async {
                         self.activityIndicator.stopAnimating()
@@ -1161,6 +1196,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
         DispatchQueue.global().async {
             let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
             let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            #if FFCONVERTER
             let info = ConvertIteminfo(item: item)
             if skip > 0 {
                 info.startpos = Double(skip)
@@ -1213,6 +1249,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                     self.convertPlayer?.play(parent: self)
                 }
             }
+            #endif
             if(url == nil) {
                 DispatchQueue.main.async {
                     self.activityIndicator.stopAnimating()
@@ -1223,6 +1260,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
     }
     
     func playFFmpeg(item: RemoteItem, onFinish: @escaping (Bool)->Void) {
+        #if FFPLAYER
         let localpos = UserDefaults.standard.bool(forKey: "resumePlaypos") ? CloudFactory.shared.data.getMark(storage: item.storage, targetID: item.id) : nil
         Player.play(parent: self, item: item, start: localpos) { position in
             if let pos = position {
@@ -1250,6 +1288,7 @@ class TableViewControllerItems: UITableViewController, UISearchResultsUpdating, 
                 }
             }
         }
+        #endif
     }
     
     func fallbackView(item: RemoteItem) {
@@ -1887,7 +1926,9 @@ class DownloadProgressViewController: UIViewController, DownloadManagerDelegate 
 
 class SelectStreamViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDelegate {
     var onDone: ((Int, Int)->Void)?
+    #if FFPLAYER
     var info: PlayItemInfo?
+    #endif
     
     var picker1: UIPickerView!
     var picker2: UIPickerView!
@@ -1904,8 +1945,10 @@ class SelectStreamViewController: UIViewController, UIPickerViewDataSource, UIPi
             view.backgroundColor = .white
         }
         
+        #if FFPLAYER
         videoIdx = info?.mainVideo ?? -1
         subtitleIdx = info?.mainSubtitle ?? -1
+        #endif
         
         let stackView = UIStackView()
         stackView.axis = .vertical
@@ -1948,13 +1991,14 @@ class SelectStreamViewController: UIViewController, UIPickerViewDataSource, UIPi
         buttonOK.setTitle("OK", for: .normal)
         buttonOK.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
         stackView.addArrangedSubview(buttonOK)
-        
+        #if FFPLAYER
         if let key = info?.videos.keys.sorted(), let ind = key.firstIndex(of: videoIdx) {
             picker1.selectRow(ind, inComponent: 0, animated: false)
         }
         if let key = info?.subtitle.keys.sorted(), let ind = key.firstIndex(of: subtitleIdx) {
             picker2.selectRow(ind, inComponent: 0, animated: false)
         }
+        #endif
     }
         
     @objc func buttonEvent(_ sender: UIButton) {
@@ -1968,31 +2012,37 @@ class SelectStreamViewController: UIViewController, UIPickerViewDataSource, UIPi
     }
     
     func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        #if FFPLAYER
         if pickerView == picker1 {
             return info?.videos.count ?? 0
         }
         else if pickerView == picker2 {
             return info?.subtitle.count ?? 0
         }
+        #endif
         return 0
     }
     
     func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        #if FFPLAYER
         if pickerView == picker1, let key = info?.videos.keys.sorted() {
             return "\(key[row]) : \(info?.videos[key[row]] ?? "")"
         }
         if pickerView == picker2, let key = info?.subtitle.keys.sorted() {
             return "\(key[row]) : \(info?.subtitle[key[row]] ?? "")"
         }
+        #endif
         return nil
     }
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        #if FFPLAYER
         if pickerView == picker1, let key = info?.videos.keys.sorted() {
             videoIdx = key[row]
         }
         if pickerView == picker2, let key = info?.subtitle.keys.sorted() {
             subtitleIdx = key[row]
         }
+        #endif
     }
 }

@@ -8,11 +8,33 @@
 
 import UIKit
 import RemoteCloud
+import MapKit
+
+/* Placeholder - this one does not work as UIImage strips most meta data. */
+extension UIImage {
+
+    func getExifData() -> CFDictionary? {
+        var exifData: CFDictionary? = nil
+        if let data = self.jpegData(compressionQuality: 1.0) {
+            data.withUnsafeBytes {
+                let bytes = $0.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                if let cfData = CFDataCreate(kCFAllocatorDefault, bytes, data.count),
+                    let source = CGImageSourceCreateWithData(cfData, nil) {
+                    exifData = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                }
+            }
+        }
+        return exifData
+    }
+}
 
 class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInteractionControllerDelegate {
 
     @IBOutlet weak var scrollView: UIScrollView!
-
+   
+    @IBOutlet weak var exifDigitalizedDate: UILabel!
+    @IBOutlet weak var mapView: MKMapView!
+    
     @IBOutlet weak var doubleTapGesture: UITapGestureRecognizer!
     @IBOutlet weak var singleTapGesture: UITapGestureRecognizer!
     
@@ -40,12 +62,63 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         d.transitioningDelegate = self
         return d
     }()
+    
+    func getExifData() -> [CFString : Any]? {
+        // let data :Data = imagedata.jpegData(compressionQuality: 1.0)!
+        // Apple strips most of metadata from UImage for security concern, so raw data it is.
+        let data = self.data[itemIdx]!
+        let options = [kCGImageSourceShouldCache as String: kCFBooleanFalse]
+        if let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) {
+            let exifData = CGImageSourceCopyPropertiesAtIndex(source, 0, options as CFDictionary) as? [CFString : Any]
+//            debugPrint(exifData ?? nil)
+            return exifData
+        }
+        return nil
+    }
+    
+    func updateViewFromEXIF() {
+        var errormsg : String = "Reverse Geo Code..."
+        defer {
+            self.exifDigitalizedDate.attributedText = NSAttributedString(string: errormsg)
+        }
+        
+        guard let exifData = getExifData() else { errormsg = "No EXIF data"; return}
+        guard let exifDict = exifData[kCGImagePropertyExifDictionary] as? [CFString : Any] else { errormsg = "Corrupted EXIF data"; return}
+        guard let digitizedDate = exifDict[kCGImagePropertyExifDateTimeDigitized] as? String else { errormsg = "No digitized date"; return}
+        guard let exifGPS = exifData[kCGImagePropertyGPSDictionary] as? [CFString : Any] else { errormsg = "No GPS info, \(digitizedDate)"; return}
+        guard let longitude = exifGPS[kCGImagePropertyGPSLongitude] as? CLLocationDegrees else { errormsg = "No GPS Longitude, \(digitizedDate)"; return}
+        guard let latitude = exifGPS[kCGImagePropertyGPSLatitude] as? CLLocationDegrees else { errormsg = "No GPS Latitude, \(digitizedDate)"; return}
+        
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: latitude, longitude: longitude)
+        geocoder.reverseGeocodeLocation(location) { (placemarks, error) -> Void in
+            defer {
+                let annotation = MKPointAnnotation()
+                annotation.coordinate = location.coordinate
+                let region = MKCoordinateRegion(center: annotation.coordinate, latitudinalMeters: 1000, longitudinalMeters: 1000)
+                        
+                self.mapView.addAnnotation(annotation)
+                self.mapView.setRegion(region, animated: false)
+                
+                self.exifDigitalizedDate.attributedText = NSAttributedString(string: "\(place ?? "") +  \(digitizedDate)" )
+            }
+            
+            var place : String? = ""
+            if (error != nil) {return}
+            
+            let pm = placemarks! as [CLPlacemark]
+            if (pm.count > 0){
+                place = pm[0].name
+            }
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         // Do any additional setup after loading the view.
         singleTapGesture.require(toFail: doubleTapGesture)
+
         
         scrollView.delegate = self
         scrollView.minimumZoomScale = 0.0
@@ -54,6 +127,8 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
         imageView = UIImageView(image: imagedata)
         imageView.contentMode = .scaleAspectFit
         scrollView.addSubview(imageView)
+        
+        updateViewFromEXIF()
         
         activityIndicator.center = view.center
         if #available(iOS 13.0, *) {
@@ -190,6 +265,8 @@ class ViewControllerImage: UIViewController, UIScrollViewDelegate, UIDocumentInt
                 let scale = min(w_scale, h_scale)
                 scrollView.setZoomScale(scale, animated: false)
             }
+            
+            updateViewFromEXIF()
         }
         else {
             transrateData(toLeft: toLeft)
