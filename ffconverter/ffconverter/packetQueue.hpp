@@ -27,10 +27,9 @@ private:
     Converter *parent = NULL;
     std::mutex mutex;
     std::condition_variable cond;
+    bool aborted = false;
 public:
-    AVPacketList *first_pkt = NULL, *last_pkt = NULL;
-    int nb_packets = 0;
-    int size = 0;
+    std::deque<AVPacket*> queue;
     
     PacketQueue(Converter *parent);
     ~PacketQueue();
@@ -40,6 +39,7 @@ public:
     int get(AVPacket *pkt, int block);
     void flush();
     void clear();
+    size_t size();
 };
 
 class VideoPicture
@@ -54,21 +54,19 @@ public:
     VideoPicture(): bmp() { }
     ~VideoPicture();
     bool Allocate(int width, int height);
-    void Free();
+    void free();
 };
 
 class SubtitlePicture
 {
 public:
-    int type = -1;
-    std::unique_ptr<std::shared_ptr<AVSubtitleRect>[]> subrects;
-    int numrects = 0;
-    uint32_t start_display_time = 0;
-    uint32_t end_display_time = 0;
-    int subw = -1;
-    int subh = -1;
-    double pts = NAN;
-    int64_t serial = -1;
+    AVSubtitle sub;
+    int subw;
+    int subh;
+    double pts;
+    int64_t serial;
+    
+    ~SubtitlePicture();
 };
 
 class SubtitlePictureQueue
@@ -77,13 +75,14 @@ private:
     Converter *parent = NULL;
     std::mutex mutex;
     std::condition_variable cond;
-    std::queue<std::shared_ptr<SubtitlePicture>> queue;
+    std::deque<std::shared_ptr<SubtitlePicture>> queue;
 public:
     SubtitlePictureQueue(Converter *parent);
     ~SubtitlePictureQueue();
     void clear();
     void put(std::shared_ptr<SubtitlePicture> Pic);
     int peek(std::shared_ptr<SubtitlePicture>& Pic);
+    int peek2(std::shared_ptr<SubtitlePicture>& Pic);
     int get(std::shared_ptr<SubtitlePicture> &Pic);
 };
 

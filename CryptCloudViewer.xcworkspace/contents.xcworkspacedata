@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:CryptCloudViewer/CryptCloudViewer.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:ffplayer/ffplayer.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:RemoteCloud/RemoteCloud.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:ffconverter/ffconverter.xcodeproj">
+   </FileRef>
+</Workspace>

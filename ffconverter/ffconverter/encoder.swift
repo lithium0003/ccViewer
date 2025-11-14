@@ -28,8 +28,22 @@ class Encoder {
     var subwriter: [WebVTTwriter?] = []
     let dest: URL
     var isLive = true
-
-    var onReady: (()->Void)?
+    var needWait: Bool {
+        var wait = true
+        for w in writer {
+            if let w {
+                if w.last_write_m3u8 < 0 {
+                    wait = false
+                    break
+                }
+                if w.touch_count >= 0 {
+                    wait = false
+                    break
+                }
+            }
+        }
+        return wait
+    }
     
     class sound_processer {
         let sound_fq = 48000.0
@@ -156,12 +170,11 @@ class Encoder {
         }
 
         let sourceImageBufferAttributes = [
-            //kCVPixelBufferPixelFormatTypeKey: Int(kCVPixelFormatType_422YpCbCr8FullRange),
-            kCVPixelBufferPixelFormatTypeKey: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferPixelFormatTypeKey: Int(kCVPixelFormatType_420YpCbCr8Planar),
             kCVPixelBufferWidthKey: Int(width),
             kCVPixelBufferHeightKey: Int(height),
             ] as CFDictionary
-        status = VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: CMVideoCodecType(kCMVideoCodecType_H264), encoderSpecification: nil, imageBufferAttributes: sourceImageBufferAttributes, compressedDataAllocator: nil, outputCallback: self.vt_compression_callback, refcon: unsafeBitCast(self, to: UnsafeMutableRawPointer.self), compressionSessionOut: &self.compressionSession)
+        status = VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: CMVideoCodecType(kCMVideoCodecType_H264), encoderSpecification: nil, imageBufferAttributes: sourceImageBufferAttributes, compressedDataAllocator: kCFAllocatorDefault, outputCallback: self.vt_compression_callback, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &self.compressionSession)
         guard status == noErr else {
             return nil
         }
@@ -179,8 +192,8 @@ class Encoder {
         }
         
         VTCompressionSessionPrepareToEncodeFrames(self.compressionSession!)
-        
-        status = CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &pxbuffer)
+
+        status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_420YpCbCr8Planar, nil, &pxbuffer)
         guard status == noErr else {
             return nil
         }
@@ -201,7 +214,7 @@ class Encoder {
             } catch {
                 return
             }
-            let w = TS_writer(dest: p, split_time: 4.0, time_hint: 12.0)
+            let w = TS_writer(dest: p, split_time: 5.0, time_hint: 10.0)
             if i == 0 {
                 w.set_channel(video: 1, audio: 0)
             }
@@ -258,12 +271,12 @@ class Encoder {
             "0/stream.m3u8"
             ]
         
-        DispatchQueue.global().async {
+        Task.detached {
             while self.isLive {
                 var done = true
                 for i in 0...(self.audio_count+self.subtitle_count) {
                     let p = self.dest.appendingPathComponent("\(i)", isDirectory: true)
-                    if !FileManager.default.fileExists(atPath: p.appendingPathComponent("stream.m3u8").path) {
+                    if !FileManager.default.fileExists(atPath: p.appendingPathComponent("stream.m3u8").path(percentEncoded: false)) {
                         done = false
                         break
                     }
@@ -284,16 +297,17 @@ class Encoder {
             let str = content.joined(separator: "\r\n") + "\r\n"
             let data = Array(str.utf8)
             m3u8file?.write(data, maxLength: data.count)
-            
-            let onReady = self.onReady
-            DispatchQueue.global().asyncAfter(wallDeadline: .now()+1) {
-                onReady?()
-            }
         }
     }
     
-    func encode_frame(src_data: UnsafeMutablePointer<UInt8>?, src_linesize: Int32, src_height: Int32, pts: Double, key: Bool) {
+    func encode_frame(src_data: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, src_linesizes: UnsafeMutablePointer<Int32>?, src_height: Int32, pts: Double, key: Bool) {
         guard let pxbuffer = pxbuffer else {
+            return
+        }
+        guard let src_data else {
+            return
+        }
+        guard let src_linesizes else {
             return
         }
         guard let compressionSession = compressionSession else {
@@ -307,14 +321,27 @@ class Encoder {
             defer {
                 CVPixelBufferUnlockBaseAddress(pxbuffer, .init(rawValue: 0))
             }
-            let data = CVPixelBufferGetBaseAddress(pxbuffer)
-            let linesize = CVPixelBufferGetBytesPerRow(pxbuffer)
-            let pxheight = CVPixelBufferGetHeight(pxbuffer)
-            guard src_linesize == linesize, src_height == pxheight else {
-                return
+            let yp = CVPixelBufferGetBaseAddressOfPlane(pxbuffer, 0)
+            guard let ysrc = src_data[0] else { return }
+            let sline = Int(src_linesizes[0])
+            let dline = CVPixelBufferGetBytesPerRowOfPlane(pxbuffer, 0)
+            for y in 0..<Int(height) {
+                memcpy(yp! + dline * y, ysrc + sline * y, Int(width))
             }
-            let size = pxheight * linesize
-            memcpy(data, src_data, size)
+            let up = CVPixelBufferGetBaseAddressOfPlane(pxbuffer, 1)
+            guard let usrc = src_data[1] else { return }
+            let sline2 = Int(src_linesizes[1])
+            let dline2 = CVPixelBufferGetBytesPerRowOfPlane(pxbuffer, 1)
+            for y in 0..<Int(height) / 2 {
+                memcpy(up! + dline2 * y, usrc + sline2 * y, Int(width)/2)
+            }
+            let vp = CVPixelBufferGetBaseAddressOfPlane(pxbuffer, 2)
+            guard let vsrc = src_data[2] else { return }
+            let sline3 = Int(src_linesizes[2])
+            let dline3 = CVPixelBufferGetBytesPerRowOfPlane(pxbuffer, 2)
+            for y in 0..<Int(height) / 2 {
+                memcpy(vp! + dline3 * y, vsrc + sline3 * y, Int(width)/2)
+            }
         }
         //print(pts, key)
         let properties = [
@@ -358,7 +385,7 @@ class Encoder {
     
     func finish_encode() {
         print("finish_encode()")
-        DispatchQueue.global().async {
+        Task {
             guard let compressionSession = self.compressionSession else {
                 return
             }
@@ -387,114 +414,123 @@ class Encoder {
     }
     
     var vt_compression_callback:VTCompressionOutputCallback = {(outputCallbackRefCon: UnsafeMutableRawPointer?, sourceFrameRefCon: UnsafeMutableRawPointer?, status: OSStatus, infoFlags: VTEncodeInfoFlags, sampleBuffer: CMSampleBuffer?) in
-        
+        guard let frame = sampleBuffer else {
+            print("nil buffer")
+            return
+        }
+        guard let ref_unwrapped = outputCallbackRefCon else { return }
+        guard status == noErr else {
+            print(status)
+            return
+        }
+        guard CMSampleBufferDataIsReady(frame) else {
+            print("CMSampleBuffer is not ready to use")
+            return
+        }
+        guard infoFlags != VTEncodeInfoFlags.frameDropped else {
+            print("frame dropped")
+            return
+        }
         autoreleasepool {
-            let encoder: Encoder = unsafeBitCast(outputCallbackRefCon, to: Encoder.self)
-            guard status == noErr else {
-                print(status)
-                return
-            }
+            let encoder = Unmanaged<Encoder>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             var elementaryStream = Data()
-            if let frame = sampleBuffer {
-                // Find out if the sample buffer contains an I-Frame.
-                // If so we will write the SPS and PPS NAL units to the elementary stream.
-                var isIFrame = false
-                if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(frame, createIfNecessary: false), CFArrayGetCount(attachmentsArray) > 0 {
-                    let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachmentsArray, 0), to: CFDictionary.self)
-                    if let dict = dict as? [String: AnyObject] {
-                        if let notSync = dict[kCMSampleAttachmentKey_NotSync as String] as? Bool {
-                            isIFrame = !notSync
-                        }
-                        else {
-                            isIFrame = true
-                        }
+            // Find out if the sample buffer contains an I-Frame.
+            // If so we will write the SPS and PPS NAL units to the elementary stream.
+            var isIFrame = false
+            if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(frame, createIfNecessary: false), CFArrayGetCount(attachmentsArray) > 0 {
+                let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachmentsArray, 0), to: CFDictionary.self)
+                if let dict = dict as? [String: AnyObject] {
+                    if let notSync = dict[kCMSampleAttachmentKey_NotSync as String] as? Bool {
+                        isIFrame = !notSync
+                    }
+                    else {
+                        isIFrame = true
                     }
                 }
-                
-                // This is the start code that we will write to
-                // the elementary stream before every NAL unit
-                let startCode: [UInt8] = [0x00, 0x00, 0x00, 0x01]
-                let startCodeLength = startCode.count
-                
-                elementaryStream.append(contentsOf: startCode)
-                elementaryStream.append(0x09)
-                elementaryStream.append(0xf0)
+            }
+            
+            // This is the start code that we will write to
+            // the elementary stream before every NAL unit
+            let startCode: [UInt8] = [0x00, 0x00, 0x00, 0x01]
+            let startCodeLength = startCode.count
+            
+            elementaryStream.append(contentsOf: startCode)
+            elementaryStream.append(0x09)
+            elementaryStream.append(0xf0)
 
-                // Write the SPS and PPS NAL units to the elementary stream before every I-Frame
-                if isIFrame, let description = CMSampleBufferGetFormatDescription(frame) {
-                    var numberOfParameterSets = 0
-                    CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &numberOfParameterSets, nalUnitHeaderLengthOut: nil)
+            // Write the SPS and PPS NAL units to the elementary stream before every I-Frame
+            if isIFrame, let description = CMSampleBufferGetFormatDescription(frame) {
+                var numberOfParameterSets = 0
+                CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &numberOfParameterSets, nalUnitHeaderLengthOut: nil)
+                
+                // Write each parameter set to the elementary stream
+                for i in 0..<numberOfParameterSets {
+                    var parameterSetPointer: UnsafePointer<UInt8>?
+                    var parameterSetLength = 0
+                    CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description, parameterSetIndex: i, parameterSetPointerOut: &parameterSetPointer, parameterSetSizeOut: &parameterSetLength, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
                     
-                    // Write each parameter set to the elementary stream
-                    for i in 0..<numberOfParameterSets {
-                        var parameterSetPointer: UnsafePointer<UInt8>?
-                        var parameterSetLength = 0
-                        CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description, parameterSetIndex: i, parameterSetPointerOut: &parameterSetPointer, parameterSetSizeOut: &parameterSetLength, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
-                        
-                        // Write the parameter set to the elementary stream
-                        if let parameterSetPointer = parameterSetPointer {
-                            elementaryStream.append(contentsOf: startCode)
-                            elementaryStream.append(parameterSetPointer, count: parameterSetLength)
-                        }
-                    }
-                }
-                
-                // Get a pointer to the raw AVCC NAL unit data in the sample buffer
-                var blockBufferLength = 0
-                var bufferDataPointer: UnsafeMutablePointer<Int8>?
-                if let block = CMSampleBufferGetDataBuffer(frame) {
-                    CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &blockBufferLength, dataPointerOut: &bufferDataPointer)
-                }
-                bufferDataPointer?.withMemoryRebound(to: UInt8.self, capacity: blockBufferLength) { bufferDataPointer in
-                    // Loop through all the NAL units in the block buffer
-                    // and write them to the elementary stream with
-                    // start codes instead of AVCC length headers
-                    var bufferOffset = 0
-                    let AVCCHeaderLength = 4
-                    while bufferOffset < blockBufferLength - AVCCHeaderLength {
-                        // Read the NAL unit length
-                        var NALUnitLength = UInt32(0)
-                        memcpy(&NALUnitLength, bufferDataPointer + bufferOffset, AVCCHeaderLength);
-                        // Convert the length value from Big-endian to Little-endian
-                        NALUnitLength = CFSwapInt32BigToHost(NALUnitLength);
-                        // Write start code to the elementary stream
+                    // Write the parameter set to the elementary stream
+                    if let parameterSetPointer = parameterSetPointer {
                         elementaryStream.append(contentsOf: startCode)
-                        // Write the NAL unit without the AVCC length header to the elementary stream
-                        autoreleasepool {
-                            var NALunit = [UInt8](repeating: 0, count: Int(NALUnitLength))
-                            NALunit.withUnsafeMutableBufferPointer { p in
-                                let _ = memcpy(p.baseAddress, bufferDataPointer + bufferOffset + AVCCHeaderLength, Int(NALUnitLength))
-                            }
-                            elementaryStream.append(contentsOf: NALunit)
-                        }
-                        // Move to the next NAL unit in the block buffer
-                        bufferOffset += AVCCHeaderLength + Int(NALUnitLength);
+                        elementaryStream.append(parameterSetPointer, count: parameterSetLength)
                     }
                 }
-                
-                let pts_frame = CMSampleBufferGetPresentationTimeStamp(frame)
-                let dts_frame = CMSampleBufferGetDecodeTimeStamp(frame)
-                
-                let pts: CMTime?
-                if CMTIME_IS_VALID(pts_frame) {
-                    pts = pts_frame
+            }
+            
+            // Get a pointer to the raw AVCC NAL unit data in the sample buffer
+            var blockBufferLength = 0
+            var bufferDataPointer: UnsafeMutablePointer<Int8>?
+            if let block = CMSampleBufferGetDataBuffer(frame) {
+                CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &blockBufferLength, dataPointerOut: &bufferDataPointer)
+            }
+            bufferDataPointer?.withMemoryRebound(to: UInt8.self, capacity: blockBufferLength) { bufferDataPointer in
+                // Loop through all the NAL units in the block buffer
+                // and write them to the elementary stream with
+                // start codes instead of AVCC length headers
+                var bufferOffset = 0
+                let AVCCHeaderLength = 4
+                while bufferOffset < blockBufferLength - AVCCHeaderLength {
+                    // Read the NAL unit length
+                    var NALUnitLength = UInt32(0)
+                    memcpy(&NALUnitLength, bufferDataPointer + bufferOffset, AVCCHeaderLength);
+                    // Convert the length value from Big-endian to Little-endian
+                    NALUnitLength = CFSwapInt32BigToHost(NALUnitLength);
+                    // Write start code to the elementary stream
+                    elementaryStream.append(contentsOf: startCode)
+                    // Write the NAL unit without the AVCC length header to the elementary stream
+                    autoreleasepool {
+                        var NALunit = [UInt8](repeating: 0, count: Int(NALUnitLength))
+                        NALunit.withUnsafeMutableBufferPointer { p in
+                            let _ = memcpy(p.baseAddress, bufferDataPointer + bufferOffset + AVCCHeaderLength, Int(NALUnitLength))
+                        }
+                        elementaryStream.append(contentsOf: NALunit)
+                    }
+                    // Move to the next NAL unit in the block buffer
+                    bufferOffset += AVCCHeaderLength + Int(NALUnitLength);
                 }
-                else {
-                    pts = nil
-                }
-                let dts: CMTime?
-                if CMTIME_IS_VALID(dts_frame) {
-                    dts = dts_frame
-                }
-                else {
-                    dts = nil
-                }
-                
-                for writer in encoder.writer {
-                    writer?.write_video(PS_stream: elementaryStream, PTS: pts, DTS: dts, keyframe: isIFrame)
-                }
+            }
+            
+            let pts_frame = CMSampleBufferGetPresentationTimeStamp(frame)
+            let dts_frame = CMSampleBufferGetDecodeTimeStamp(frame)
+            
+            let pts: CMTime?
+            if CMTIME_IS_VALID(pts_frame) {
+                pts = pts_frame
+            }
+            else {
+                pts = nil
+            }
+            let dts: CMTime?
+            if CMTIME_IS_VALID(dts_frame) {
+                dts = dts_frame
+            }
+            else {
+                dts = nil
+            }
+            
+            for writer in encoder.writer {
+                writer?.write_video(PS_stream: elementaryStream, PTS: pts, DTS: dts, keyframe: isIFrame)
             }
         }
     }
-
 }

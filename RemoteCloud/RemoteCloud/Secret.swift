@@ -9,21 +9,21 @@
 import Foundation
 
 class SecretItems {
-    class Google {
-        static let callbackUrlScheme = ""
-        static let client_id = ""
+    public class Google {
+        public static let callbackUrlScheme = ""
+        public static let client_id = ""
     }
-    class Dropbox {
-        static let client_id = ""
-        static let callbackUrlScheme = ""
+    public class Dropbox {
+        public static let client_id = ""
+        public static let callbackUrlScheme = ""
     }
-    class OneDrive {
-        static let client_id = ""
-        static let callbackUrlScheme = ""
+    public class OneDrive {
+        public static let client_id = ""
+        public static let callbackUrlScheme = ""
     }
-    class pCloud {
-        static let callbackUrlScheme = ""
-        static let client_id = ""
-        static let client_secret = ""
+    public class pCloud {
+        public static let callbackUrlScheme = ""
+        public static let client_id = ""
+        public static let client_secret = ""
     }
 }

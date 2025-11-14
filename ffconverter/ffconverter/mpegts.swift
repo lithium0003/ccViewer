@@ -32,13 +32,14 @@ class TS_writer {
     var last_PAT_time = -1.0
     var last_time: CMTime?
     
-    var touch_count = 0
+    var touch_count = -1
     var audio_count = 0
     var video_count = 0
     
+    var isFinished = false
+    
     let writeQueue = DispatchQueue(label: "write")
-    var semaphore_audio: [DispatchSemaphore] = []
-
+    
     init(dest: URL, split_time: Double, time_hint: Double) {
         dest_url = dest
         self.split_time = split_time
@@ -48,15 +49,12 @@ class TS_writer {
     func set_channel(video: Int, audio: Int) {
         audio_count = audio
         video_count = video
-        semaphore_audio = [DispatchSemaphore](repeating: DispatchSemaphore(value: 0), count: audio)
     }
     
     func set_touch(count: Int) {
-        touch_count = count
-        if(count < 0) {
-            for sem in self.semaphore_audio {
-                sem.signal()
-            }
+        touch_count = max(touch_count, count)
+        if count < 0 {
+            isFinished = true
         }
     }
     
@@ -72,6 +70,7 @@ class TS_writer {
                 "#EXT-X-VERSION:3",
                 "#EXT-X-TARGETDURATION:\(Int(time_hint))",
                 "#EXT-X-MEDIA-SEQUENCE:0",
+                "#EXT-X-PLAYLIST-TYPE:EVENT",
                 ].joined(separator: "\r\n")+"\r\n"
             let data = Array(header.utf8)
             m3u8file?.write(data, maxLength: data.count)
@@ -82,7 +81,7 @@ class TS_writer {
         }
         let t1 = split_points[last_write_m3u8]
         let t2 = split_points[last_write_m3u8+1]
-        let value = (t2 - t1).seconds
+        let value = max(1, (t2 - t1).seconds)
         let entry = [
             "#EXTINF:\(String(format: "%.8f", value)),",
             String(format: "stream%08d.ts", last_write_m3u8),
@@ -242,28 +241,12 @@ class TS_writer {
                     self.byterate = Double(self.data_count) / DTS.seconds
                     self.calc_position = self.data_count
                 }
-                for sem in self.semaphore_audio {
-                    if sem.wait(timeout: .now()) == .success {
-                        sem.signal()
-                    }
-                    else {
-                        sem.signal()
-                    }
-                }
             }
             else if let PTS = PTS {
                 self.last_time = PTS
                 if PTS.seconds > 0 {
                     self.byterate = Double(self.data_count) / PTS.seconds
                     self.calc_position = self.data_count
-                }
-                for sem in self.semaphore_audio {
-                    if sem.wait(timeout: .now()) == .success {
-                        sem.signal()
-                    }
-                    else {
-                        sem.signal()
-                    }
                 }
             }
             //print("video,", PTS?.seconds, DTS?.seconds)
@@ -275,12 +258,15 @@ class TS_writer {
             return
         }
         if self.last_time == nil {
-            while touch_count >= 0, self.last_time == nil {
-                semaphore_audio[index].wait()
+            while !isFinished, self.last_time == nil {
+                Thread.sleep(forTimeInterval: 0.01)
             }
         }
-        while touch_count >= 0, let PTS = PTS, let last_time = self.last_time, PTS > last_time {
-            semaphore_audio[index].wait()
+        while !isFinished, let PTS = PTS, let last_time = self.last_time, PTS > last_time {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if isFinished {
+            return
         }
         writeQueue.async {
             var PAT_write = false

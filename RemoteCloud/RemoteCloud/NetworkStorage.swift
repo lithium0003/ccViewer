@@ -9,54 +9,108 @@
 import Foundation
 import CoreData
 import os.log
+import SwiftUI
+import AuthenticationServices
+
+struct WebLoginView: View {
+    let webAuthenticationSession: WebAuthenticationSession
+    let url: URL
+    let callback: ASWebAuthenticationSession.Callback
+    let additionalHeaderFields: [String: String]
+
+    let signIn: (URL) async throws -> Bool
+    let authContinuation: CheckedContinuation<Bool, Never>
+
+    var body: some View {
+        Color.clear
+            .task {
+                try? await Task.sleep(for: .seconds(1))
+                do {
+                     // Perform the authentication and await the result.
+                    let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callback: callback, additionalHeaderFields: additionalHeaderFields)
+                     // Call the method that completes the authentication using the
+                     // returned URL.
+                    guard try await signIn(urlWithToken) else {
+                        authContinuation.resume(returning: false)
+                        return
+                    }
+                    authContinuation.resume(returning: true)
+                 } catch {
+                     // Respond to any authorization errors.
+                     print(error)
+                     authContinuation.resume(returning: false)
+                 }
+            }
+    }
+}
 
 public class NetworkStorage: RemoteStorageBase {
-    var tokenDate: Date = Date(timeIntervalSince1970: 0)
+    actor URLProgressManeger {
+        var callbacks: [String: ((Int64, Int64) async throws -> Void)?] = [:]
+        var offsets: [String: Int64] = [:]
+        var totals: [String: Int64] = [:]
+
+        func progress(url: URL, currnt: Int64) async throws {
+            if let callback = callbacks[url.absoluteString] {
+                if let offset = offsets[url.absoluteString], let total = totals[url.absoluteString] {
+                    try await callback?(currnt+offset, total)
+                }
+            }
+        }
+        
+        func setCallback(url: URL, total: Int64, callback: ((Int64, Int64) async throws -> Void)?) {
+            callbacks[url.absoluteString] = callback
+            offsets[url.absoluteString] = 0
+            totals[url.absoluteString] = total
+        }
+        
+        func setOffset(url: URL, offset: Int64) {
+            offsets[url.absoluteString] = offset
+        }
+        
+        func removeCallback(url: URL) {
+            callbacks[url.absoluteString] = nil
+            offsets[url.absoluteString] = nil
+            totals[url.absoluteString] = nil
+        }
+    }
+    let uploadProgressManeger = URLProgressManeger()
+    
     var cacheTokenDate: Date = Date(timeIntervalSince1970: 0)
     var tokenLife: TimeInterval = 0
     var lastCall = Date()
-    let callSemaphore = DispatchSemaphore(value: 5)
+    let callSemaphore = Semaphore(value: 10)
     let callWait = 0.2
     var cache_accessToken = ""
     var cache_refreshToken = ""
-    var accessToken: String {
-        get {
-            if let name = storageName {
-                if let token = getKeyChain(key: "\(name)_accessToken") {
-                    if cacheTokenDate == tokenDate {
-                        cache_accessToken = token
-                    }
-                    else {
-                        if setKeyChain(key: "\(name)_accessToken", value: cache_accessToken) {
-                            tokenDate = cacheTokenDate
-                        }
-                    }
-                }
-                return cache_accessToken
+
+    func accessToken() async -> String {
+        if cache_accessToken != "" {
+            return cache_accessToken
+        }
+        if let name = storageName {
+            if let token = await getKeyChain(key: "\(name)_accessToken") {
+                cache_accessToken = token
             }
-            else {
-                return ""
-            }
+            return cache_accessToken
+        }
+        else {
+            return ""
         }
     }
-    var refreshToken: String {
-        get {
-            if let name = storageName {
-                if let token = getKeyChain(key: "\(name)_refreshToken") {
-                    if cacheTokenDate == tokenDate {
-                        cache_refreshToken = token
-                    }
-                    else {
-                        if setKeyChain(key: "\(name)_refreshToken", value: cache_refreshToken) {
-                            tokenDate = cacheTokenDate
-                        }
-                    }
-                }
-                return cache_refreshToken
+    
+    func getRefreshToken() async -> String {
+        if cache_refreshToken != "" {
+            return cache_refreshToken
+        }
+        if let name = storageName {
+            if let token = await getKeyChain(key: "\(name)_refreshToken") {
+                cache_refreshToken = token
             }
-            else {
-                return ""
-            }
+            return cache_refreshToken
+        }
+        else {
+            return ""
         }
     }
     
@@ -64,55 +118,109 @@ public class NetworkStorage: RemoteStorageBase {
         case Failed
         case Retry
     }
-    
-    public override func auth(onFinish: ((Bool) -> Void)?) -> Void {
-        checkToken(){ success in
-            if success {
-                onFinish?(true)
+
+    func callWithRetry<T>(action: @escaping () async throws -> T, callcount: Int = 0, semaphore: Semaphore? = nil, maxCall: Int = 20) async throws -> T {
+        let semaphore = semaphore ?? callSemaphore
+        if callcount > maxCall {
+            throw RetryError.Failed
+        }
+        if lastCall.timeIntervalSinceNow > -callWait {
+            if cancelTime.timeIntervalSinceNow > 0 {
+                cancelTime = Date(timeIntervalSinceNow: 0.5)
+                throw CancellationError()
             }
-            else {
-                self.isAuthorized(){ success in
-                    if success {
-                        onFinish?(true)
-                    }
-                    else {
-                        DispatchQueue.main.async {
-                            self.authorize(onFinish: onFinish)
-                        }
-                    }
+            try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))
+            return try await callWithRetry(action: action, callcount: callcount+1)
+        }
+        if await semaphore.wait(timeout: .seconds(1)) == .timeout {
+            if cancelTime.timeIntervalSinceNow > 0 {
+                cancelTime = Date(timeIntervalSinceNow: 0.5)
+                throw CancellationError()
+            }
+            try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))
+            return try await callWithRetry(action: action, callcount: callcount+1)
+        }
+        guard await checkToken() else {
+            await semaphore.signal()
+            throw RetryError.Failed
+        }
+        do {
+            defer {
+                Task { await semaphore.signal() }
+            }
+            return try await action()
+        }
+        catch RetryError.Retry {
+            try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))
+            return try await callWithRetry(action: action, callcount: callcount+1)
+        }
+    }
+    
+    var authURL: URL {
+        URL(string: "https://example.com/oauth/authorize")!
+    }
+    var authCallback: ASWebAuthenticationSession.Callback {
+        ASWebAuthenticationSession.Callback.customScheme("com.example.app")
+    }
+    var additionalHeaderFields: [String: String] {
+        return [:]
+    }
+
+    func signIn(_: URL) async throws -> Bool {
+        fatalError("signIn not implemented")
+    }
+
+    public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
+        if await checkToken() {
+            return true
+        }
+        if await isAuthorized() {
+            return true
+        }
+        let authRet = await withCheckedContinuation { authContinuation in
+            Task {
+                let presentRet = await withCheckedContinuation { continuation in
+                    callback(WebLoginView(webAuthenticationSession: webAuthenticationSession, url: authURL, callback: authCallback, additionalHeaderFields: additionalHeaderFields, signIn: signIn(_:), authContinuation: authContinuation),  continuation)
+                }
+                guard presentRet else {
+                    authContinuation.resume(returning: false)
+                    return
                 }
             }
         }
+        return authRet
     }
-    
-    public override func logout() {
+
+    public override func logout() async {
         if let name = storageName {
-            if let aToken = getKeyChain(key: "\(name)_accessToken") {
-                revokeToken(token: aToken, onFinish: nil)
+            if let aToken = await getKeyChain(key: "\(name)_accessToken") {
+                await revokeToken(token: aToken)
             }
-            let _ = delKeyChain(key: "\(name)_accessToken")
-            let _ = delKeyChain(key: "\(name)_refreshToken")
-            tokenDate = Date(timeIntervalSince1970: 0)
+            let _ = await delKeyChain(key: "\(name)_accessToken")
+            let _ = await delKeyChain(key: "\(name)_refreshToken")
+            cache_accessToken = ""
+            cache_refreshToken = ""
+            cacheTokenDate = Date(timeIntervalSince1970: 0)
             tokenLife = 0
         }
-        super.logout()
+        await super.logout()
     }
-    
-    func checkToken(onFinish: ((Bool) -> Void)?) -> Void {
-        //if Date() < cacheTokenDate + tokenLife - 5*60 {
-        os_log("%{public}@", log: log, type: .debug, "\(Date()) \(cacheTokenDate),\(tokenLife)")
-        if Date() < cacheTokenDate + tokenLife / 2 {
-            onFinish?(true)
+
+    func checkToken() async -> Bool {
+        let d = Date()
+        os_log("%{public}@", log: log, type: .debug, "\(d) \(cacheTokenDate),\(tokenLife)")
+        if cacheTokenDate < d, d < cacheTokenDate + tokenLife / 2 {
+            return true
         }
-        else if refreshToken == "" {
-            onFinish?(false)
+        else if await getRefreshToken() == "" {
+            return false
         }
         else {
-            refreshToken(onFinish: onFinish)
+            return await refreshToken()
         }
     }
     
-    func saveToken(accessToken: String, refreshToken: String) -> Void {
+    func saveToken(accessToken: String, refreshToken: String) async -> Void {
         if let name = storageName {
             guard accessToken != "" && refreshToken != "" else {
                 return
@@ -121,30 +229,26 @@ public class NetworkStorage: RemoteStorageBase {
             cacheTokenDate = Date()
             cache_refreshToken = refreshToken
             cache_accessToken = accessToken
-            if setKeyChain(key: "\(name)_accessToken", value: accessToken) && setKeyChain(key: "\(name)_refreshToken", value: refreshToken) {
-                tokenDate = cacheTokenDate
-            }
+            _ = await setKeyChain(key: "\(name)_accessToken", value: accessToken)
+            _ = await setKeyChain(key: "\(name)_refreshToken", value: refreshToken)
         }
     }
     
-    func isAuthorized(onFinish: ((Bool) -> Void)?) -> Void {
-        onFinish?(false)
+    func isAuthorized() async -> Bool {
+        return false
     }
     
-    func authorize(onFinish: ((Bool) -> Void)?) {
-        onFinish?(false)
+    func getToken(oauthToken: String) async -> Bool {
+        return false
     }
     
-    func getToken(oauthToken: String, onFinish: ((Bool) -> Void)?) {
-        onFinish?(false)
+    func refreshToken() async -> Bool {
+        return false
     }
     
-    func refreshToken(onFinish: ((Bool) -> Void)?) {
-        onFinish?(false)
-    }
-    
-    func revokeToken(token: String, onFinish: ((Bool) -> Void)?) {
-        onFinish?(false)
+    @discardableResult
+    func revokeToken(token: String) async -> Bool {
+        return false
     }
     
 }
@@ -152,212 +256,297 @@ public class NetworkStorage: RemoteStorageBase {
 public class NetworkRemoteItem: RemoteItem {
     let remoteStorage: RemoteStorageBase
     
-    override init?(storage: String, id: String) {
-        guard let s = CloudFactory.shared[storage] as? RemoteStorageBase else {
+    override init?(storage: String, id: String) async {
+        guard let s = await CloudFactory.shared.storageList.get(storage) as? RemoteStorageBase else {
             return nil
         }
         remoteStorage = s
-        super.init(storage: storage, id: id)
+        await super.init(storage: storage, id: id)
     }
     
-    public override func open() -> RemoteStream {
-        return RemoteNetworkStream(remote: self)
+    public override func open() async -> RemoteStream {
+        return await RemoteNetworkStream(remote: self)
     }
 }
 
 public class SlotStream: RemoteStream {
-    let queue_buf = DispatchQueue(label: "io_data")
-    let queue_wait = DispatchQueue(label: "io_wait")
-    var waitlist: [Int64] = []
-    var buffer: [Int64:Data] = [:]
-    let bufSize:Int64 = 2*1024*1024
-    let slotcount = 50
-    let slotadvance: Int64 = 5
-    var error = false
-    
-    var read_start: Int64 = 0
-    var read_end: Int64 = 0
-    let queue = DispatchQueue(label: "slot", attributes: [.concurrent])
-    let queue_read = DispatchQueue(label: "read_wait")
-    let init_group = DispatchGroup()
-    
-    override init(size: Int64) {
-        super.init(size: size)
-        firstFill()
+    static let slotcount = 50
+    static let slotadvance: Int64 = 5
+    static let bufSize:Int64 = 2*1024*1024
+    var error = false {
+        didSet {
+            print(error)
+        }
     }
 
-    override public func preload(position: Int64, length: Int) {
-        let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
-        let read_start = position
-        let read_end = position + len1 - 1
-        for p in read_start/bufSize...read_end/bufSize+slotadvance {
-            //print("fillbuffer \(p*bufSize)")
-            fillBuffer(pos: p*bufSize)
-        }
-    }
+    let waitlist = WaitListManager()
+    let initialized = InitialManager()
+    let buffer: BufferManager
     
-    func firstFill() {
-        self.queue.async {
-            self.subFillBuffer(pos1: 0) {
+    actor InitialManager {
+        private var initialized = false
+        private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+        private var idlist: [UUID] = []
+        public enum waitResult {
+            case timeout
+            case success
+        }
+        
+        public func wait() async {
+            await wait(id: UUID())
+        }
+        
+        func wait(id: UUID) async {
+            if initialized { return }
+            await withCheckedContinuation {
+                idlist.append(id)
+                waiters[id] = $0
             }
         }
-        let slot = (size - bufSize) / bufSize
-        self.queue.async {
-            self.subFillBuffer(pos1: slot * self.bufSize) {
-            }
-        }
-    }
-    
-    func dataAvailable(pos: Int64) -> Bool {
-        return queue_buf.sync {
-            for (key, buf) in buffer {
-                if key <= pos && pos < key+Int64(buf.count)-1 {
-                    //print("pos \(pos) hit")
-                    return true
+        
+        @discardableResult
+        public func wait(timeout: ContinuousClock.Instant.Duration) async -> waitResult {
+            if initialized { return .success }
+            let id = UUID()
+            return await withTaskGroup(of: waitResult.self) { group in
+                group.addTask {
+                    await self.wait(id: id)
+                    return .success
                 }
-            }
-            //print("pos \(pos) none")
-            return false
-        }
-    }
-    
-    func disposeBuffer() {
-        if read_start < bufSize * 2 || read_end > size - bufSize*2 {
-            return
-        }
-        queue_buf.async {
-            if self.buffer.count > self.slotcount*2+10 {
-                var del: [Int64] = []
-                for (key, _) in self.buffer {
-                    if key < self.bufSize*4 {
-                        continue
+                group.addTask {
+                    try? await Task.sleep(for: timeout)
+                    return .timeout
+                }
+                let v = await group.next()!
+                group.cancelAll()
+                if v == .timeout {
+                    if let i = idlist.firstIndex(of: id) {
+                        idlist.remove(at: i)
                     }
-                    if key > self.size - self.bufSize*5 {
-                        continue
-                    }
-                    if self.read_start - self.bufSize*Int64(self.slotcount) > key || self.read_end + self.bufSize*Int64(self.slotcount) < key {
-                        del += [key]
-                    }
+                    waiters[id]?.resume()
+                    waiters.removeValue(forKey: id)
                 }
-                for d in del {
-                    //print("del \(d)")
-                    self.buffer[d] = nil
-                }
+                return v
             }
         }
-    }
-    
-    func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
-        print("error on implimant")
-        self.error = true
-        onFinish()
-    }
-    
-    func fillBuffer(pos: Int64) {
-        if pos >= 0 && pos < size {
-            let slot = pos / bufSize
-            for i in slot...slot {
-                let pos1 = i * bufSize
-                if isLive && pos1 >= 0 && pos1 < size && !dataAvailable(pos: pos1) {
-                    self.queue_wait.async {
-                        if self.waitlist.contains(pos1) {
-                            return
-                        }
-                        self.waitlist += [pos1]
-                        self.queue.async {
-                            self.subFillBuffer(pos1: pos1) {
-                                self.queue_wait.async {
-                                    self.waitlist.removeAll(where: { $0 == pos1 })
-                                }
-                            }
-                        }
-                    }
-                }
+        
+        public func signal() {
+            initialized = true
+            for id in idlist {
+                waiters[id]?.resume()
+                waiters.removeValue(forKey: id)
             }
+            idlist.removeAll()
         }
-        disposeBuffer()
     }
-    
-    override public func read(position : Int64, length: Int, onProgress: ((Int)->Bool)? = nil) -> Data? {
-        guard init_group.wait(timeout: DispatchTime.now()+120) == DispatchTimeoutResult.success else {
-            return nil
-        }
-        //print("read request \(position) + \(length)")
-        let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
-        let read_start = position
-        let read_end = position + len1 - 1
-        for p in read_start/bufSize...read_end/bufSize+slotadvance {
-            //print("fillbuffer \(p*bufSize)")
-            fillBuffer(pos: p*bufSize)
-        }
-        let semaphore = DispatchSemaphore(value: 0)
-        self.queue_read.async {
-            let start = Date()
-            while !self.error && self.isLive {
-                var done = true
-                var loadpos:Int64 = 0
-                for p in read_start/self.bufSize...read_end/self.bufSize {
-                    let slotdone = self.dataAvailable(pos: p*self.bufSize)
-                    done = done && slotdone
-                    if !slotdone {
-                        //print("not filled buffer \(p*self.bufSize)")
-                        loadpos = p*self.bufSize
-                        break
-                    }
-                }
-                if done {
-                    let _ = onProgress?(Int(read_end))
-                    break
-                }
-                if !(onProgress?(Int(loadpos)) ?? true) {
-                    self.error = true
-                    break
-                }
-                Thread.sleep(forTimeInterval: 0.1)
-                if start.timeIntervalSinceNow < -120 {
-                    print("error on timeout")
-                    self.error = true
-                }
-                for p in read_start/self.bufSize...read_end/self.bufSize+self.slotadvance {
-                    self.fillBuffer(pos: p*self.bufSize)
-                }
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
 
-        if error || !isLive {
-            return nil
+    actor BufferManager {
+        let size: Int64
+        var read_start: Int64 = 0
+        var read_end: Int64 = 0
+        var buffer: [Int64:Data] = [:]
+        
+        init(size: Int64) {
+            self.size = size
         }
-        var ret: Data?
-        var len = Int(len1)
-        var p = position
-        queue_buf.sync {
+
+        func read(position : Int64, length: Int, read_start: Int64, read_end: Int64) -> Data {
+            var ret = Data()
+            var len = length
+            var p = position
             self.read_start = read_start
             self.read_end = read_end
-            
+
             for key in Array(buffer.keys).sorted() {
                 guard let buf = buffer[key] else {
                     continue
                 }
-                if key <= p && p < key+Int64(buf.count) - 1 {
-                    //print("pos \(p) key\(key)")
+                if key <= p && p < key+Int64(buf.count) {
+                    print("pos \(p) key\(key)")
                     let s = Int(p - key)
                     let l = (len > buf.count - s) ? buf.count : len + s
-                    //print("s\(s) l\(l) len\(len) count\(buf.count)")
-                    if ret == nil {
-                        ret = Data()
-                    }
-                    ret! += buf.subdata(in: s..<l)
+                    print("s\(s) l\(l) len\(len) count\(buf.count)")
+                    ret += buf.subdata(in: s..<l)
                     len -= l-s
                     p += Int64(l-s)
                 }
                 if len == 0 {
-                    break;
+                    break
+                }
+            }
+            assert(len == 0)
+            disposeBuffer()
+            return ret
+        }
+        
+        func store(pos: Int64, data: Data) {
+            buffer[pos] = data
+        }
+        
+        func dataAvailable(pos: ClosedRange<Int64>) -> Bool {
+            return !buffer.allSatisfy({ $0.key > pos.lowerBound || $0.key + Int64($0.value.count) - 1 < pos.upperBound })
+        }
+
+        func disposeBuffer() {
+            if read_start < SlotStream.bufSize * 2 || read_end > size - SlotStream.bufSize*2 {
+                return
+            }
+            if buffer.count > SlotStream.slotcount {
+                let del = buffer.keys.sorted().filter({ $0 > SlotStream.bufSize*4 }).filter({ $0 < size - SlotStream.bufSize*5 })
+                let target = del.map({ ($0, max(read_start - SlotStream.bufSize - $0, $0 - read_end + SlotStream.bufSize*SlotStream.slotadvance)) }).sorted(by: { $0.1 > $1.1 })
+                for (d, dist) in target {
+                    if dist < 0 {
+                        break
+                    }
+                    buffer[d] = nil
+                    if buffer.count <= SlotStream.slotcount {
+                       break
+                    }
                 }
             }
         }
-        return ret
+    }
+
+    actor WaitListManager {
+        var waitlist: [Int64] = []
+        
+        func add(_ pos: Int64) -> Bool {
+            if waitlist.contains(pos) {
+                return false
+            }
+            waitlist.append(pos)
+            return true
+        }
+        
+        func done(_ pos: Int64) {
+            waitlist.removeAll(where: { $0 == pos })
+        }
+    }
+    
+    override init(size: Int64) async {
+        buffer = BufferManager(size: size)
+        await super.init(size: size)
+        await fillHeader()
+        await firstFill()
+    }
+
+    override public func preload(position: Int64, length: Int) async {
+        let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
+        let read_start = position
+        let read_end = position + len1 - 1
+        for p in read_start/SlotStream.bufSize...read_end/SlotStream.bufSize+SlotStream.slotadvance {
+            Task {
+                await fillBuffer(slot: p)
+            }
+        }
+    }
+    
+    func fillHeader() async {
+        await initialized.signal()
+    }
+    
+    func firstFill() async {
+        await withTaskGroup() { group in
+            group.addTask { [self] in
+                let pos1 = Int64(0)
+                let pos2 = Int64(min(size-1, SlotStream.bufSize - 1))
+                await subFillBuffer(pos: pos1...pos2)
+            }
+            group.addTask { [self] in
+                let slot = (size - SlotStream.bufSize) / SlotStream.bufSize
+                let pos1 = slot * SlotStream.bufSize
+                let pos2 = min(size-1, (slot+1) * SlotStream.bufSize - 1)
+                await subFillBuffer(pos: pos1...pos2)
+            }
+        }
+    }
+            
+    func subFillBuffer(pos: ClosedRange<Int64>) async {
+        print("error on implimant")
+        error = true
+    }
+    
+    func fillBuffer(slot: Int64) async {
+        if slot >= 0 && slot * SlotStream.bufSize < size {
+            let slot2 = min(slot+5, size / SlotStream.bufSize)
+            for i in slot...slot2 {
+                let pos1 = i * SlotStream.bufSize
+                let pos2 = min(size-1, (i+1) * SlotStream.bufSize - 1)
+                if isLive, pos1 >= 0, pos1 < size, await !buffer.dataAvailable(pos: pos1...pos2) {
+                    guard await waitlist.add(pos1) else {
+                        continue
+                    }
+                    await subFillBuffer(pos: pos1...pos2)
+                    await waitlist.done(pos1)
+                }
+            }
+        }
+    }
+    
+    func subRead(position : Int64, length: Int) async throws -> Data? {
+        let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
+        let read_start = position
+        let read_end = position + len1 - 1
+        let start = Date()
+        while !error && isLive {
+            var done = true
+            do {
+                for p in read_start/SlotStream.bufSize...(read_end/SlotStream.bufSize) {
+                    let pos1 = p * SlotStream.bufSize
+                    let pos2 = min(size-1, (p+1) * SlotStream.bufSize - 1)
+                    let slotdone = await buffer.dataAvailable(pos: pos1...pos2)
+                    if !slotdone {
+                        Task {
+                            await fillBuffer(slot: p)
+                        }
+                    }
+                    done = done && slotdone
+                }
+                if done {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(100))
+                if start.timeIntervalSinceNow < Double(length) * -1e-4 {
+                    print("error on timeout")
+                    throw CancellationError()
+                }
+            }
+            catch {
+                print(error)
+                self.error = true
+                isLive = false
+                return nil
+            }
+        }
+        if error || !isLive {
+            return nil
+        }
+        return await buffer.read(position: position, length: Int(len1), read_start: read_start, read_end: read_end)
+    }
+    
+    override public func read(position : Int64, length: Int, onProgress: ((Int) async throws ->Void)? = nil) async throws -> Data? {
+        print("read", position, length)
+        if error {
+            return nil
+        }
+        print("read init wait", position, length)
+        guard await initialized.wait(timeout: .seconds(120)) == .success else {
+            return nil
+        }
+        print("read loop", position, length)
+        var data = Data()
+        for i in stride(from: 0, to: length, by: 1 * 1024 * 1024) {
+            print("read \(data.count)", position, length)
+            let p = position + Int64(i)
+            let len = min(length-i, 1*1024*1024)
+            guard let d = try await subRead(position: p, length: len) else {
+                return nil
+            }
+            data.append(d)
+            try await onProgress?(Int(p))
+        }
+        print("read done \(data.count)", position, length)
+        return data
     }
 }
 
@@ -365,27 +554,21 @@ public class SlotStream: RemoteStream {
 public class RemoteNetworkStream: SlotStream {
     let remote: NetworkRemoteItem
 
-    init(remote: NetworkRemoteItem) {
+    init(remote: NetworkRemoteItem) async {
         self.remote = remote
-        super.init(size: remote.size)
+        await super.init(size: remote.size)
     }
     
-    override func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
-        if !dataAvailable(pos: pos1) && isLive {
-            let len = (pos1 + bufSize < size) ? bufSize : size - pos1
-            remote.remoteStorage.readFile(fileId: remote.id, start: pos1, length: len) { data in
-                defer {
-                    onFinish()
-                }
-                if let data = data {
-                    self.queue_buf.async {
-                        self.buffer[pos1] = data
-                    }
-                }
-                else {
-                    print("error on readFile")
-                    self.error = true
-                }
+    override func subFillBuffer(pos: ClosedRange<Int64>) async {
+        if await !buffer.dataAvailable(pos: pos), isLive {
+            let len = min(size-1, pos.upperBound) - max(0, pos.lowerBound) + 1
+            let data = try? await remote.remoteStorage.readFile(fileId: remote.id, start: pos.lowerBound, length: len)
+            if let data = data {
+                await buffer.store(pos: pos.lowerBound, data: data)
+            }
+            else {
+                print("error on readFile")
+                error = true
             }
         }
     }

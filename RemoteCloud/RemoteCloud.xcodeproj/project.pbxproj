@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 90;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -15,8 +15,6 @@
 		3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C14C453225DBB1A0044E4A7 /* LocalStorage.swift */; };
 		3C40091E22413C340028A45A /* DropBoxStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C40091D22413C340028A45A /* DropBoxStorage.swift */; };
 		3C400922224190920028A45A /* OneDriveStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C400921224190920028A45A /* OneDriveStorage.swift */; };
-		3CA2C9382234952800481DB5 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CA2C92E2234952800481DB5 /* RemoteCloud.framework */; };
-		3CA2C93D2234952800481DB5 /* RemoteCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C93C2234952800481DB5 /* RemoteCloudTests.swift */; };
 		3CA2C93F2234952800481DB5 /* RemoteCloud.h in Headers */ = {isa = PBXBuildFile; fileRef = 3CA2C9312234952800481DB5 /* RemoteCloud.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C94F223495E600481DB5 /* RemoteStorage.swift */; };
 		3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C950223495E600481DB5 /* GoogleDriveStorage.swift */; };
@@ -32,18 +30,11 @@
 		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
 		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
 		3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE215872394F39300CD2A19 /* FilesStorage.swift */; };
-		3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE23B1E2340B96200916DA6 /* UploadManager.swift */; };
+		BE186E512E99FAF5002F6CC8 /* SambaStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */; };
+		BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */ = {isa = PBXBuildFile; productRef = BE186E582E9A4A82002F6CC8 /* SMBClient */; };
+		BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D012EAFB806006DF15C /* GoogleSignIn */; };
+		BE2D3D042EAFB806006DF15C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D032EAFB806006DF15C /* GoogleSignInSwift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		3CA2C9392234952800481DB5 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3CA2C9252234952800481DB5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3CA2C92D2234952800481DB5;
-			remoteInfo = RemoteCloud;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		3C0654A022384BED003BD932 /* CryptCarotDAV.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptCarotDAV.swift; sourceTree = "<group>"; };
@@ -57,9 +48,6 @@
 		3CA2C92E2234952800481DB5 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CA2C9312234952800481DB5 /* RemoteCloud.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RemoteCloud.h; sourceTree = "<group>"; };
 		3CA2C9322234952800481DB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3CA2C9372234952800481DB5 /* RemoteCloudTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RemoteCloudTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3CA2C93C2234952800481DB5 /* RemoteCloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCloudTests.swift; sourceTree = "<group>"; };
-		3CA2C93E2234952800481DB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3CA2C94F223495E600481DB5 /* RemoteStorage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RemoteStorage.swift; sourceTree = "<group>"; };
 		3CA2C950223495E600481DB5 /* GoogleDriveStorage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GoogleDriveStorage.swift; sourceTree = "<group>"; };
 		3CA2C95A2234E6F600481DB5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -74,24 +62,17 @@
 		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
 		3FE215872394F39300CD2A19 /* FilesStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesStorage.swift; sourceTree = "<group>"; };
-		3FE23B1E2340B96200916DA6 /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
+		BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SambaStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		3CA2C92B2234952800481DB5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
+				BE2D3D042EAFB806006DF15C /* GoogleSignInSwift in Frameworks */,
+				BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */,
+				BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3CA2C9342234952800481DB5 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3CA2C9382234952800481DB5 /* RemoteCloud.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -110,7 +91,6 @@
 			children = (
 				3CA2C92F2234952800481DB5 /* Products */,
 				3CA2C9302234952800481DB5 /* RemoteCloud */,
-				3CA2C93B2234952800481DB5 /* RemoteCloudTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -118,7 +98,6 @@
 			isa = PBXGroup;
 			children = (
 				3CA2C92E2234952800481DB5 /* RemoteCloud.framework */,
-				3CA2C9372234952800481DB5 /* RemoteCloudTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -138,20 +117,10 @@
 				3C14C450225CE17C0044E4A7 /* SubItem */,
 				3F3ABABA2272C707002A8D16 /* Secret.swift */,
 				3F92E7042336BFBA00D1FF9B /* Media.xcassets */,
-				3FE23B1E2340B96200916DA6 /* UploadManager.swift */,
 				3FA46CE123849615007ACC82 /* FileCache.swift */,
 				3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */,
 			);
 			path = RemoteCloud;
-			sourceTree = "<group>";
-		};
-		3CA2C93B2234952800481DB5 /* RemoteCloudTests */ = {
-			isa = PBXGroup;
-			children = (
-				3CA2C93C2234952800481DB5 /* RemoteCloudTests.swift */,
-				3CA2C93E2234952800481DB5 /* Info.plist */,
-			);
-			path = RemoteCloudTests;
 			sourceTree = "<group>";
 		};
 		3CF14612223B28F50025081A /* Storages */ = {
@@ -166,6 +135,7 @@
 				3C400921224190920028A45A /* OneDriveStorage.swift */,
 				3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */,
 				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
+				BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */,
 				3FE215872394F39300CD2A19 /* FilesStorage.swift */,
 			);
 			path = Storages;
@@ -176,11 +146,9 @@
 /* Begin PBXHeadersBuildPhase section */
 		3CA2C9292234952800481DB5 /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				3CA2C93F2234952800481DB5 /* RemoteCloud.h in Headers */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXHeadersBuildPhase section */
 
@@ -196,30 +164,14 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			name = RemoteCloud;
+			packageProductDependencies = (
+				BE2D3D012EAFB806006DF15C /* GoogleSignIn */,
+				BE2D3D032EAFB806006DF15C /* GoogleSignInSwift */,
+			);
 			productName = RemoteCloud;
 			productReference = 3CA2C92E2234952800481DB5 /* RemoteCloud.framework */;
 			productType = "com.apple.product-type.framework";
-		};
-		3CA2C9362234952800481DB5 /* RemoteCloudTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3CA2C9452234952800481DB5 /* Build configuration list for PBXNativeTarget "RemoteCloudTests" */;
-			buildPhases = (
-				3CA2C9332234952800481DB5 /* Sources */,
-				3CA2C9342234952800481DB5 /* Frameworks */,
-				3CA2C9352234952800481DB5 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3CA2C93A2234952800481DB5 /* PBXTargetDependency */,
-			);
-			name = RemoteCloudTests;
-			productName = RemoteCloudTests;
-			productReference = 3CA2C9372234952800481DB5 /* RemoteCloudTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -227,21 +179,18 @@
 		3CA2C9252234952800481DB5 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1010;
-				LastUpgradeCheck = 1010;
+				LastUpgradeCheck = 2610;
 				ORGANIZATIONNAME = lithium03;
 				TargetAttributes = {
 					3CA2C92D2234952800481DB5 = {
 						CreatedOnToolsVersion = 10.1;
 						LastSwiftMigration = 1020;
 					};
-					3CA2C9362234952800481DB5 = {
-						CreatedOnToolsVersion = 10.1;
-					};
 				};
 			};
 			buildConfigurationList = 3CA2C9282234952800481DB5 /* Build configuration list for PBXProject "RemoteCloud" */;
-			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -249,12 +198,16 @@
 				Base,
 			);
 			mainGroup = 3CA2C9242234952800481DB5;
+			packageReferences = (
+				BE186E572E9A4A82002F6CC8 /* XCRemoteSwiftPackageReference "SMBClient" */,
+				BE2D3D002EAFB806006DF15C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
+			preferredProjectObjectVersion = 90;
 			productRefGroup = 3CA2C92F2234952800481DB5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				3CA2C92D2234952800481DB5 /* RemoteCloud */,
-				3CA2C9362234952800481DB5 /* RemoteCloudTests */,
 			);
 		};
 /* End PBXProject section */
@@ -262,31 +215,22 @@
 /* Begin PBXResourcesBuildPhase section */
 		3CA2C92C2234952800481DB5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				3F92E7052336BFBA00D1FF9B /* Media.xcassets in Resources */,
 				3CA2C95B2234E6F600481DB5 /* Assets.xcassets in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3CA2C9352234952800481DB5 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3CA2C92A2234952800481DB5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */,
 				3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */,
 				3CA2C95E2235569800481DB5 /* cloud.xcdatamodeld in Sources */,
 				3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */,
+				BE186E512E99FAF5002F6CC8 /* SambaStorage.swift in Sources */,
 				3CF14614223B29360025081A /* CryptRclone.swift in Sources */,
 				3FA46CE223849615007ACC82 /* FileCache.swift in Sources */,
 				3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */,
@@ -299,37 +243,20 @@
 				3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */,
 				3C0654A322384CD0003BD932 /* ChildStorage.swift in Sources */,
 				3C14C44F225C69410044E4A7 /* SubItem.swift in Sources */,
-				3FE23B1F2340B96200916DA6 /* UploadManager.swift in Sources */,
 				3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */,
 				3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */,
 				3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */,
 				3C400922224190920028A45A /* OneDriveStorage.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3CA2C9332234952800481DB5 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3CA2C93D2234952800481DB5 /* RemoteCloudTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		3CA2C93A2234952800481DB5 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3CA2C92D2234952800481DB5 /* RemoteCloud */;
-			targetProxy = 3CA2C9392234952800481DB5 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
-		3CA2C9402234952800481DB5 /* Debug */ = {
+		3CA2C9402234952800481DB5 /* Debug configuration for PBXProject "RemoteCloud" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -352,6 +279,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -362,8 +290,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -383,6 +313,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -390,10 +321,11 @@
 			};
 			name = Debug;
 		};
-		3CA2C9412234952800481DB5 /* Release */ = {
+		3CA2C9412234952800481DB5 /* Release configuration for PBXProject "RemoteCloud" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -416,6 +348,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -426,8 +359,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -440,6 +375,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -448,96 +384,66 @@
 			};
 			name = Release;
 		};
-		3CA2C9432234952800481DB5 /* Debug */ = {
+		3CA2C9432234952800481DB5 /* Debug configuration for PBXNativeTarget "RemoteCloud" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				GCC_OPTIMIZATION_LEVEL = fast;
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
 				INFOPLIST_FILE = RemoteCloud/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.RemoteCloud;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		3CA2C9442234952800481DB5 /* Release */ = {
+		3CA2C9442234952800481DB5 /* Release configuration for PBXNativeTarget "RemoteCloud" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				GCC_OPTIMIZATION_LEVEL = fast;
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
 				INFOPLIST_FILE = RemoteCloud/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.RemoteCloud;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		3CA2C9462234952800481DB5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = RemoteCloudTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.RemoteCloudTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		3CA2C9472234952800481DB5 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = RemoteCloudTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.RemoteCloudTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -548,31 +454,57 @@
 		3CA2C9282234952800481DB5 /* Build configuration list for PBXProject "RemoteCloud" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3CA2C9402234952800481DB5 /* Debug */,
-				3CA2C9412234952800481DB5 /* Release */,
+				3CA2C9402234952800481DB5 /* Debug configuration for PBXProject "RemoteCloud" */,
+				3CA2C9412234952800481DB5 /* Release configuration for PBXProject "RemoteCloud" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		3CA2C9422234952800481DB5 /* Build configuration list for PBXNativeTarget "RemoteCloud" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3CA2C9432234952800481DB5 /* Debug */,
-				3CA2C9442234952800481DB5 /* Release */,
+				3CA2C9432234952800481DB5 /* Debug configuration for PBXNativeTarget "RemoteCloud" */,
+				3CA2C9442234952800481DB5 /* Release configuration for PBXNativeTarget "RemoteCloud" */,
 			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3CA2C9452234952800481DB5 /* Build configuration list for PBXNativeTarget "RemoteCloudTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3CA2C9462234952800481DB5 /* Debug */,
-				3CA2C9472234952800481DB5 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BE186E572E9A4A82002F6CC8 /* XCRemoteSwiftPackageReference "SMBClient" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lithium0003/SMBClient.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		BE2D3D002EAFB806006DF15C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BE186E582E9A4A82002F6CC8 /* SMBClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BE186E572E9A4A82002F6CC8 /* XCRemoteSwiftPackageReference "SMBClient" */;
+			productName = SMBClient;
+		};
+		BE2D3D012EAFB806006DF15C /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BE2D3D002EAFB806006DF15C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		BE2D3D032EAFB806006DF15C /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BE2D3D002EAFB806006DF15C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCVersionGroup section */
 		3CA2C95C2235569800481DB5 /* cloud.xcdatamodeld */ = {

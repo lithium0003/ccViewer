@@ -11,8 +11,66 @@ import CoreData
 import os.log
 import UIKit
 import CoreServices
+import UniformTypeIdentifiers
+import SwiftUI
+import AuthenticationServices
 
-public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
+struct FileStorageSelectUIView: View {
+    @State private var showFileImporter = false
+
+    let authContinuation: CheckedContinuation<Bool, Never>
+    let save: (Data) async -> Void
+    @State private var opened = false
+    
+    var body: some View {
+        Color.clear
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.folder]) { result in
+                opened = true
+                switch result {
+                case .success(let url):
+                    print(url)
+                    Task {
+                        do {
+                            // Start accessing a security-scoped resource.
+                            guard url.startAccessingSecurityScopedResource() else {
+                                // Handle the failure here.
+                                authContinuation.resume(returning: false)
+                                return
+                            }
+                            
+                            // Make sure you release the security-scoped resource when you are done.
+                            defer { url.stopAccessingSecurityScopedResource() }
+                            
+                            let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
+                            
+                            await save(bookmarkData)
+                            
+                            authContinuation.resume(returning: true)
+                        }
+                        catch let error {
+                            // Handle the error here.
+                            print(error)
+                            authContinuation.resume(returning: false)
+                        }
+                    }
+                case .failure(let error):
+                    print(error)
+                    authContinuation.resume(returning: false)
+                }
+            }
+            .task {
+                try? await Task.sleep(for: .milliseconds(200))
+                showFileImporter = true
+            }
+            .onChange(of: showFileImporter) { oldValue, newValue in
+                if oldValue, !newValue, !opened {
+                    authContinuation.resume(returning: false)
+                }
+            }
+    }
+}
+
+public class FilesStorage: RemoteStorageBase  {
 
     public override func getStorageType() -> CloudStorages {
         return .Files
@@ -25,9 +83,9 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
     }
 
     var cache_bookmarkData = Data()
-    var bookmarkData: Data {
+    func bookmarkData() async -> Data {
         if let name = storageName {
-            if let base64 = getKeyChain(key: "\(name)_bookmarkData"), let bookmark = Data(base64Encoded: base64) {
+            if let base64 = await getKeyChain(key: "\(name)_bookmarkData"), let bookmark = Data(base64Encoded: base64) {
                 cache_bookmarkData = bookmark
             }
             return cache_bookmarkData
@@ -37,106 +95,43 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
         }
     }
 
-    var authCallback: ((Bool)->Void)?
-    
-    public override func auth(onFinish: ((Bool) -> Void)?) -> Void {
+    public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "auth(files:\(storageName ?? ""))")
 
-        if authCallback != nil {
-            onFinish?(false)
+        let authRet = await withCheckedContinuation { authContinuation in
+            Task {
+                let presentRet = await withCheckedContinuation { continuation in
+                    callback(FileStorageSelectUIView(authContinuation: authContinuation) { bookmarkData in
+                        let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                        }, continuation)
+                }
+                guard presentRet else {
+                    authContinuation.resume(returning: false)
+                    return
+                }
+            }
         }
+        return authRet
+    }
         
-        DispatchQueue.main.async {
-            if #available(iOS 13.0, *) {
-                if let controller = UIApplication.topViewController() {
-                    let documentPicker =
-                        UIDocumentPickerViewController(documentTypes: [kUTTypeFolder as String],
-                                                       in: .open)
-                    
-                    documentPicker.delegate = self
-                    self.authCallback = onFinish
-                    controller.present(documentPicker, animated: true, completion: nil)
-                }
-                else {
-                    onFinish?(false)
-                }
-            }
-            else {
-                if let controller = UIApplication.topViewController() {
-                    let alart = UIAlertController(title: "iOS13 required", message: "folder selection feature needs >= iOS13", preferredStyle: .alert)
-                    let cancel = UIAlertAction(title: "OK", style: .cancel) { action in
-                        onFinish?(false)
-                    }
-                    alart.addAction(cancel)
-                    
-                    controller.present(alart, animated: true, completion: nil)
-                }
-                else {
-                    onFinish?(false)
-                }
-            }
-        }
-    }
-    
-    public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let onFinish = authCallback else {
-            return
-        }
-        guard let url = urls.first else {
-            onFinish(false)
-            return
-        }
-        print(url)
-        do {
-            // Start accessing a security-scoped resource.
-            guard url.startAccessingSecurityScopedResource() else {
-                // Handle the failure here.
-                onFinish(false)
-                return
-            }
-
-            // Make sure you release the security-scoped resource when you are done.
-            defer { url.stopAccessingSecurityScopedResource() }
-
-            let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            
-            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
-            
-            DispatchQueue.global().async {
-                onFinish(true)
-            }
-        }
-        catch let error {
-            // Handle the error here.
-            print(error)
-            onFinish(false)
-        }
-    }
-    
-    public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        if let onFinish = authCallback {
-            onFinish(false)
-        }
-    }
-    
-    public override func logout() {
+    public override func logout() async {
         if let name = storageName {
-            let _ = delKeyChain(key: "\(name)_bookmarkData")
+            let _ = await delKeyChain(key: "\(name)_bookmarkData")
         }
-        super.logout()
+        await super.logout()
     }
 
-    override func ListChildren(fileId: String = "", path: String = "", onFinish: (() -> Void)?) {
+    override func listChildren(fileId: String = "", path: String = "") async {
         do {
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
             
             // Use the URL here.
@@ -144,7 +139,6 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?()
                 return
             }
 
@@ -153,46 +147,37 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                var targetURL = url
-                if fileId != "" {
-                    targetURL.appendPathComponent(fileId)
-                }
-                
-                guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: targetURL, includingPropertiesForKeys: nil) else {
-                    onFinish?()
-                    return
-                }
-
-                let backgroudContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                backgroudContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? backgroudContext.fetch(fetchRequest) {
-                        for object in result {
-                            backgroudContext.delete(object as! NSManagedObject)
-                        }
+            let storage = storageName ?? ""
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
+                    var targetURL = url
+                    if fileId != "" {
+                        targetURL.appendPathComponent(fileId, conformingTo: .data)
                     }
-                }
-
-                for fileURL in fileURLs {
-                    // Start accessing a security-scoped resource.
-                    guard url.startAccessingSecurityScopedResource() else {
-                        // Handle the failure here.
-                        onFinish?()
+                    
+                    guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: targetURL, includingPropertiesForKeys: nil) else {
+                        continuation.resume()
                         return
                     }
-
-                    // Make sure you release the security-scoped resource when you are done.
-                    defer { url.stopAccessingSecurityScopedResource() }
-
-                    storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: backgroudContext)
-                }
-                backgroudContext.perform {
-                    try? backgroudContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?()
+                    
+                    let backgroudContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    Task {
+                        await backgroudContext.perform {
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+                            if let result = try? backgroudContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroudContext.delete(object as! NSManagedObject)
+                                }
+                            }
+                        }
+                        for fileURL in fileURLs {
+                            await storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: backgroudContext)
+                        }
+                        await backgroudContext.perform {
+                            try? backgroudContext.save()
+                        }
+                        continuation.resume()
                     }
                 }
             }
@@ -200,13 +185,12 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?()
         }
     }
     
-    func getIdFromURL(url: URL) -> String? {
+    func getIdFromURL(url: URL) async -> String? {
         var isStale = false
-        guard let baseUrl = try? URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale) else {
+        guard let baseUrl = try? await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale) else {
             return nil
         }
         guard !isStale else {
@@ -226,20 +210,21 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
         return target.dropFirst(base.count).joined(separator: "/")
     }
 
-    func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
-        guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path) else {
+    func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) async {
+        guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path(percentEncoded: false)) else {
             return
         }
-        guard let id = getIdFromURL(url: item) else {
+        guard let id = await getIdFromURL(url: item) else {
             return
         }
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
-        context.perform {
+        let storage = storageName ?? ""
+        await context.perform {
             var prevParent: String?
             var prevPath: String?
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
             if let result = try? context.fetch(fetchRequest) {
                 for object in result {
                     if let item = object as? RemoteData {
@@ -259,7 +244,7 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
                 return
             }
             let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
+            newitem.storage = storage
             newitem.id = id
             newitem.name = name
             let comp = name.components(separatedBy: ".")
@@ -273,7 +258,7 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             newitem.hashstr = ""
             newitem.parent = (parentFileId == nil) ? prevParent : parentFileId
             if parentFileId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
+                newitem.path = "\(storage):/\(name)"
             }
             else {
                 if let path = (parentPath == nil) ? prevPath : parentPath {
@@ -283,244 +268,238 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
         }
     }
     
-    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
-        
-        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async -> Data? {
+        if let cache = await CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
             if let data = try? Data(contentsOf: cache) {
                 os_log("%{public}@", log: log, type: .debug, "hit cache(File:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-                onFinish?(data)
-                return
+                return data
             }
         }
-
+        
         os_log("%{public}@", log: log, type: .debug, "readFile(File:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-
+        
         do {
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
             
             // Use the URL here.
-
+            
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?(nil)
-                return
+                return nil
             }
-
+            
             // Make sure you release the security-scoped resource when you are done.
             defer { url.stopAccessingSecurityScopedResource() }
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                var targetURL = url
-                if fileId != "" {
-                    targetURL.appendPathComponent(fileId)
-                }
-                
-                // Start accessing a security-scoped resource.
-                guard url.startAccessingSecurityScopedResource() else {
-                    // Handle the failure here.
-                    onFinish?(nil)
-                    return
-                }
-
-                // Make sure you release the security-scoped resource when you are done.
-                defer { url.stopAccessingSecurityScopedResource() }
-
-                var ret: Data?
-                let reqOffset = Int(start ?? 0)
-                do {
-                    let hFile = try FileHandle(forReadingFrom: targetURL)
-                    defer {
-                        do {
-                            if #available(iOS 13.0, *) {
-                                try hFile.close()
-                            } else {
-                                hFile.closeFile()
-                            }
-                        }
-                        catch {
-                            print(error)
-                        }
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
+                    var targetURL = url
+                    if fileId != "" {
+                        targetURL.appendPathComponent(fileId, conformingTo: .data)
                     }
-                    if #available(iOS 13.0, *) {
-                        try hFile.seek(toOffset: UInt64(reqOffset))
-                    } else {
-                        hFile.seek(toFileOffset: UInt64(reqOffset))
-                    }
-                    if let size = length {
-                        ret = hFile.readData(ofLength: Int(size))
-                    }
-                    else {
-                        ret = hFile.readDataToEndOfFile()
-                    }
-                }
-                catch {
-                    print(error)
-                }
-                if let d = ret {
-                    CloudFactory.shared.cache.saveCache(storage: self.storageName!, id: fileId, offset: start ?? 0, data: d)
-                }
-                DispatchQueue.global().async {
-                    onFinish?(ret)
-                }
-            }
-        }
-        catch let error {
-            // Handle the error here.
-            print(error)
-            onFinish?(nil)
-        }
-    }
-
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return NetworkRemoteItem(storage: storageName ?? "", id: fileId)
-    }
-    
-    public override func getRaw(path: String) -> RemoteItem? {
-        return NetworkRemoteItem(path: path)
-    }
-    
-    public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-
-        os_log("%{public}@", log: log, type: .debug, "makeFolder(File:\(storageName ?? "") \(parentId) \(newname)")
-
-        do {
-            var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
-            
-            if isStale {
-                print("url is Stale", url)
-                // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
-            }
-            
-            // Use the URL here.
-
-            // Start accessing a security-scoped resource.
-            guard url.startAccessingSecurityScopedResource() else {
-                // Handle the failure here.
-                onFinish?(nil)
-                return
-            }
-
-            // Make sure you release the security-scoped resource when you are done.
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            // Use file coordination for reading and writing any of the URL’s content.
-            var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                var targetURL = url
-                if parentId != "" {
-                    targetURL = targetURL.appendingPathComponent(parentId, isDirectory: true)
-                }
-                targetURL = targetURL.appendingPathComponent(newname, isDirectory: true)
-
-                do {
+                    
                     // Start accessing a security-scoped resource.
                     guard url.startAccessingSecurityScopedResource() else {
                         // Handle the failure here.
-                        onFinish?(nil)
+                        continuation.resume(returning: nil)
                         return
                     }
-
+                    
                     // Make sure you release the security-scoped resource when you are done.
                     defer { url.stopAccessingSecurityScopedResource() }
-
-                    try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    let id = getIdFromURL(url: targetURL)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
+                    
+                    var ret: Data?
+                    let reqOffset = Int(start ?? 0)
+                    do {
+                        let hFile = try FileHandle(forReadingFrom: targetURL)
+                        defer {
+                            do {
+                                if #available(iOS 13.0, *) {
+                                    try hFile.close()
+                                } else {
+                                    hFile.closeFile()
+                                }
+                            }
+                            catch {
+                                print(error)
+                            }
+                        }
+                        if #available(iOS 13.0, *) {
+                            try hFile.seek(toOffset: UInt64(reqOffset))
+                        } else {
+                            hFile.seek(toFileOffset: UInt64(reqOffset))
+                        }
+                        if let size = length {
+                            ret = hFile.readData(ofLength: Int(size))
+                        }
+                        else {
+                            ret = hFile.readDataToEndOfFile()
                         }
                     }
-                }
-                catch {
-                    onFinish?(nil)
+                    catch {
+                        print(error)
+                    }
+                    if let d = ret {
+                        Task {
+                            await CloudFactory.shared.cache.saveCache(storage: self.storageName!, id: fileId, offset: start ?? 0, data: d)
+                        }
+                    }
+                    continuation.resume(returning: ret)
                 }
             }
         }
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?(nil)
+            return nil
         }
     }
 
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(storage: storageName ?? "", id: fileId)
+    }
     
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(path: path)
+    }
+    
+    public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
+        
+        os_log("%{public}@", log: log, type: .debug, "makeFolder(File:\(storageName ?? "") \(parentId) \(newname)")
+        
         do {
-            if fromParentId == toParentId {
-                onFinish?(nil)
-                return
-            }
-
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
-
+            
             // Use the URL here.
-
+            
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?(nil)
-                return
+                return nil
             }
-
+            
             // Make sure you release the security-scoped resource when you are done.
             defer { url.stopAccessingSecurityScopedResource() }
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-
-                let fromURL = url.appendingPathComponent(fileId)
-                let name = fromURL.lastPathComponent
-                var targetURL = url
-                var parentPath = ""
-                if toParentId != "" {
-                    targetURL = url.appendingPathComponent(toParentId, isDirectory: true)
-                    if Thread.isMainThread {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
+                    
+                    var targetURL = url
+                    if parentId != "" {
+                        targetURL = targetURL.appendingPathComponent(parentId, isDirectory: true)
+                    }
+                    targetURL = targetURL.appendingPathComponent(newname, isDirectory: true)
+                    
+                    do {
+                        // Start accessing a security-scoped resource.
+                        guard url.startAccessingSecurityScopedResource() else {
+                            // Handle the failure here.
+                            continuation.resume(returning: nil)
+                            return
+                        }
                         
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            if let items = result as? [RemoteData] {
-                                parentPath = items.first?.path ?? ""
+                        // Make sure you release the security-scoped resource when you are done.
+                        defer { url.stopAccessingSecurityScopedResource() }
+                        
+                        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
+                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        Task {
+                            await storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                            await backgroundContext.perform {
+                                try? backgroundContext.save()
                             }
+                            let id = await getIdFromURL(url: targetURL)
+                            continuation.resume(returning: id)
                         }
                     }
-                    else {
-                        DispatchQueue.main.sync {
+                    catch {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+        catch let error {
+            // Handle the error here.
+            print(error)
+            return nil
+        }
+    }
+
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
+        
+        do {
+            if fromParentId == toParentId {
+                return nil
+            }
+            
+            var isStale = false
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
+            
+            if isStale {
+                print("url is Stale", url)
+                // Handle stale data here.
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
+                
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+            }
+            
+            // Use the URL here.
+            
+            // Start accessing a security-scoped resource.
+            guard url.startAccessingSecurityScopedResource() else {
+                // Handle the failure here.
+                return nil
+            }
+            
+            // Make sure you release the security-scoped resource when you are done.
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            // Use file coordination for reading and writing any of the URL’s content.
+            var error: NSError? = nil
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
+                    
+                    // Start accessing a security-scoped resource.
+                    guard url.startAccessingSecurityScopedResource() else {
+                        // Handle the failure here.
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    // Make sure you release the security-scoped resource when you are done.
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    
+                    let fromURL = url.appendingPathComponent(fileId)
+                    let name = fromURL.lastPathComponent
+                    var targetURL = url
+                    var parentPath = ""
+                    if toParentId != "" {
+                        targetURL = url.appendingPathComponent(toParentId, isDirectory: true)
+                        Task { @MainActor in
                             let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                            
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
                             if let result = try? viewContext.fetch(fetchRequest) {
@@ -530,59 +509,59 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
                             }
                         }
                     }
-                }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                backgroundContext.perform {
-                    let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? backgroundContext.fetch(fetchRequest2) {
-                        for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
-                        }
-                    }
-                }
-                targetURL = targetURL.appendingPathComponent(name)
-
-                os_log("%{public}@", log: self.log, type: .debug, "moveItem(File:\(self.storageName ?? "") \(fromParentId)->\(toParentId)")
-
-                do {
-                    try FileManager.default.moveItem(at: fromURL, to: targetURL)
-                    self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
-                    let id = self.getIdFromURL(url: targetURL)
+                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
                     backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
+                        let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                        fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                        if let result = try? backgroundContext.fetch(fetchRequest2) {
+                            for object in result {
+                                backgroundContext.delete(object as! NSManagedObject)
+                            }
                         }
                     }
+                    targetURL = targetURL.appendingPathComponent(name)
+                    
+                    os_log("%{public}@", log: self.log, type: .debug, "moveItem(File:\(self.storageName ?? "") \(fromParentId)->\(toParentId)")
+                    
+                    do {
+                        try FileManager.default.moveItem(at: fromURL, to: targetURL)
+                        Task {
+                            await self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
+                            await backgroundContext.perform {
+                                try? backgroundContext.save()
+                            }
+                            let id = await self.getIdFromURL(url: targetURL)
+                            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                            continuation.resume(returning: id)
+                        }
+                    }
+                    catch {
+                        continuation.resume(returning: nil)
+                    }
                 }
-                catch {
-                    onFinish?(nil)
-                }
-
             }
         }
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?(nil)
+            return nil
         }
     }
     
-    override func deleteItem(fileId: String, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
+    override func deleteItem(fileId: String) async -> Bool {
         
         os_log("%{public}@", log: log, type: .debug, "deleteItem(File:\(storageName ?? "") \(fileId)")
 
         do {
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
             
             // Use the URL here.
@@ -590,8 +569,7 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?(false)
-                return
+                return false
             }
 
             // Make sure you release the security-scoped resource when you are done.
@@ -599,67 +577,69 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                var targetURL = url
-                targetURL.appendPathComponent(fileId)
-
-                guard url.startAccessingSecurityScopedResource() else {
-                    // Handle the failure here.
-                    onFinish?(false)
-                    return
-                }
-
-                // Make sure you release the security-scoped resource when you are done.
-                defer { url.stopAccessingSecurityScopedResource() }
-
-                do {
-                    try FileManager.default.removeItem(at: targetURL)
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    backgroundContext.performAndWait {
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                        if let result = try? backgroundContext.fetch(fetchRequest) {
-                            for object in result {
-                                backgroundContext.delete(object as! NSManagedObject)
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
+                    
+                    var targetURL = url
+                    targetURL.appendPathComponent(fileId, conformingTo: .data)
+                    
+                    guard url.startAccessingSecurityScopedResource() else {
+                        // Handle the failure here.
+                        continuation.resume(returning: false)
+                        return
+                    }
+                    
+                    // Make sure you release the security-scoped resource when you are done.
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    
+                    do {
+                        try FileManager.default.removeItem(at: targetURL)
+                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        backgroundContext.perform {
+                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                                for object in result {
+                                    backgroundContext.delete(object as! NSManagedObject)
+                                }
                             }
                         }
-                        
                         self.deleteChildRecursive(parent: fileId, context: backgroundContext)
-                    }
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(true)
+                        Task {
+                            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                        }
+                        backgroundContext.perform {
+                            try? backgroundContext.save()
+                            continuation.resume(returning: true)
                         }
                     }
-                }
-                catch {
-                    onFinish?(false)
+                    catch {
+                        continuation.resume(returning: false)
+                    }
                 }
             }
         }
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?(false)
+            return false
         }
     }
 
-    override func renameItem(fileId: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func renameItem(fileId: String, newname: String) async -> String? {
         
         os_log("%{public}@", log: log, type: .debug, "renameItem(File:\(storageName ?? "") \(fileId)")
 
         do {
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
             
             // Use the URL here.
@@ -667,8 +647,7 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?(nil)
-                return
+                return nil
             }
 
             // Make sure you release the security-scoped resource when you are done.
@@ -676,73 +655,77 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                let fromURL = url.appendingPathComponent(fileId)
-                let newURL = fromURL.deletingLastPathComponent().appendingPathComponent(newname)
-
-                guard url.startAccessingSecurityScopedResource() else {
-                    // Handle the failure here.
-                    onFinish?(nil)
-                    return
-                }
-
-                // Make sure you release the security-scoped resource when you are done.
-                defer { url.stopAccessingSecurityScopedResource() }
-
-                do {
-                    try FileManager.default.moveItem(at: fromURL, to: newURL)
-                    var parentPath: String?
-                    var parentId: String?
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    backgroundContext.perform {
-                        let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                        if let result = try? backgroundContext.fetch(fetchRequest2) as? [RemoteData] {
-                            for object in result {
-                                parentPath = object.path
-                                let component = parentPath?.components(separatedBy: "/")
-                                parentPath = component?.dropLast().joined(separator: "/")
-                                parentId = object.parent
-                                backgroundContext.delete(object)
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
+                    
+                    let fromURL = url.appendingPathComponent(fileId)
+                    let newURL = fromURL.deletingLastPathComponent().appendingPathComponent(newname)
+                    
+                    guard url.startAccessingSecurityScopedResource() else {
+                        // Handle the failure here.
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    // Make sure you release the security-scoped resource when you are done.
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    
+                    do {
+                        try FileManager.default.moveItem(at: fromURL, to: newURL)
+                        var parentPath: String?
+                        var parentId: String?
+                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        backgroundContext.perform {
+                            let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                            if let result = try? backgroundContext.fetch(fetchRequest2) as? [RemoteData] {
+                                for object in result {
+                                    parentPath = object.path
+                                    let component = parentPath?.components(separatedBy: "/")
+                                    parentPath = component?.dropLast().joined(separator: "/")
+                                    parentId = object.parent
+                                    backgroundContext.delete(object)
+                                }
                             }
                         }
-                    }
-                    self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        let id = self.getIdFromURL(url: newURL)
-                        DispatchQueue.global().async {
-                            onFinish?(id)
+                        Task {
+                            await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                            await backgroundContext.perform {
+                                try? backgroundContext.save()
+                            }
+                            let id = await self.getIdFromURL(url: newURL)
+                            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                            continuation.resume(returning: id)
                         }
                     }
-                }
-                catch {
-                    onFinish?(nil)
+                    catch {
+                        print(error)
+                        continuation.resume(returning: nil)
+                    }
                 }
             }
         }
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?(nil)
+            return nil
         }
     }
 
-    override func changeTime(fileId: String, newdate: Date, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func changeTime(fileId: String, newdate: Date) async -> String? {
 
         os_log("%{public}@", log: log, type: .debug, "changeTime(File:\(storageName ?? "") \(fileId) \(newdate)")
 
         do {
             var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+            let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
             
             if isStale {
                 print("url is Stale", url)
                 // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
                 
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
             }
             
             // Use the URL here.
@@ -750,8 +733,7 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
-                onFinish?(nil)
-                return
+                return nil
             }
 
             // Make sure you release the security-scoped resource when you are done.
@@ -759,103 +741,95 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
             
             // Use file coordination for reading and writing any of the URL’s content.
             var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
-                
-                let targetURL = url.appendingPathComponent(fileId)
-
-                guard url.startAccessingSecurityScopedResource() else {
-                    // Handle the failure here.
-                    onFinish?(nil)
-                    return
-                }
-
-                // Make sure you release the security-scoped resource when you are done.
-                defer { url.stopAccessingSecurityScopedResource() }
-
-                do {
-                    try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path)
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.storeItem(item: targetURL, context: backgroundContext)
-                    let id = getIdFromURL(url: targetURL)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
+            return await withCheckedContinuation { continuation in
+                NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
+                    
+                    let targetURL = url.appendingPathComponent(fileId)
+                    
+                    guard url.startAccessingSecurityScopedResource() else {
+                        // Handle the failure here.
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    // Make sure you release the security-scoped resource when you are done.
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    
+                    do {
+                        try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path(percentEncoded: false))
+                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        Task {
+                            await self.storeItem(item: targetURL, context: backgroundContext)
+                            await backgroundContext.perform {
+                                try? backgroundContext.save()
+                            }
+                            let id = await getIdFromURL(url: targetURL)
+                            continuation.resume(returning: id)
                         }
                     }
-                }
-                catch {
-                    print(error)
-                    onFinish?(nil)
+                    catch {
+                        print(error)
+                        continuation.resume(returning: nil)
+                    }
                 }
             }
         }
         catch let error {
             // Handle the error here.
             print(error)
-            onFinish?(nil)
+            return nil
         }
     }
 
-    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    @MainActor
+    func getParentPath(parentId: String) -> String? {
+        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        
+        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
+        if let result = try? viewContext.fetch(fetchRequest) {
+            if let items = result as? [RemoteData] {
+                return items.first?.path ?? ""
+            }
+        }
+        return nil
+    }
+
+    override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         
         var parentPath = ""
         if parentId != "" {
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
-                }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            parentPath = items.first?.path ?? ""
-                        }
-                    }
-                }
-            }
+            parentPath = await getParentPath(parentId: parentId) ?? ""
         }
-
+        
         os_log("%{public}@", log: log, type: .debug, "uploadFile(File:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
-        do {
-            var isStale = false
-            let url = try URL(resolvingBookmarkData: bookmarkData, bookmarkDataIsStale: &isStale)
+        
+        var isStale = false
+        let url = try await URL(resolvingBookmarkData: bookmarkData(), bookmarkDataIsStale: &isStale)
+        
+        if isStale {
+            print("url is Stale", url)
+            // Handle stale data here.
+            let bookmarkData = try url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
             
-            if isStale {
-                print("url is Stale", url)
-                // Handle stale data here.
-                let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                
-                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
-            }
-            
-            // Use the URL here.
-
-            // Start accessing a security-scoped resource.
-            guard url.startAccessingSecurityScopedResource() else {
-                // Handle the failure here.
-                onFinish?(nil)
-                return
-            }
-
-            // Make sure you release the security-scoped resource when you are done.
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            // Use file coordination for reading and writing any of the URL’s content.
-            var error: NSError? = nil
-            NSFileCoordinator().coordinate(readingItemAt: url, error: &error) { (url) in
+            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_bookmarkData", value: bookmarkData.base64EncodedString())
+        }
+        
+        // Use the URL here.
+        
+        // Start accessing a security-scoped resource.
+        guard url.startAccessingSecurityScopedResource() else {
+            // Handle the failure here.
+            return nil
+        }
+        
+        // Make sure you release the security-scoped resource when you are done.
+        defer { url.stopAccessingSecurityScopedResource() }
+        
+        // Use file coordination for reading and writing any of the URL’s content.
+        var error: NSError? = nil
+        return await withCheckedContinuation { continuation in
+            NSFileCoordinator().coordinate(writingItemAt: url, error: &error) { (url) in
                 
                 var newURL = url
                 if parentId != "" {
@@ -865,43 +839,38 @@ public class FilesStorage: RemoteStorageBase, UIDocumentPickerDelegate {
                 
                 guard url.startAccessingSecurityScopedResource() else {
                     // Handle the failure here.
-                    onFinish?(nil)
+                    continuation.resume(returning: nil)
                     return
                 }
-
+                
                 // Make sure you release the security-scoped resource when you are done.
                 defer { url.stopAccessingSecurityScopedResource() }
-
+                
                 do {
-                    let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                    let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                     let fileSize = attr[.size] as! UInt64
+                    Task {
+                        try await progress?(0, Int64(fileSize))
+                    }
 
-                    UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
-                    
                     try FileManager.default.moveItem(at: target, to: newURL)
                     
-                    UploadManeger.shared.UploadProgress(identifier: sessionId, possition: Int(fileSize))
-                    
                     let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    let id = self.getIdFromURL(url: newURL)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
+                    Task {
+                        await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+                        await backgroundContext.perform {
+                            try? backgroundContext.save()
                         }
+                        let id = await self.getIdFromURL(url: newURL)
+                        continuation.resume(returning: id)
+                        try await progress?(Int64(fileSize), Int64(fileSize))
                     }
                 }
                 catch {
-                    onFinish?(nil)
+                    print(error)
+                    continuation.resume(returning: nil)
                 }
             }
         }
-        catch let error {
-            // Handle the error here.
-            print(error)
-            onFinish?(nil)
-        }
     }
-
 }

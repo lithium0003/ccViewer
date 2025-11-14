@@ -11,13 +11,13 @@ import AuthenticationServices
 import os.log
 import CoreData
 
-public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDataDelegate {
+public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     public override func getStorageType() -> CloudStorages {
         return .pCloud
     }
     
     var webAuthSession: ASWebAuthenticationSession?
-    let uploadSemaphore = DispatchSemaphore(value: 5)
+    let uploadSemaphore = Semaphore(value: 5)
 
     public convenience init(name: String) {
         self.init()
@@ -30,90 +30,66 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     private let callbackUrlScheme = SecretItems.pCloud.callbackUrlScheme
     private let redirect = "\(SecretItems.pCloud.callbackUrlScheme)://oauth2redirect"
 
-    override func authorize(onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "authorize(pCloud:\(storageName ?? ""))")
-        
+    override var authURL: URL {
         let url = "https://my.pcloud.com/oauth2/authorize?client_id=\(clientid)&response_type=code&redirect_uri=\(redirect)"
-        let authURL = URL(string: url);
-        
-        self.webAuthSession = ASWebAuthenticationSession.init(url: authURL!, callbackURLScheme: callbackUrlScheme, completionHandler: { (callBack:URL?, error:Error?) in
-            
-            // handle auth response
-            guard error == nil, let successURL = callBack else {
-                onFinish?(false)
-                return
-            }
-            
-            let oauthToken = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "code"}).first
-            
-            if let oauthTokenString = oauthToken?.value {
-                self.getToken(oauthToken: oauthTokenString, onFinish: onFinish)
-            }
-            else{
-                onFinish?(false)
-            }
-        })
-        if #available(iOS 13.0, *) {
-            self.webAuthSession?.presentationContextProvider = self
-        }
-
-        self.webAuthSession?.start()
+        return URL(string: url)!
+    }
+    override var authCallback: ASWebAuthenticationSession.Callback {
+        ASWebAuthenticationSession.Callback.customScheme(callbackUrlScheme)
+    }
+    override var additionalHeaderFields: [String: String] {
+        return [:]
     }
 
-    override func getToken(oauthToken: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "getToken(pCloud:\(storageName ?? ""))")
+    override func signIn(_ successURL: URL) async throws -> Bool {
+        let oauthToken = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "code"}).first
         
+        if let oauthTokenString = oauthToken?.value {
+            return await getToken(oauthToken: oauthTokenString)
+        }
+        return false
+    }
+
+    override func getToken(oauthToken: String) async -> Bool {
+        os_log("%{public}@", log: log, type: .debug, "getToken(pCloud:\(storageName ?? ""))")
+
         var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/oauth2_token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
+
         let post = "client_id=\(clientid)&client_secret=\(secret)&code=\(oauthToken)"
         let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(false)
-                return
+    
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let object = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let json = object as? [String: Any] else {
+                return false
             }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                print(json)
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let userId = json["userid"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                self.saveToken(accessToken: accessToken, accountId: String(userId))
-                onFinish?(true)
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
+            print(json)
+            guard let accessToken = json["access_token"] as? String else {
+                return false
             }
+            guard let userId = json["userid"] as? Int else {
+                return false
+            }
+            await saveToken(accessToken: accessToken, accountId: String(userId))
+            return true
         }
-        task.resume()
+        catch {
+            print(error)
+        }
+        return false
     }
 
-    override func checkToken(onFinish: ((Bool) -> Void)?) -> Void {
-        if accessToken != "" {
-            onFinish?(true)
-        }
-        else {
-            onFinish?(false)
-        }
+    override func checkToken() async -> Bool {
+        return await accessToken() != ""
     }
     
-    func saveToken(accessToken: String, accountId: String) -> Void {
+    func saveToken(accessToken: String, accountId: String) async -> Void {
         if let name = storageName {
             guard accessToken != "" && accountId != "" else {
                 return
@@ -121,159 +97,99 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             os_log("%{public}@", log: log, type: .info, "saveToken")
             cacheTokenDate = Date()
             cache_accessToken = accessToken
-            if setKeyChain(key: "\(name)_accessToken", value: accessToken) && setKeyChain(key: "\(name)_accountId", value: accountId) {
-                tokenDate = Date()
-            }
+            _ = await setKeyChain(key: "\(name)_accessToken", value: accessToken)
+            _ = await setKeyChain(key: "\(name)_accountId", value: accountId)
         }
     }
 
-    public override func logout() {
+    public override func logout() async {
         if let name = storageName {
-            let _ = delKeyChain(key: "\(name)_accountId")
+            let _ = await delKeyChain(key: "\(name)_accountId")
         }
-        super.logout()
+        await super.logout()
     }
     
-    override func revokeToken(token: String, onFinish: ((Bool) -> Void)?) {
+    override func revokeToken(token: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "revokeToken(pCloud:\(storageName ?? ""))")
-        
+    
         var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/logout")!)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print(error.localizedDescription)
-                onFinish?(false)
-                return
+        request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+    
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let object = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let json = object as? [String: Any] else {
+                return false
             }
-            guard let data = data else {
-                onFinish?(false)
-                return
+            print(json)
+            guard let result = json["result"] as? Int else {
+                return false
             }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                print(json)
-                guard let result = json["result"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                if result == 0 {
-                    onFinish?(true)
-                }
-                else {
-                    onFinish?(false)
-                }
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
-            }
+            return result == 0
         }
-        task.resume()
+        catch {
+            print(error)
+        }
+        return false
     }
 
-    override func isAuthorized(onFinish: ((Bool) -> Void)?) -> Void {
+    override func isAuthorized() async -> Bool {
         var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/userinfo")!)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(false)
-                return
+        request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let object = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let json = object as? [String: Any] else {
+                return false
             }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                if let result = json["result"] as? Int, result == 0 {
-                    onFinish?(true)
-                }
-                else{
-                    print(json)
-                    onFinish?(false)
-                }
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
+            if let result = json["result"] as? Int, result == 0 {
+                return true
             }
         }
-        task.resume()
+        catch {
+            print(error)
+        }
+        return false
     }
 
-    func listFolder(folderId: Int, callCount: Int = 0, onFinish: (([[String:Any]]?)->Void)?) {
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait) {
-                self.listFolder(folderId: folderId, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+    func listFolder(folderId: Int) async -> [[String:Any]]? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "listFolder(pCloud:\(storageName ?? ""))")
+
+                let url = "https://api.pcloud.com/listfolder?folderid=\(folderId)&timeformat=timestamp"
+
+                var request: URLRequest = URLRequest(url: URL(string: url)!)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let metadata = json["metadata"] as? [String: Any] else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let contents = metadata["contents"] as? [[String: Any]] else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return contents
+            })
         }
-        os_log("%{public}@", log: log, type: .debug, "listFolder(pCloud:\(storageName ?? ""))")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            let url = "https://api.pcloud.com/listfolder?folderid=\(folderId)&timeformat=timestamp"
-            
-            var request: URLRequest = URLRequest(url: URL(string: url)!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let metadata = json["metadata"] as? [String: Any] else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let contents = metadata["contents"] as? [[String: Any]] else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(contents)
-                }
-                catch RetryError.Retry {
-                    if callCount < 10 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait) {
-                            self.listFolder(folderId: folderId, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return nil
         }
     }
     
@@ -339,7 +255,7 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
     }
 
-    override func ListChildren(fileId: String, path: String, onFinish: (() -> Void)?) {
+    override func listChildren(fileId: String, path: String) async {
         let folderId: Int
         if fileId == "" {
             folderId = 0
@@ -348,654 +264,391 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             folderId = Int(fileId.dropFirst()) ?? 0
         }
         else {
-            onFinish?()
             return
         }
-        listFolder(folderId: folderId) { result in
-            if let items = result {
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                for item in items {
-                    self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
-                }
-                backgroundContext.perform {
-                    try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?()
-                    }
-                }
+        if let items = await listFolder(folderId: folderId) {
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            for item in items {
+                storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
             }
-            else {
-                onFinish?()
+            await backgroundContext.perform {
+                try? backgroundContext.save()
             }
         }
     }
 
-    func getLink(fileId: Int, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.getLink(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/getfilelink?fileid=\(fileId)")!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                var waittime = self.callWait
-                if let error = error {
-                    print(error)
-                    if (error as NSError).code == -1009 {
-                        waittime += 30
-                    }
-                }
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let hosts = json["hosts"] as? [String], hosts.count > 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let path = json["path"] as? String else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    let downLink = "https://" + hosts.first! + path
-                    DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                        self.getBody(downLink: downLink, start: start, length: length, onFinish: onFinish)
-                    }
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<waittime)) {
-                            self.getLink(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
-                }
-            }
-            task.resume()
-        }
-    }
-    
-    func getBody(downLink: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                onFinish?(nil)
-                return
-            }
-            var request: URLRequest = URLRequest(url: URL(string: downLink)!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            if start != nil || length != nil {
-                let s = start ?? 0
-                if length == nil {
-                    request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                }
-                else {
-                    request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
-                }
-            }
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                var waittime = self.callWait
-                if let error = error {
-                    print(error)
-                    if (error as NSError).code == -1009 {
-                        waittime += 30
-                    }
-                }
-                if let l = length {
-                    if data?.count ?? 0 != l {
-                        if callCount < 50 {
-                            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<waittime)) {
-                                self.getBody(downLink: downLink, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
-                            }
-                            return
-                        }
-                    }
-                }
-                onFinish?(data)
-            }
-            task.resume()
-        }
-    }
-    
-    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
-        
-        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
-            if let data = try? Data(contentsOf: cache) {
-                os_log("%{public}@", log: log, type: .debug, "hit cache(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-                onFinish?(data)
-                return
-            }
-        }
-
-        os_log("%{public}@", log: log, type: .debug, "readFile(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-        
+    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
         let id: Int
         if fileId.starts(with: "f") {
             id = Int(fileId.dropFirst()) ?? 0
         }
         else {
-            onFinish?(nil)
-            return
+            return nil
         }
-        getLink(fileId: id, start: start, length: length, onFinish: onFinish)
+
+        if let cache = await CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+            if let data = try? Data(contentsOf: cache) {
+                os_log("%{public}@", log: log, type: .debug, "hit cache(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+                return data
+            }
+        }
+
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "readFile(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/getfilelink?fileid=\(id)")!)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let hosts = json["hosts"] as? [String], hosts.count > 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let path = json["path"] as? String else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                let downLink = "https://" + hosts.first! + path
+
+                var request2: URLRequest = URLRequest(url: URL(string: downLink)!)
+                request2.httpMethod = "GET"
+                request2.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                if start != nil || length != nil {
+                    let s = start ?? 0
+                    if length == nil {
+                        request2.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
+                    }
+                    else {
+                        request2.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
+                    }
+                }
+                
+                guard let (data2, _) = try? await URLSession.shared.data(for: request2) else {
+                    throw RetryError.Retry
+                }
+                if let length, data2.count != length {
+                    throw RetryError.Retry
+                }
+                await CloudFactory.shared.cache.saveCache(storage: storageName!, id: fileId, offset: start ?? 0, data: data2)
+                return data2
+            })
+        }
+        catch {
+            return nil
+        }
     }
 
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return NetworkRemoteItem(storage: storageName ?? "", id: fileId)
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(storage: storageName ?? "", id: fileId)
     }
     
-    public override func getRaw(path: String) -> RemoteItem? {
-        return NetworkRemoteItem(path: path)
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(path: path)
     }
 
-    func createfolder(folderid: Int, name: String, callCount: Int = 0, onFinish: (([String: Any]?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.createfolder(folderid: folderid, name: name, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+    func createfolder(folderid: Int, name: String) async -> [String: Any]? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                let body = "folderid=\(folderid)&name=\(name)&timeformat=timestamp"
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/createfolder")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.httpBody = body.data(using: .utf8)
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let metadata = json["metadata"] as? [String: Any] else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return metadata
+            })
         }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            let body = "folderid=\(folderid)&name=\(name)&timeformat=timestamp"
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/createfolder")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = body.data(using: .utf8)
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let metadata = json["metadata"] as? [String: Any] else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(metadata)
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
-                            self.createfolder(folderid: folderid, name: name, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return nil
         }
     }
     
-    public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        
-        if parentId.starts(with: "d") || parentId == "" {
-            os_log("%{public}@", log: log, type: .debug, "makeFolder(pCloud:\(storageName ?? "") \(parentId) \(newname)")
+    public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
+        guard parentId.starts(with: "d") || parentId == "" else {
+            return nil
+        }
 
-            let id = Int(parentId.dropFirst()) ?? 0
-            createfolder(folderid: id, name: newname) { metadata in
-                guard let metadata = metadata, let newid = metadata["id"] as? String else {
-                    onFinish?(nil)
-                    return
-                }
-                DispatchQueue.global().async {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(newid)
-                        }
-                    }
-                }
-            }
+        os_log("%{public}@", log: log, type: .debug, "makeFolder(pCloud:\(storageName ?? "") \(parentId) \(newname)")
+        let id = Int(parentId.dropFirst()) ?? 0
+
+        let metadata = await createfolder(folderid: id, name: newname)
+        guard let metadata = metadata, let newid = metadata["id"] as? String else {
+            return nil
         }
-        else {
-            onFinish?(nil)
+
+        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+        await backgroundContext.perform {
+            try? backgroundContext.save()
         }
+        return newid
     }
     
-    func deletefolderrecursive(folderId: Int, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(false)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.deletefolderrecursive(folderId: folderId, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+    func deletefolderrecursive(folderId: Int) async -> Bool {
+        do {
+            return try await callWithRetry(action: { [self] in
+                let body = "folderid=\(folderId)"
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefolderrecursive")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.httpBody = body.data(using: .utf8)
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return true
+            })
         }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(false)
-                return
-            }
-            
-            let body = "folderid=\(folderId)"
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefolderrecursive")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = body.data(using: .utf8)
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(true)
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
-                            self.deletefolderrecursive(folderId: folderId, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(false)
-                } catch let e {
-                    print(e)
-                    onFinish?(false)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return false
         }
     }
 
-    func deletefile(fileId: Int, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(false)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.deletefile(fileId: fileId, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+    func deletefile(fileId: Int) async -> Bool {
+        do {
+            return try await callWithRetry(action: { [self] in
+                let body = "fileid=\(fileId)"
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefile")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.httpBody = body.data(using: .utf8)
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return true
+            })
         }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(false)
-                return
-            }
-            
-            let body = "fileid=\(fileId)"
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefile")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = body.data(using: .utf8)
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(true)
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
-                            self.deletefile(fileId: fileId, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(false)
-                } catch let e {
-                    print(e)
-                    onFinish?(false)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return false
         }
     }
 
-    override func deleteItem(fileId: String, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
+    override func deleteItem(fileId: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "deleteItem(pCloud:\(storageName ?? "") \(fileId)")
         
         if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            deletefile(fileId: id){ success in
-                guard success else {
-                    onFinish?(false)
-                    return
-                }
-                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                backgroundCountext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? backgroundCountext.fetch(fetchRequest) {
-                        for object in result {
-                            backgroundCountext.delete(object as! NSManagedObject)
-                        }
-                    }
-                }
-                self.deleteChildRecursive(parent: fileId, context: backgroundCountext)
-                backgroundCountext.perform {
-                    try? backgroundCountext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(true)
+            guard await deletefile(fileId: id) else {
+                return false
+            }
+            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let storage = storageName ?? ""
+            await backgroundCountext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+                if let result = try? backgroundCountext.fetch(fetchRequest) {
+                    for object in result {
+                        backgroundCountext.delete(object as! NSManagedObject)
                     }
                 }
             }
+            deleteChildRecursive(parent: fileId, context: backgroundCountext)
+            await backgroundCountext.perform {
+                try? backgroundCountext.save()
+            }
+            return true
         }
         else if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            deletefolderrecursive(folderId: id) { success in
-                guard success else {
-                    onFinish?(false)
-                    return
-                }
-                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                backgroundCountext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? backgroundCountext.fetch(fetchRequest) {
-                        for object in result {
-                            backgroundCountext.delete(object as! NSManagedObject)
-                        }
-                    }
-                }
-                self.deleteChildRecursive(parent: fileId, context: backgroundCountext)
-                backgroundCountext.perform {
-                    try? backgroundCountext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(true)
+            guard await deletefolderrecursive(folderId: id) else {
+                return false
+            }
+            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let storage = storageName ?? ""
+            await backgroundCountext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+                if let result = try? backgroundCountext.fetch(fetchRequest) {
+                    for object in result {
+                        backgroundCountext.delete(object as! NSManagedObject)
                     }
                 }
             }
+            deleteChildRecursive(parent: fileId, context: backgroundCountext)
+            await backgroundCountext.perform {
+                try? backgroundCountext.save()
+            }
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return true
         }
-        else {
-            onFinish?(false)
-        }
+        return false
     }
     
-    func renamefile(fileId: Int, toFolderId: Int? = nil, toName: String? = nil, callCount: Int = 0, onFinish: (([String: Any]?) -> Void)?) {
-        
+    func renamefile(fileId: Int, toFolderId: Int? = nil, toName: String? = nil) async -> [String: Any]? {
         guard toFolderId != nil || toName != nil else {
-            onFinish?(nil)
-            return
+            return nil
         }
-        
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.renamefile(fileId: fileId, toFolderId: toFolderId, toName: toName, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+        do {
+            return try await callWithRetry(action: { [self] in
+                var rename = "fileid=\(fileId)&timeformat=timestamp"
+                if let toFolderId = toFolderId {
+                    rename += "&tofolderid=\(toFolderId)"
+                }
+                if let toName = toName {
+                    rename += "&toname=\(toName)"
+                }
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefile")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.httpBody = rename.data(using: .utf8)
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let metadata = json["metadata"] as? [String: Any] else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return metadata
+            })
         }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            var rename = "fileid=\(fileId)&timeformat=timestamp"
-            if let toFolderId = toFolderId {
-                rename += "&tofolderid=\(toFolderId)"
-            }
-            if let toName = toName {
-                rename += "&toname=\(toName)"
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefile")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = rename.data(using: .utf8)
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let metadata = json["metadata"] as? [String: Any] else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(metadata)
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
-                            self.renamefile(fileId: fileId, toFolderId: toFolderId, toName: toName, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return nil
         }
     }
 
-    func renamefolder(folderId: Int, toFolderId: Int? = nil, toName: String? = nil, callCount: Int = 0, onFinish: (([String: Any]?) -> Void)?) {
-        
+    func renamefolder(folderId: Int, toFolderId: Int? = nil, toName: String? = nil) async -> [String: Any]? {
         guard toFolderId != nil || toName != nil else {
-            onFinish?(nil)
-            return
+            return nil
         }
-        
-        if lastCall.timeIntervalSinceNow > -self.callWait || callSemaphore.wait(wallTimeout: .now()+5) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.renamefolder(folderId: folderId, toFolderId: toFolderId, toName: toName, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
+        do {
+            return try await callWithRetry(action: { [self] in
+                var rename = "folderid=\(folderId)&timeformat=timestamp"
+                if let toFolderId = toFolderId {
+                    rename += "&tofolderid=\(toFolderId)"
+                }
+                if let toName = toName {
+                    rename += "&toname=\(toName)"
+                }
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefolder")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.httpBody = rename.data(using: .utf8)
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = json["result"] as? Int, result == 0 else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                guard let metadata = json["metadata"] as? [String: Any] else {
+                    print(json)
+                    throw RetryError.Retry
+                }
+                return metadata
+            })
         }
-        self.lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            var rename = "folderid=\(folderId)&timeformat=timestamp"
-            if let toFolderId = toFolderId {
-                rename += "&tofolderid=\(toFolderId)"
-            }
-            if let toName = toName {
-                rename += "&toname=\(toName)"
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefolder")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = rename.data(using: .utf8)
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    guard let result = json["result"] as? Int, result == 0 else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    guard let metadata = json["metadata"] as? [String: Any] else {
-                        print(json)
-                        throw RetryError.Retry
-                    }
-                    onFinish?(metadata)
-                }
-                catch RetryError.Retry {
-                    if callCount < 20 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+self.callWait+Double.random(in: 0..<self.callWait)) {
-                            self.renamefolder(folderId: folderId, toFolderId: toFolderId, toName: toName, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
-                }
-            }
-            task.resume()
+        catch {
+            return nil
         }
     }
 
-    override func renameItem(fileId: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func renameItem(fileId: String, newname: String) async -> String? {
         os_log("%{public}@", log: log, type: .debug, "renameItem(pCloud:\(storageName ?? "") \(fileId) \(newname)")
         
         if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            renamefile(fileId: id, toName: newname) { metadata in
-                guard let metadata = metadata, let newid = metadata["id"] as? String else {
-                    onFinish?(nil)
-                    return
-                }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                self.storeItem(item: metadata, context: backgroundContext)
-                backgroundContext.perform {
-                    try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(newid)
-                    }
-                }
+            guard let metadata = await renamefile(fileId: id, toName: newname), let newid = metadata["id"] as? String else {
+                return nil
             }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            storeItem(item: metadata, context: backgroundContext)
+            await backgroundContext.perform {
+                try? backgroundContext.save()
+            }
+            return newid
         }
         else if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            renamefolder(folderId: id, toName: newname) { metadata in
-                guard let metadata = metadata, let newid = metadata["id"] as? String else {
-                    onFinish?(nil)
-                    return
-                }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                self.storeItem(item: metadata, context: backgroundContext)
-                backgroundContext.perform {
-                    try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(newid)
-                    }
-                }
+            guard let metadata = await renamefolder(folderId: id, toName: newname), let newid = metadata["id"] as? String else {
+                return nil
+            }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            storeItem(item: metadata, context: backgroundContext)
+            await backgroundContext.perform {
+                try? backgroundContext.save()
+            }
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return newid
+        }
+        return nil
+    }
+
+    @MainActor
+    func getParentPath(parentId: String) -> String? {
+        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        
+        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
+        if let result = try? viewContext.fetch(fetchRequest) {
+            if let items = result as? [RemoteData] {
+                return items.first?.path ?? ""
             }
         }
-        else {
-            onFinish?(nil)
-        }
+        return nil
     }
     
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if fromParentId == toParentId {
-            onFinish?(nil)
-            return
+            return nil
         }
         if !(fromParentId == "" || fromParentId.starts(with: "d")) || !(toParentId == "" || toParentId.starts(with: "d")) {
-            onFinish?(nil)
-            return
+            return nil
         }
         let toId = Int(toParentId.dropFirst()) ?? 0
         
@@ -1003,372 +656,177 @@ public class pCloudStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         
         if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            renamefolder(folderId: id, toFolderId: toId) { metadata in
-                guard let metadata = metadata, let newid = metadata["id"] as? String else {
-                    onFinish?(nil)
-                    return
-                }
-                var toParentPath = ""
-                if toParentId != "" {
-                    if Thread.isMainThread {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                        
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            if let items = result as? [RemoteData] {
-                                toParentPath = items.first?.path ?? ""
-                            }
-                        }
-                    }
-                    else {
-                        DispatchQueue.main.sync {
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                if let items = result as? [RemoteData] {
-                                    toParentPath = items.first?.path ?? ""
-                                }
-                            }
-                        }
-                    }
-                }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
-                backgroundContext.perform {
-                    try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(newid)
-                    }
-                }
+            guard let metadata = await renamefolder(folderId: id, toFolderId: toId), let newid = metadata["id"] as? String else {
+                return nil
             }
+            var toParentPath = ""
+            if toParentId != "" {
+                toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
+            }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
+            await backgroundContext.perform {
+                try? backgroundContext.save()
+            }
+            return newid
         }
         else if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            renamefile(fileId: id, toFolderId: toId) { metadata in
-                guard let metadata = metadata, let newid = metadata["id"] as? String else {
-                    onFinish?(nil)
-                    return
-                }
-                var toParentPath = ""
-                if toParentId != "" {
-                    if Thread.isMainThread {
-                        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                        
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            if let items = result as? [RemoteData] {
-                                toParentPath = items.first?.path ?? ""
-                            }
-                        }
-                    }
-                    else {
-                        DispatchQueue.main.sync {
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                if let items = result as? [RemoteData] {
-                                    toParentPath = items.first?.path ?? ""
-                                }
-                            }
-                        }
-                    }
-                }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                self.storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
-                backgroundContext.perform {
-                    try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(newid)
-                    }
-                }
+            guard let metadata = await renamefile(fileId: id, toFolderId: toId), let newid = metadata["id"] as? String else {
+                return nil
             }
+            var toParentPath = ""
+            if toParentId != "" {
+                toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
+            }
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
+            await backgroundContext.perform {
+                try? backgroundContext.save()
+            }
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return newid
         }
-        else {
-            onFinish?(nil)
-        }
+        return nil
     }
-    
-    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "uploadFile(pCloud:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
+
+    override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
+        defer {
+            try? FileManager.default.removeItem(at: target)
+        }
         
         guard parentId == "" || parentId.starts(with: "d") else {
-            try? FileManager.default.removeItem(at: target)
-            onFinish?(nil)
-            return
+            return nil
         }
         let folderId = Int(parentId.dropFirst()) ?? 0
-
-        let fileSize: UInt64
         do {
-            let attr = try FileManager.default.attributesOfItem(atPath: target.path)
-            fileSize = attr[.size] as! UInt64
-        }
-        catch {
-            try? FileManager.default.removeItem(at: target)
-            onFinish?(nil)
-            return
-        }
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "uploadFile(pCloud:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
 
-        guard let targetStream = InputStream(url: target) else {
-            try? FileManager.default.removeItem(at: target)
-            onFinish?(nil)
-            return
-        }
-        targetStream.open()
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let fileSize = attr[.size] as! UInt64
 
-        var parentPath = "\(storageName ?? ""):/"
-        if parentId != "" {
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
+                var parentPath = "\(storageName ?? ""):/"
+                if parentId != "" {
+                    parentPath = await getParentPath(parentId: parentId) ?? parentPath
                 }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            parentPath = items.first?.path ?? ""
+                let handle = try FileHandle(forReadingFrom: target)
+                defer {
+                    try? handle.close()
+                }
+                let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
+                
+                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/uploadfile")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                let boundary = "Boundary-\(UUID().uuidString)"
+                request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+                
+                let boundaryText = "--\(boundary)\r\n"
+                var body = Data()
+                var footer = Data()
+                
+                body.append(boundaryText.data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"folderid\"\r\n\r\n".data(using: .utf8)!)
+                body.append(String(folderId).data(using: .utf8)!)
+                body.append("\r\n".data(using: .utf8)!)
+                body.append(boundaryText.data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"timeformat\"\r\n\r\n".data(using: .utf8)!)
+                body.append("timestamp".data(using: .utf8)!)
+                body.append("\r\n".data(using: .utf8)!)
+                
+                body.append(boundaryText.data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; filename=\"\(uploadname)\"\r\n".data(using: .utf8)!)
+                body.append("Content-Length: \(fileSize)\r\n\r\n".data(using: .utf8)!)
+                //file body is here
+                footer.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+                
+                guard let stream = OutputStream(url: tmpurl, append: false) else {
+                    throw RetryError.Retry
+                }
+                defer {
+                    try? FileManager.default.removeItem(at: tmpurl)
+                }
+                stream.open()
+                do {
+                    defer {
+                        stream.close()
+                    }
+                    if body.withUnsafeBytes({
+                        stream.write($0.baseAddress!, maxLength: body.count)
+                    }) < body.count {
+                        throw RetryError.Retry
+                    }
+                    var offset = 0
+                    while offset < fileSize {
+                        guard let srcData = try handle.read(upToCount: 100*320*1024) else {
+                            throw RetryError.Retry
+                        }
+                        offset += srcData.count
+                        if srcData.withUnsafeBytes({
+                            stream.write($0.baseAddress!, maxLength: srcData.count)
+                        }) < srcData.count {
+                            throw RetryError.Retry
                         }
                     }
+                    if footer.withUnsafeBytes({
+                        stream.write($0.baseAddress!, maxLength: footer.count)
+                    }) < footer.count {
+                        throw RetryError.Retry
+                    }
                 }
-            }
-        }
-        uploadSemaphore.wait()
-        self.checkToken() { success in
-            let onFinish: (String?)->Void = { id in
-                self.uploadSemaphore.signal()
-                onFinish?(id)
-            }
-            guard success else {
-                targetStream.close()
-                try? FileManager.default.removeItem(at: target)
-                onFinish(nil)
-                return
-            }
-            
-            var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/uploadfile")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            let boundary = "Boundary-\(UUID().uuidString)"
-            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-            
-            let boundaryText = "--\(boundary)\r\n"
-            var body = Data()
-            var footer = Data()
-            
-            body.append(boundaryText.data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"folderid\"\r\n\r\n".data(using: .utf8)!)
-            body.append(String(folderId).data(using: .utf8)!)
-            body.append("\r\n".data(using: .utf8)!)
-            body.append(boundaryText.data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"timeformat\"\r\n\r\n".data(using: .utf8)!)
-            body.append("timestamp".data(using: .utf8)!)
-            body.append("\r\n".data(using: .utf8)!)
-
-            body.append(boundaryText.data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; filename=\"\(uploadname)\"\r\n".data(using: .utf8)!)
-            body.append("Content-Length: \(fileSize)\r\n\r\n".data(using: .utf8)!)
-            //file body is here
-            footer.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-            
-            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-            guard let outStream = OutputStream(url: tmpurl, append: false) else {
-                onFinish(nil)
-                return
-            }
-            outStream.open()
-            
-            guard body.withUnsafeBytes({ pointer in
-                outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
-            }) == body.count else {
-                outStream.close()
-                try? FileManager.default.removeItem(at: tmpurl)
-                targetStream.close()
-                try? FileManager.default.removeItem(at: target)
-                onFinish(nil)
-                return
-            }
-            
-            var offset = 0
-            while offset < fileSize {
-                var buflen = Int(fileSize) - offset
-                if buflen > 1024*1024 {
-                    buflen = 1024*1024
-                }
-                var buf:[UInt8] = [UInt8](repeating: 0, count: buflen)
-                let len = targetStream.read(&buf, maxLength: buf.count)
-                if len <= 0 || outStream.write(buf, maxLength: len) != len {
-                    print(targetStream.streamError!)
-                    outStream.close()
-                    try? FileManager.default.removeItem(at: tmpurl)
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish(nil)
-                    return
-                }
-                offset += len
-            }
-
-            guard footer.withUnsafeBytes({ pointer in
-                outStream.write(pointer.bindMemory(to: UInt8.self).baseAddress!, maxLength: pointer.count)
-            }) == footer.count else {
-                outStream.close()
-                try? FileManager.default.removeItem(at: tmpurl)
-                targetStream.close()
-                try? FileManager.default.removeItem(at: target)
-                onFinish(nil)
-                return
-            }
-
-            targetStream.close()
-            outStream.close()
-
-            do {
-                let attr = try FileManager.default.attributesOfItem(atPath: tmpurl.path)
-                let fileSize = attr[.size] as! UInt64
                 
-                UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
-            }
-            catch {
-                print(error)
-                try? FileManager.default.removeItem(at: tmpurl)
-                try? FileManager.default.removeItem(at: target)
-                onFinish(nil)
-                return
-            }
-            
-            let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
-            //config.isDiscretionary = true
-            config.sessionSendsLaunchEvents = true
-            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-            self.sessions += [session]
-            
-            let task = session.uploadTask(with: request, fromFile: tmpurl)
-            let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-            self.taskQueue.async {
-                self.task_upload[taskid] = ["data": Data(), "tmpfile": tmpurl, "parentId": parentId, "parentPath": parentPath]
-                self.onFinsh_upload[taskid] = onFinish
-                task.resume()
-            }
+                let attr2 = try FileManager.default.attributesOfItem(atPath: tmpurl.path)
+                let fileSize2 = attr2[.size] as! UInt64
+                try await progress?(0, Int64(fileSize2))
+
+                await uploadProgressManeger.setCallback(url: request.url!, total: Int64(fileSize2), callback: progress)
+                defer {
+                    Task { await uploadProgressManeger.removeCallback(url: request.url!) }
+                }
+
+                guard let (data, _) = try? await URLSession.shared.upload(for: request, fromFile: tmpurl, delegate: self) else {
+                    throw RetryError.Retry
+                }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                guard let result = object["result"] as? Int, result == 0 else {
+                    print(object)
+                    throw RetryError.Retry
+                }
+                guard let metadatas = object["metadata"] as? [[String: Any]], let metadata = metadatas.first else {
+                    print(object)
+                    throw RetryError.Retry
+                }
+                guard let newid = metadata["id"] as? String else {
+                    print(object)
+                    throw RetryError.Retry
+                }
+                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundCountext)
+                await backgroundCountext.perform {
+                    try? backgroundCountext.save()
+                }
+                try await progress?(Int64(fileSize2), Int64(fileSize2))
+                return newid
+            }, semaphore: uploadSemaphore, maxCall: 3)
         }
-    }
-
-    var task_upload = [String: [String: Any]]()
-    var onFinsh_upload = [String: ((String?)->Void)?]()
-    var sessions = [URLSession]()
-    let taskQueue = DispatchQueue(label: "taskDict")
-
-    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        CloudFactory.shared.urlSessionDidFinishCallback?(session)
-    }
-
-    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let taskid = (session.configuration.identifier ?? "") + ".\(dataTask.taskIdentifier)"
-        if var taskdata = taskQueue.sync(execute: { self.task_upload[taskid] }) {
-            guard var recvData = taskdata["data"] as? Data else {
-                return
-            }
-            recvData.append(data)
-            taskdata["data"] = recvData
-            taskQueue.async {
-                self.task_upload[taskid] = taskdata
-            }
+        catch {
+            return nil
         }
     }
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        print("\(bytesSent) / \(totalBytesSent) / \(totalBytesExpectedToSend)")
-    }
-    
-    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        print("d \(bytesWritten) / \(totalBytesWritten) / \(totalBytesExpectedToWrite)")
-    }
-    
-
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-        guard let taskdata = taskQueue.sync(execute: {
-            self.task_upload.removeValue(forKey: taskid)
-        }) else {
-            print(task.response ?? "")
-            return
-        }
-        guard let onFinish = taskQueue.sync(execute: {
-            self.onFinsh_upload.removeValue(forKey: taskid)
-        }) else {
-            print("onFinish not found")
-            return
-        }
-        if let tmp = taskdata["tmpfile"] as? URL {
-            try? FileManager.default.removeItem(at: tmp)
-        }
-        do {
-            guard let parentId = taskdata["parentId"] as? String, let parentPath = taskdata["parentPath"] as? String else {
-                print(task.response ?? "")
-                throw RetryError.Failed
-            }
-            if let error = error {
-                print(error)
-                throw RetryError.Failed
-            }
-            guard let httpResponse = task.response as? HTTPURLResponse else {
-                print(task.response ?? "")
-                throw RetryError.Failed
-            }
-            guard let data = taskdata["data"] as? Data else {
-                print(httpResponse)
-                throw RetryError.Failed
-            }
-            print(String(data: data, encoding: .utf8) ?? "")
-            guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                throw RetryError.Failed
-            }
-            guard let result = object["result"] as? Int, result == 0 else {
-                print(object)
-                throw RetryError.Failed
-            }
-            guard let metadatas = object["metadata"] as? [[String: Any]], let metadata = metadatas.first else {
-                print(object)
-                throw RetryError.Failed
-            }
-            guard let newid = metadata["id"] as? String else {
-                print(object)
-                throw RetryError.Failed
-            }
-            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            self.storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundCountext)
-            backgroundCountext.perform {
-                try? backgroundCountext.save()
-                DispatchQueue.global().async {
-                    onFinish?(newid)
+        if let url = task.originalRequest?.url {
+            Task {
+                do {
+                    try await uploadProgressManeger.progress(url: url, currnt: totalBytesSent)
+                }
+                catch {
+                    task.cancel()
                 }
             }
         }
-        catch {
-            onFinish?(nil)
-        }
-    }
-}
-
-@available(iOS 13.0, *)
-extension pCloudStorage: ASWebAuthenticationPresentationContextProviding {
-    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return UIApplication.topViewController()!.view.window!
     }
 }

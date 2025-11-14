@@ -10,8 +10,6 @@ import Foundation
 import CoreData
 
 public class FileCache {
-    public var diskQueue = DispatchQueue(label: "FileEnumerate")
-
     public var cacheMaxSize: Int {
         get {
             return UserDefaults.standard.integer(forKey: "networkCacheSize")
@@ -21,156 +19,221 @@ public class FileCache {
         }
     }
     
-    public func getPartialFile(storage: String, id: String, offset: Int64, size: Int64) -> Data? {
-        var ret: Data?
-        let group = DispatchGroup()
-        group.enter()
-        CloudFactory.shared.data.getData(storage: storage, fileId: id) { item1 in
-            guard let orgItem = item1 else {
-                group.leave()
-                return
-            }
-            self.persistentContainer.performBackgroundTask { context in
-                defer {
-                    group.leave()
+    actor DiskAccesser {
+        var cacheSize: UInt64 = 0
+        var size: UInt64 {
+            get {
+                if cacheSize > 0 {
+                    return cacheSize
                 }
-                var targetURL: URL?
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
-                fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == 0", storage, id)
-                do{
-                    let items = try context.fetch(fetchrequest)
-                    guard let item = items.first as? FileCacheItem else {
-                        return
-                    }
-                    if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
-                        if let target = item.filename?.uuidString {
-                            let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
-                            let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
-                            self.diskQueue.async {
-                                try? FileManager.default.removeItem(at: target_path)
-                            }
-                        }
-                        context.delete(item)
-                        try context.save()
-                        return
-                    }
-                    if let target = item.filename?.uuidString, item.orgSize == item.chunkSize {
+                guard let base = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appending(path: "NetCache") else {
+                    return 0
+                }
+                cacheSize = sumTotal(url: base)
+                return cacheSize
+            }
+        }
+        
+        func removeItem(url: URL) {
+            if let attr = try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)) {
+                let filesize = attr[.size] as? UInt64 ?? 0
+                if cacheSize > filesize {
+                    cacheSize -= filesize
+                }
+                else {
+                    cacheSize = 0
+                }
+            }
+            try? FileManager.default.removeItem(at: url)
+        }
+        
+        func write(data: Data, url: URL) throws {
+            try data.write(to: url)
+            cacheSize += UInt64(data.count)
+        }
+        
+        func sumTotal(url: URL) -> UInt64 {
+            let resourceKeys = Set<URLResourceKey>([.fileSizeKey])
+            let directoryEnumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(resourceKeys), options: .skipsHiddenFiles)!
+             
+            var allocSize: UInt64 = 0
+            for case let fileURL as URL in directoryEnumerator {
+                guard let resourceValues = try? fileURL.resourceValues(forKeys: resourceKeys),
+                    let size = resourceValues.fileSize
+                    else {
+                        continue
+                }
+                allocSize += UInt64(size)
+            }
+            return allocSize
+        }
+    }
+    
+    let diskAccesser = DiskAccesser()
+
+    public func getPartialFile(storage: String, id: String, offset: Int64, size: Int64) async -> Data? {
+        var ret: Data?
+        guard cacheMaxSize > 0 else {
+            return nil
+        }
+        guard let orgItem = await CloudFactory.shared.data.getData(storage: storage, fileId: id) else {
+            return nil
+        }
+        await persistentContainer.performBackgroundTask { context in
+            var targetURL: URL?
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
+            fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == 0", storage, id)
+            do{
+                let items = try context.fetch(fetchrequest)
+                guard let item = items.first as? FileCacheItem else {
+                    return
+                }
+                if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
+                    if let target = item.filename?.uuidString {
                         let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
                         let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
-                        if FileManager.default.fileExists(atPath: target_path.path) {
-                            targetURL = target_path
-                            item.rdate = Date()
-                            try context.save()
-                        }
-                        else {
-                            context.delete(item)
-                            try context.save()
+                        Task {
+                            await self.diskAccesser.removeItem(url: target_path)
                         }
                     }
+                    context.delete(item)
+                    try context.save()
+                    return
                 }
-                catch{
-                    print(error)
+                if let target = item.filename?.uuidString, item.orgSize == item.chunkSize {
+                    let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
+                    let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
+                    if FileManager.default.fileExists(atPath: target_path.path) {
+                        targetURL = target_path
+                        item.rdate = Date()
+                        try context.save()
+                    }
+                    else {
+                        context.delete(item)
+                        try context.save()
+                    }
                 }
-                if let target = targetURL {
-                    do {
-                        let hFile = try FileHandle(forReadingFrom: target)
-                        defer {
-                            do {
-                                if #available(iOS 13.0, *) {
-                                    try hFile.close()
-                                } else {
-                                    hFile.closeFile()
-                                }
-                            }
-                            catch {
-                                print(error)
-                            }
+            }
+            catch{
+                print(error)
+            }
+            if let target = targetURL {
+                do {
+                    let hFile = try FileHandle(forReadingFrom: target)
+                    defer {
+                        do {
+                            try hFile.close()
                         }
-                        if #available(iOS 13.0, *) {
-                            try hFile.seek(toOffset: UInt64(offset))
-                        } else {
-                            hFile.seek(toFileOffset: UInt64(offset))
+                        catch {
+                            print(error)
                         }
-                        if size < 0 {
-                            ret = hFile.readDataToEndOfFile()
-                            return
-                        }
-                        ret = hFile.readData(ofLength: Int(size))
+                    }
+                    try hFile.seek(toOffset: UInt64(offset))
+                    if size < 0 {
+                        ret = hFile.readDataToEndOfFile()
                         return
                     }
-                    catch {
-                        print(error)
-                    }
+                    ret = hFile.readData(ofLength: Int(size))
+                    return
+                }
+                catch {
+                    print(error)
                 }
             }
         }
-        let _ = group.wait()
         return ret
     }
-    
-    public func getCache(storage: String, id: String, offset: Int64, size: Int64) -> URL? {
+
+    public func getCache(storage: String, id: String, offset: Int64, size: Int64) async -> URL? {
         var ret: URL? = nil
         guard cacheMaxSize > 0 else {
             return nil
         }
-        let group = DispatchGroup()
-        group.enter()
-        CloudFactory.shared.data.getData(storage: storage, fileId: id) { item1 in
-            guard let orgItem = item1 else {
-                group.leave()
-                return
-            }
-            self.persistentContainer.performBackgroundTask { context in
-                defer {
-                    group.leave()
-                }
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
-                fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld", storage, id, offset)
-                do{
-                    let items = try context.fetch(fetchrequest)
-                    guard let item = items.first as? FileCacheItem else {
-                        return
-                    }
-                    if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
-                        if let target = item.filename?.uuidString {
-                            let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
-                            let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
-                            self.diskQueue.async {
-                                try? FileManager.default.removeItem(at: target_path)
-                            }
-                        }
-                        context.delete(item)
-                        try context.save()
-                        return
-                    }
-                    if let target = item.filename?.uuidString, (size == item.chunkSize || size < 0) {
-                        let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
-                        let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
-                        if FileManager.default.fileExists(atPath: target_path.path) {
-                            ret = target_path
-                            item.rdate = Date()
-                            try context.save()
-                        }
-                        else {
-                            context.delete(item)
-                            try context.save()
-                        }
-                    }
-                }
-                catch{
-                    print(error)
+        guard let orgItem = await CloudFactory.shared.data.getData(storage: storage, fileId: id) else {
+            return nil
+        }
+        await persistentContainer.performBackgroundTask { context in
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
+            fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld", storage, id, offset)
+            do{
+                let items = try context.fetch(fetchrequest)
+                guard let item = items.first as? FileCacheItem else {
                     return
                 }
+                if orgItem.mdate != item.mdate || orgItem.size != item.orgSize {
+                    if let target = item.filename?.uuidString {
+                        let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
+                        let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
+                        Task {
+                            await self.diskAccesser.removeItem(url: target_path)
+                        }
+                    }
+                    context.delete(item)
+                    try context.save()
+                    return
+                }
+                if let target = item.filename?.uuidString, (size == item.chunkSize || size < 0) {
+                    let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
+                    let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
+                    if FileManager.default.fileExists(atPath: target_path.path) {
+                        ret = target_path
+                        item.rdate = Date()
+                        try context.save()
+                    }
+                    else {
+                        context.delete(item)
+                        try context.save()
+                    }
+                }
             }
-
+            catch{
+                print(error)
+                return
+            }
         }
-        let _ = group.wait()
         return ret
     }
 
-    public func saveFile(storage: String, id: String, data: Data) {
-        if getCacheSize() > cacheMaxSize {
-            increseFreeSpace()
+    public func remove(storage: String, id: String) async {
+        let backgroundContext = persistentContainer.newBackgroundContext()
+        var removeFiles: [URL] = []
+        await backgroundContext.perform {
+            do {
+                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
+                fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@", storage, id)
+                if let items = try backgroundContext.fetch(fetchrequest) as? [FileCacheItem], !items.isEmpty {
+                    defer {
+                        try? backgroundContext.save()
+                    }
+                    for item in items {
+                        if let target = item.filename?.uuidString {
+                            let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true)
+                            let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
+                            removeFiles.append(target_path)
+                        }
+                        backgroundContext.delete(item)
+                    }
+                }
+            }
+            catch {
+                print(error)
+            }
+        }
+        await withTaskGroup { group in
+            for url in removeFiles {
+                group.addTask {
+                    await self.diskAccesser.removeItem(url: url)
+                }
+            }
+        }
+    }
+
+    public func saveFile(storage: String, id: String, data: Data) async {
+        guard cacheMaxSize > 0 else {
+            return
+        }
+        if await getCacheSize() > cacheMaxSize {
+            await increseFreeSpace()
         }
         
         do {
@@ -180,52 +243,48 @@ public class FileCache {
             let target = newId.uuidString
             let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true)
             try FileManager.default.createDirectory(at: target_path, withIntermediateDirectories: true, attributes: nil)
-            try diskQueue.sync {
-                try data.write(to: target_path.appendingPathComponent(target))
-            }
+            try await diskAccesser.write(data: data, url: target_path.appendingPathComponent(target))
 
-            persistentContainer.performBackgroundTask { context in
-                let item1 = CloudFactory.shared.data.getData(storage: storage, fileId: id)
-                guard let orgItem = item1 else {
-                    try? FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
-                    return
-                }
-
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
-                fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == 0 && chunkSize == %lld", storage, id, size)
-                do {
-                    if let items = try context.fetch(fetchrequest) as? [FileCacheItem], items.count > 0 {
-                        try FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
+            return await persistentContainer.performBackgroundTask { context in
+                Task {
+                    guard let orgItem = await CloudFactory.shared.data.getData(storage: storage, fileId: id) else {
+                        await self.diskAccesser.removeItem(url: target_path.appendingPathComponent(target))
                         return
                     }
-                }
-                catch {
-                    print(error)
-                }
 
-                let newitem = FileCacheItem(context: context)
-                newitem.filename = newId
-                newitem.storage = storage
-                newitem.id = id
-                newitem.chunkSize = size
-                newitem.chunkOffset = 0
-                newitem.rdate = Date()
-                newitem.mdate = orgItem.mdate
-                newitem.orgSize = orgItem.size
+                    let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
+                    fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == 0 && chunkSize == %lld", storage, id, size)
+                    do {
+                        if let items = try context.fetch(fetchrequest) as? [FileCacheItem], items.count > 0 {
+                            await self.diskAccesser.removeItem(url: target_path.appendingPathComponent(target))
+                            return
+                        }
+                    }
+                    catch {
+                        print(error)
+                    }
 
-                try? context.save()
+                    let newitem = FileCacheItem(context: context)
+                    newitem.filename = newId
+                    newitem.storage = storage
+                    newitem.id = id
+                    newitem.chunkSize = size
+                    newitem.chunkOffset = 0
+                    newitem.rdate = Date()
+                    newitem.mdate = orgItem.mdate
+                    newitem.orgSize = orgItem.size
+
+                    try? context.save()
+                }
             }
         }
         catch {
             print(error)
         }
     }
-    
-    public func saveCache(storage: String, id: String, offset: Int64, data: Data) {
+
+    public func saveCache(storage: String, id: String, offset: Int64, data: Data) async {
         guard cacheMaxSize > 0 else {
-            if getCacheSize() > 0 {
-                deleteAllCache()
-            }
             return
         }
         do {
@@ -235,64 +294,58 @@ public class FileCache {
             let target = newId.uuidString
             let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true)
             try FileManager.default.createDirectory(at: target_path, withIntermediateDirectories: true, attributes: nil)
-            try diskQueue.sync {
-                try data.write(to: target_path.appendingPathComponent(target))
+            try await diskAccesser.write(data: data, url: target_path.appendingPathComponent(target))
+            
+            if await getCacheSize() > cacheMaxSize {
+                await increseFreeSpace()
             }
             
-            if getCacheSize() > cacheMaxSize {
-                increseFreeSpace()
-            }
-            
-            persistentContainer.performBackgroundTask { context in
-                let item1 = CloudFactory.shared.data.getData(storage: storage, fileId: id)
-                guard let orgItem = item1 else {
-                    try? FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
-                    return
-                }
+            return await persistentContainer.performBackgroundTask { context in
+                Task {
+                    let item1 = await CloudFactory.shared.data.getData(storage: storage, fileId: id)
 
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
-                fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld && chunkSize == %lld", storage, id, offset, size)
-                do {
-                    if let items = try context.fetch(fetchrequest) as? [FileCacheItem], items.count > 0 {
-                        try FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
+                    guard let orgItem = item1 else {
+                        try? FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
                         return
                     }
-                }
-                catch {
-                    print(error)
-                }
 
-                let newitem = FileCacheItem(context: context)
-                newitem.filename = newId
-                newitem.storage = storage
-                newitem.id = id
-                newitem.chunkSize = size
-                newitem.chunkOffset = offset
-                newitem.rdate = Date()
-                newitem.mdate = orgItem.mdate
-                newitem.orgSize = orgItem.size
+                    let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
+                    fetchrequest.predicate = NSPredicate(format: "storage == %@ && id == %@ && chunkOffset == %lld && chunkSize == %lld", storage, id, offset, size)
+                    do {
+                        if let items = try context.fetch(fetchrequest) as? [FileCacheItem], items.count > 0 {
+                            try FileManager.default.removeItem(at: target_path.appendingPathComponent(target))
+                            return
+                        }
+                    }
+                    catch {
+                        print(error)
+                    }
 
-                try? context.save()
+                    let newitem = FileCacheItem(context: context)
+                    newitem.filename = newId
+                    newitem.storage = storage
+                    newitem.id = id
+                    newitem.chunkSize = size
+                    newitem.chunkOffset = offset
+                    newitem.rdate = Date()
+                    newitem.mdate = orgItem.mdate
+                    newitem.orgSize = orgItem.size
+
+                    try? context.save()
+                }
             }
         }
         catch {
             print(error)
         }
     }
-    
-    public func deleteAllCache() {
+
+    public func deleteAllCache() async {
         guard let base = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true) else {
             return
         }
-        diskQueue.async {
-            do {
-                try FileManager.default.removeItem(at: base)
-            }
-            catch {
-                print(error)
-            }
-        }
-        persistentContainer.performBackgroundTask { context in
+        await diskAccesser.removeItem(url: base)
+        await persistentContainer.performBackgroundTask { context in
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
             fetchrequest.predicate = NSPredicate(value: true)
             do {
@@ -308,11 +361,11 @@ public class FileCache {
             }
         }
     }
-    
-    public func increseFreeSpace() {
+
+    public func increseFreeSpace() async {
         guard cacheMaxSize > 0 else {
-            if getCacheSize() > 0 {
-                deleteAllCache()
+            if await getCacheSize() > 0 {
+                await deleteAllCache()
             }
             return
         }
@@ -320,7 +373,7 @@ public class FileCache {
             return
         }
         let freesize = (attributes[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-        var incSize = getCacheSize() - cacheMaxSize
+        var incSize = await getCacheSize() - cacheMaxSize
         if freesize < 512*1024*1024 {
             let incSize2 = 512*1024*1024 - Int(freesize)
             if incSize < 0 {
@@ -334,7 +387,7 @@ public class FileCache {
         guard let base = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true) else {
             return
         }
-        persistentContainer.performBackgroundTask { context in
+        await persistentContainer.performBackgroundTask { context in
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "FileCacheItem")
             fetchrequest.predicate = NSPredicate(value: true)
             fetchrequest.sortDescriptors = [NSSortDescriptor(key: "rdate", ascending: true)]
@@ -350,14 +403,9 @@ public class FileCache {
                         }
                         delSize += Int(item.chunkSize)
                         delItems += [item]
-                        self.diskQueue.async {
-                            let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
-                            do {
-                                try FileManager.default.removeItem(at: target_path)
-                            }
-                            catch {
-                                print(error)
-                            }
+                        let target_path = base.appendingPathComponent(String(target.prefix(2)), isDirectory: true).appendingPathComponent(String(target.prefix(4).suffix(2)), isDirectory: true).appendingPathComponent(target)
+                        Task {
+                            await self.diskAccesser.removeItem(url: target_path)
                         }
                     }
                     for item in delItems {
@@ -372,26 +420,8 @@ public class FileCache {
         }
     }
     
-    public func getCacheSize() -> Int {
-        guard let base = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("NetCache", isDirectory: true) else {
-            return 0
-        }
-    
-        let resourceKeys = Set<URLResourceKey>([.fileAllocatedSizeKey])
-        return diskQueue.sync {
-            let directoryEnumerator = FileManager.default.enumerator(at: base, includingPropertiesForKeys: Array(resourceKeys), options: .skipsHiddenFiles)!
-             
-            var allocSize = 0
-            for case let fileURL as URL in directoryEnumerator {
-                guard let resourceValues = try? fileURL.resourceValues(forKeys: resourceKeys),
-                    let size = resourceValues.fileAllocatedSize
-                    else {
-                        continue
-                }
-                allocSize += size
-            }
-            return allocSize
-        }
+    public func getCacheSize() async -> Int {
+        return Int(await diskAccesser.size)
     }
     
     // MARK: - Core Data stack

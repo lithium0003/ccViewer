@@ -7,7 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "player_main.h"
+#import <ffplayer/player_main.h>
 
 //! Project version number for ffplayer.
 FOUNDATION_EXPORT double ffplayerVersionNumber;

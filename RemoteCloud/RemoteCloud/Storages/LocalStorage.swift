@@ -19,31 +19,28 @@ public class LocalStorage: RemoteStorageBase {
         rootName = ""
     }
 
-    public override func auth(onFinish: ((Bool) -> Void)?) -> Void {
-        onFinish?(true)
-    }
-    
     public override func getStorageType() -> CloudStorages {
         return .Local
     }
 
-    override func ListChildren(fileId: String = "", path: String = "", onFinish: (() -> Void)?) {
+    override func listChildren(fileId: String = "", path: String = "") async {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var targetURL = documentsURL
-        
+        print(documentsURL)
+
         if fileId != "" {
-            targetURL = targetURL.appendingPathComponent(fileId)
+            targetURL = targetURL.appendingPathComponent(fileId, conformingTo: .data)
         }
         
         guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: targetURL, includingPropertiesForKeys: nil) else {
-            onFinish?()
             return
         }
-        
+
         let backgroudContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-        backgroudContext.perform {
+        let storage = self.storageName ?? ""
+        await backgroudContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, self.storageName ?? "")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
             if let result = try? backgroudContext.fetch(fetchRequest) {
                 for object in result {
                     backgroudContext.delete(object as! NSManagedObject)
@@ -54,16 +51,13 @@ public class LocalStorage: RemoteStorageBase {
         for fileURL in fileURLs {
             storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: backgroudContext)
         }
-        backgroudContext.perform {
+        await backgroudContext.perform {
             try? backgroudContext.save()
-            DispatchQueue.global().async {
-                onFinish?()
-            }
         }
     }
     
     func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
-        guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path) else {
+        guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path(percentEncoded: false)) else {
             return
         }
         let id = getIdFromURL(url: item)
@@ -117,9 +111,9 @@ public class LocalStorage: RemoteStorageBase {
         }
     }
     
-    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
+    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async -> Data? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let targetURL = documentsURL.appendingPathComponent(fileId)
+        let targetURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         print(targetURL)
 
         var ret: Data?
@@ -128,21 +122,13 @@ public class LocalStorage: RemoteStorageBase {
             let hFile = try FileHandle(forReadingFrom: targetURL)
             defer {
                 do {
-                    if #available(iOS 13.0, *) {
-                        try hFile.close()
-                    } else {
-                        hFile.closeFile()
-                    }
+                    try hFile.close()
                 }
                 catch {
                     print(error)
                 }
             }
-            if #available(iOS 13.0, *) {
-                try hFile.seek(toOffset: UInt64(reqOffset))
-            } else {
-                hFile.seek(toFileOffset: UInt64(reqOffset))
-            }
+            try hFile.seek(toOffset: UInt64(reqOffset))
             if let size = length {
                 ret = hFile.readData(ofLength: Int(size))
             }
@@ -153,9 +139,7 @@ public class LocalStorage: RemoteStorageBase {
         catch {
             print(error)
         }
-        DispatchQueue.global().async {
-            onFinish?(ret)
-        }
+        return ret
     }
     
     func getIdFromURL(url: URL) -> String {
@@ -174,141 +158,124 @@ public class LocalStorage: RemoteStorageBase {
         return targetComponent.dropFirst(idx+2).joined(separator: "/")
     }
     
-    public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var targetURL = documentsURL
         
         if parentId != "" {
-            targetURL = documentsURL.appendingPathComponent(parentId, isDirectory: true)
+            targetURL = documentsURL.appendingPathComponent(parentId, conformingTo: .folder)
         }
-        targetURL = targetURL.appendingPathComponent(newname, isDirectory: true)
+        targetURL = targetURL.appendingPathComponent(newname, conformingTo: .folder)
         
         do {
             try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
             let id = getIdFromURL(url: targetURL)
-            backgroundContext.perform {
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?(id)
-                }
             }
+            return id
         }
         catch {
-            onFinish?(nil)
+            return nil
         }
     }
     
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    @MainActor
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 
         if fromParentId == toParentId {
-            onFinish?(nil)
-            return
+            return nil
         }
 
-        let fromURL = documentsURL.appendingPathComponent(fileId)
+        let fromURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         let name = fromURL.lastPathComponent
         var targetURL = documentsURL
         var parentPath = ""
         if toParentId != "" {
-            targetURL = documentsURL.appendingPathComponent(toParentId, isDirectory: true)
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
-                }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            parentPath = items.first?.path ?? ""
-                        }
-                    }
+            targetURL = documentsURL.appendingPathComponent(toParentId, conformingTo: .folder)
+            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+            if let result = try? viewContext.fetch(fetchRequest) {
+                if let items = result as? [RemoteData] {
+                    parentPath = items.first?.path ?? ""
                 }
             }
         }
         let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-        backgroundContext.perform {
+        let storage = self.storageName ?? ""
+        await backgroundContext.perform {
             let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
             if let result = try? backgroundContext.fetch(fetchRequest2) {
                 for object in result {
                     backgroundContext.delete(object as! NSManagedObject)
                 }
             }
         }
-        targetURL = targetURL.appendingPathComponent(name)
+        targetURL = targetURL.appendingPathComponent(name, conformingTo: .data)
         do {
             try FileManager.default.moveItem(at: fromURL, to: targetURL)
             self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
             let id = self.getIdFromURL(url: targetURL)
-            backgroundContext.perform {
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?(id)
-                }
             }
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return id
         }
         catch {
-            onFinish?(nil)
+            return nil
         }
     }
     
-    override func deleteItem(fileId: String, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
+    override func deleteItem(fileId: String) async -> Bool {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let targetURL = documentsURL.appendingPathComponent(fileId)
+        let targetURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
 
         do {
             try FileManager.default.removeItem(at: targetURL)
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            backgroundContext.performAndWait {
+            let storage = self.storageName ?? ""
+            await backgroundContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
                 if let result = try? backgroundContext.fetch(fetchRequest) {
                     for object in result {
                         backgroundContext.delete(object as! NSManagedObject)
                     }
                 }
-                
-                self.deleteChildRecursive(parent: fileId, context: backgroundContext)
             }
-            backgroundContext.perform {
+            deleteChildRecursive(parent: fileId, context: backgroundContext)
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?(true)
-                }
             }
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return true
         }
         catch {
-            onFinish?(false)
+            return false
         }
     }
     
-    override func renameItem(fileId: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func renameItem(fileId: String, newname: String) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let fromURL = documentsURL.appendingPathComponent(fileId)
-        let newURL = fromURL.deletingLastPathComponent().appendingPathComponent(newname)
+        let fromURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
+        let newURL = fromURL.deletingLastPathComponent().appendingPathComponent(newname, conformingTo: .data)
         
         do {
             try FileManager.default.moveItem(at: fromURL, to: newURL)
             var parentPath: String?
             var parentId: String?
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            backgroundContext.perform {
+            let storage = self.storageName ?? ""
+            await backgroundContext.perform {
                 let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
                 if let result = try? backgroundContext.fetch(fetchRequest2) as? [RemoteData] {
                     for object in result {
                         parentPath = object.path
@@ -320,107 +287,80 @@ public class LocalStorage: RemoteStorageBase {
                 }
             }
             self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-            backgroundContext.perform {
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                let id = self.getIdFromURL(url: newURL)
-                DispatchQueue.global().async {
-                    onFinish?(id)
-                }
             }
+            let newid = getIdFromURL(url: newURL)
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            return newid
         }
         catch {
-            onFinish?(nil)
+            return nil
         }
     }
     
-    override func changeTime(fileId: String, newdate: Date, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func changeTime(fileId: String, newdate: Date) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let targetURL = documentsURL.appendingPathComponent(fileId)
+        let targetURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         
         do {
-            try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path)
+            try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path(percentEncoded: false))
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             self.storeItem(item: targetURL, context: backgroundContext)
             let id = getIdFromURL(url: targetURL)
-            backgroundContext.perform {
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?(id)
-                }
             }
+            return id
         }
         catch {
-            onFinish?(nil)
+            return nil
         }
     }
     
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return NetworkRemoteItem(storage: storageName ?? "", id: fileId)
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(storage: storageName ?? "", id: fileId)
     }
     
-    public override func getRaw(path: String) -> RemoteItem? {
-        return NetworkRemoteItem(path: path)
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(path: path)
     }
     
-    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    @MainActor
+    override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var newURL = documentsURL
         if parentId != "" {
-            newURL = documentsURL.appendingPathComponent(parentId)
+            newURL = documentsURL.appendingPathComponent(parentId, conformingTo: .data)
         }
-        newURL = newURL.appendingPathComponent(uploadname)
+        newURL = newURL.appendingPathComponent(uploadname, conformingTo: .data)
         
         var parentPath = ""
         if parentId != "" {
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
-                }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            parentPath = items.first?.path ?? ""
-                        }
-                    }
+            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+            if let result = try? viewContext.fetch(fetchRequest) {
+                if let items = result as? [RemoteData] {
+                    parentPath = items.first?.path ?? ""
                 }
             }
         }
 
-        do {
-            let attr = try FileManager.default.attributesOfItem(atPath: target.path)
-            let fileSize = attr[.size] as! UInt64
-
-            UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
-            
-            try FileManager.default.moveItem(at: target, to: newURL)
-            
-            UploadManeger.shared.UploadProgress(identifier: sessionId, possition: Int(fileSize))
-            
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-            let id = self.getIdFromURL(url: newURL)
-            backgroundContext.perform {
-                try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?(id)
-                }
-            }
+        let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
+        let fileSize = attr[.size] as! UInt64
+        try await progress?(0, Int64(fileSize))
+        
+        try FileManager.default.moveItem(at: target, to: newURL)
+        
+        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
+        let id = self.getIdFromURL(url: newURL)
+        await backgroundContext.perform {
+            try? backgroundContext.save()
         }
-        catch {
-            onFinish?(nil)
-        }
+        try await progress?(Int64(fileSize), Int64(fileSize))
+        return id
     }
-    
 }

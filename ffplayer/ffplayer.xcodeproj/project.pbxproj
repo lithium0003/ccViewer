@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 52;
+	objectVersion = 90;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,46 +12,21 @@
 		3C11C10A22442985006EA640 /* player_param.h in Headers */ = {isa = PBXBuildFile; fileRef = 3C11C1052243E8A0006EA640 /* player_param.h */; };
 		3C11C10D224429EC006EA640 /* player_main.h in Headers */ = {isa = PBXBuildFile; fileRef = 3C11C10B224429EC006EA640 /* player_main.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		3C11C10E224429EC006EA640 /* player_main.c in Sources */ = {isa = PBXBuildFile; fileRef = 3C11C10C224429EC006EA640 /* player_main.c */; };
-		3C4009382242CB9D0028A45A /* ffplayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40092E2242CB9D0028A45A /* ffplayer.framework */; };
-		3C40093D2242CB9D0028A45A /* ffplayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C40093C2242CB9D0028A45A /* ffplayerTests.swift */; };
 		3C40093F2242CB9D0028A45A /* ffplayer.h in Headers */ = {isa = PBXBuildFile; fileRef = 3C4009312242CB9D0028A45A /* ffplayer.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		3C40095C2242D2640028A45A /* GameController.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40095B2242D2640028A45A /* GameController.framework */; };
-		3C40095E2242D2730028A45A /* CoreMotion.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40095D2242D2730028A45A /* CoreMotion.framework */; };
-		3C4009602242D27E0028A45A /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40095F2242D27E0028A45A /* CoreGraphics.framework */; };
-		3C4009622242D28F0028A45A /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009612242D28F0028A45A /* AudioToolbox.framework */; };
-		3C4009642242D29A0028A45A /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009632242D29A0028A45A /* CoreAudio.framework */; };
-		3C4009662242D2B20028A45A /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009652242D2B20028A45A /* QuartzCore.framework */; };
-		3C4009682242D2E70028A45A /* OpenGLES.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009672242D2E70028A45A /* OpenGLES.framework */; platformFilter = ios; };
-		3C40096A2242D2FB0028A45A /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C4009692242D2FB0028A45A /* UIKit.framework */; };
-		3C40096C2242D30C0028A45A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40096B2242D30C0028A45A /* Foundation.framework */; };
-		3C40096E2242D3640028A45A /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40096D2242D3640028A45A /* AVFoundation.framework */; };
-		3C4009702242D3DD0028A45A /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C40096F2242D3DD0028A45A /* Metal.framework */; };
 		3C4009722242DBA00028A45A /* player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4009712242DBA00028A45A /* player.swift */; };
-		3C400D192242F4710028A45A /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D182242F4710028A45A /* libiconv.tbd */; };
-		3C400D1B2242F4850028A45A /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D1A2242F4850028A45A /* libbz2.tbd */; };
-		3C400D1D2242F4990028A45A /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D1C2242F4980028A45A /* libz.tbd */; };
-		3C400D1F224313270028A45A /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D1E224313270028A45A /* RemoteCloud.framework */; };
-		3C400D21224314AC0028A45A /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D20224314AC0028A45A /* VideoToolbox.framework */; };
-		3C400D23224315620028A45A /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3C400D22224315620028A45A /* CoreMedia.framework */; };
-		3CC4F165225B5E57001A7013 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CC4F164225B5E57001A7013 /* CoreServices.framework */; };
 		3F01301F2373A810004A2F8B /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3F0130212373A810004A2F8B /* Localizable.strings */; };
 		3F9151CD236C101A00E5EF65 /* packetQueue.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 3F9151CB236C101A00E5EF65 /* packetQueue.hpp */; };
 		3F9151CE236C101A00E5EF65 /* packetQueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3F9151CC236C101A00E5EF65 /* packetQueue.cpp */; };
 		3F9151D0236C107A00E5EF65 /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F9151CF236C107A00E5EF65 /* Media.xcassets */; };
 		3F9151D3236C10C700E5EF65 /* sound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F9151D1236C10C700E5EF65 /* sound.swift */; };
-		3F9151D4236C10C700E5EF65 /* playerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F9151D2236C10C700E5EF65 /* playerView.swift */; };
-		3F9151E7236CC2C700E5EF65 /* ffmpeg.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F9151E6236CC2C700E5EF65 /* ffmpeg.xcframework */; };
+		BE0572F22EC0CCB400515817 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572F12EC0CCB400515817 /* VideoToolbox.framework */; };
+		BE186EA82E9C0A1E002F6CC8 /* ffmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */; };
+		BE29134F2EB5483A00A22D12 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE29134E2EB5482D00A22D12 /* libbz2.tbd */; };
+		BE2913512EB5487F00A22D12 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913502EB5487600A22D12 /* libz.tbd */; };
+		BE2913532EB5489800A22D12 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913522EB5489100A22D12 /* libiconv.tbd */; };
+		BE2D3D0D2EB0B27A006DF15C /* FFPlayerUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE2D3D0C2EB0B27A006DF15C /* FFPlayerUIView.swift */; };
+		BE4DF4F82EBEC00100BE2C5F /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE4DF4F72EBEC00100BE2C5F /* RemoteCloud.framework */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		3C4009392242CB9D0028A45A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3C4009252242CB9D0028A45A /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3C40092D2242CB9D0028A45A;
-			remoteInfo = ffplayer;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		3C11C0FD2243DDA6006EA640 /* player_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = player_base.cpp; sourceTree = "<group>"; };
@@ -62,81 +37,33 @@
 		3C40092E2242CB9D0028A45A /* ffplayer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ffplayer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C4009312242CB9D0028A45A /* ffplayer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ffplayer.h; sourceTree = "<group>"; };
 		3C4009322242CB9D0028A45A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3C4009372242CB9D0028A45A /* ffplayerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ffplayerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3C40093C2242CB9D0028A45A /* ffplayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ffplayerTests.swift; sourceTree = "<group>"; };
-		3C40093E2242CB9D0028A45A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3C40095B2242D2640028A45A /* GameController.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GameController.framework; path = System/Library/Frameworks/GameController.framework; sourceTree = SDKROOT; };
-		3C40095D2242D2730028A45A /* CoreMotion.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMotion.framework; path = System/Library/Frameworks/CoreMotion.framework; sourceTree = SDKROOT; };
-		3C40095F2242D27E0028A45A /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
-		3C4009612242D28F0028A45A /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
-		3C4009632242D29A0028A45A /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
-		3C4009652242D2B20028A45A /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
-		3C4009672242D2E70028A45A /* OpenGLES.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGLES.framework; path = System/Library/Frameworks/OpenGLES.framework; sourceTree = SDKROOT; };
-		3C4009692242D2FB0028A45A /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
-		3C40096B2242D30C0028A45A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
-		3C40096D2242D3640028A45A /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
-		3C40096F2242D3DD0028A45A /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		3C4009712242DBA00028A45A /* player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = player.swift; sourceTree = "<group>"; };
-		3C400D182242F4710028A45A /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
-		3C400D1A2242F4850028A45A /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
-		3C400D1C2242F4980028A45A /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
-		3C400D1E224313270028A45A /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		3C400D20224314AC0028A45A /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
-		3C400D22224315620028A45A /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
-		3CC4F164225B5E57001A7013 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = System/Library/Frameworks/CoreServices.framework; sourceTree = SDKROOT; };
 		3F0130222373A83B004A2F8B /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3F0130232373AA3A004A2F8B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3F69AA4C234C91D400F154E4 /* libavresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavresample.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavresample.a"; sourceTree = "<group>"; };
-		3F69AA5E234C91D400F154E4 /* libavfilter.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavfilter.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavfilter.a"; sourceTree = "<group>"; };
-		3F69AA5F234C91D400F154E4 /* libavdevice.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavdevice.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavdevice.a"; sourceTree = "<group>"; };
-		3F69AA60234C91D400F154E4 /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavutil.a"; sourceTree = "<group>"; };
-		3F69AA61234C91D400F154E4 /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libswscale.a"; sourceTree = "<group>"; };
-		3F69AA62234C91D400F154E4 /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavformat.a"; sourceTree = "<group>"; };
-		3F69AA63234C91D400F154E4 /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libswresample.a"; sourceTree = "<group>"; };
-		3F69AA64234C91D400F154E4 /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = "../work/avbuild/sdk-macOS10.15-clang/lib/libavcodec.a"; sourceTree = "<group>"; };
 		3F9151CB236C101A00E5EF65 /* packetQueue.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = packetQueue.hpp; sourceTree = "<group>"; };
 		3F9151CC236C101A00E5EF65 /* packetQueue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = packetQueue.cpp; sourceTree = "<group>"; };
 		3F9151CF236C107A00E5EF65 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3F9151D1236C10C700E5EF65 /* sound.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = sound.swift; sourceTree = "<group>"; };
-		3F9151D2236C10C700E5EF65 /* playerView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = playerView.swift; sourceTree = "<group>"; };
-		3F9151DC236C1FCB00E5EF65 /* ffmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ffmpeg.xcframework; path = ../work/ffmpeg.xcframework; sourceTree = "<group>"; };
-		3F9151E6236CC2C700E5EF65 /* ffmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ffmpeg.xcframework; path = ../work/ffmpeg.xcframework; sourceTree = "<group>"; };
+		BE0572F12EC0CCB400515817 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
+		BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = ffmpeg.a; sourceTree = "<group>"; };
+		BE29134E2EB5482D00A22D12 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
+		BE2913502EB5487600A22D12 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		BE2913522EB5489100A22D12 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
+		BE2D3D0C2EB0B27A006DF15C /* FFPlayerUIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFPlayerUIView.swift; sourceTree = "<group>"; };
+		BE4DF4F72EBEC00100BE2C5F /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		3C40092B2242CB9D0028A45A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
-				3C400D1D2242F4990028A45A /* libz.tbd in Frameworks */,
-				3C400D1B2242F4850028A45A /* libbz2.tbd in Frameworks */,
-				3C400D192242F4710028A45A /* libiconv.tbd in Frameworks */,
-				3F9151E7236CC2C700E5EF65 /* ffmpeg.xcframework in Frameworks */,
-				3CC4F165225B5E57001A7013 /* CoreServices.framework in Frameworks */,
-				3C400D23224315620028A45A /* CoreMedia.framework in Frameworks */,
-				3C400D21224314AC0028A45A /* VideoToolbox.framework in Frameworks */,
-				3C400D1F224313270028A45A /* RemoteCloud.framework in Frameworks */,
-				3C4009702242D3DD0028A45A /* Metal.framework in Frameworks */,
-				3C40096E2242D3640028A45A /* AVFoundation.framework in Frameworks */,
-				3C40096C2242D30C0028A45A /* Foundation.framework in Frameworks */,
-				3C40096A2242D2FB0028A45A /* UIKit.framework in Frameworks */,
-				3C4009682242D2E70028A45A /* OpenGLES.framework in Frameworks */,
-				3C4009662242D2B20028A45A /* QuartzCore.framework in Frameworks */,
-				3C4009642242D29A0028A45A /* CoreAudio.framework in Frameworks */,
-				3C4009622242D28F0028A45A /* AudioToolbox.framework in Frameworks */,
-				3C4009602242D27E0028A45A /* CoreGraphics.framework in Frameworks */,
-				3C40095E2242D2730028A45A /* CoreMotion.framework in Frameworks */,
-				3C40095C2242D2640028A45A /* GameController.framework in Frameworks */,
+				BE29134F2EB5483A00A22D12 /* libbz2.tbd in Frameworks */,
+				BE2913512EB5487F00A22D12 /* libz.tbd in Frameworks */,
+				BE0572F22EC0CCB400515817 /* VideoToolbox.framework in Frameworks */,
+				BE4DF4F82EBEC00100BE2C5F /* RemoteCloud.framework in Frameworks */,
+				BE186EA82E9C0A1E002F6CC8 /* ffmpeg.a in Frameworks */,
+				BE2913532EB5489800A22D12 /* libiconv.tbd in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3C4009342242CB9D0028A45A /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3C4009382242CB9D0028A45A /* ffplayer.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -144,9 +71,8 @@
 		3C4009242242CB9D0028A45A = {
 			isa = PBXGroup;
 			children = (
-				3F9151E6236CC2C700E5EF65 /* ffmpeg.xcframework */,
+				BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */,
 				3C4009302242CB9D0028A45A /* ffplayer */,
-				3C40093B2242CB9D0028A45A /* ffplayerTests */,
 				3C4009582242CFD30028A45A /* Frameworks */,
 				3C40092F2242CB9D0028A45A /* Products */,
 			);
@@ -156,7 +82,6 @@
 			isa = PBXGroup;
 			children = (
 				3C40092E2242CB9D0028A45A /* ffplayer.framework */,
-				3C4009372242CB9D0028A45A /* ffplayerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -164,7 +89,7 @@
 		3C4009302242CB9D0028A45A /* ffplayer */ = {
 			isa = PBXGroup;
 			children = (
-				3F9151D2236C10C700E5EF65 /* playerView.swift */,
+				BE2D3D0C2EB0B27A006DF15C /* FFPlayerUIView.swift */,
 				3F9151D1236C10C700E5EF65 /* sound.swift */,
 				3F9151CF236C107A00E5EF65 /* Media.xcassets */,
 				3F9151CC236C101A00E5EF65 /* packetQueue.cpp */,
@@ -182,45 +107,14 @@
 			path = ffplayer;
 			sourceTree = "<group>";
 		};
-		3C40093B2242CB9D0028A45A /* ffplayerTests */ = {
-			isa = PBXGroup;
-			children = (
-				3C40093C2242CB9D0028A45A /* ffplayerTests.swift */,
-				3C40093E2242CB9D0028A45A /* Info.plist */,
-			);
-			path = ffplayerTests;
-			sourceTree = "<group>";
-		};
 		3C4009582242CFD30028A45A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				3F9151DC236C1FCB00E5EF65 /* ffmpeg.xcframework */,
-				3F69AA64234C91D400F154E4 /* libavcodec.a */,
-				3F69AA5F234C91D400F154E4 /* libavdevice.a */,
-				3F69AA5E234C91D400F154E4 /* libavfilter.a */,
-				3F69AA62234C91D400F154E4 /* libavformat.a */,
-				3F69AA4C234C91D400F154E4 /* libavresample.a */,
-				3F69AA60234C91D400F154E4 /* libavutil.a */,
-				3F69AA63234C91D400F154E4 /* libswresample.a */,
-				3F69AA61234C91D400F154E4 /* libswscale.a */,
-				3CC4F164225B5E57001A7013 /* CoreServices.framework */,
-				3C400D22224315620028A45A /* CoreMedia.framework */,
-				3C400D20224314AC0028A45A /* VideoToolbox.framework */,
-				3C400D1E224313270028A45A /* RemoteCloud.framework */,
-				3C400D1C2242F4980028A45A /* libz.tbd */,
-				3C400D1A2242F4850028A45A /* libbz2.tbd */,
-				3C400D182242F4710028A45A /* libiconv.tbd */,
-				3C40096F2242D3DD0028A45A /* Metal.framework */,
-				3C40096D2242D3640028A45A /* AVFoundation.framework */,
-				3C40096B2242D30C0028A45A /* Foundation.framework */,
-				3C4009692242D2FB0028A45A /* UIKit.framework */,
-				3C4009672242D2E70028A45A /* OpenGLES.framework */,
-				3C4009652242D2B20028A45A /* QuartzCore.framework */,
-				3C4009632242D29A0028A45A /* CoreAudio.framework */,
-				3C4009612242D28F0028A45A /* AudioToolbox.framework */,
-				3C40095F2242D27E0028A45A /* CoreGraphics.framework */,
-				3C40095D2242D2730028A45A /* CoreMotion.framework */,
-				3C40095B2242D2640028A45A /* GameController.framework */,
+				BE0572F12EC0CCB400515817 /* VideoToolbox.framework */,
+				BE4DF4F72EBEC00100BE2C5F /* RemoteCloud.framework */,
+				BE2913522EB5489100A22D12 /* libiconv.tbd */,
+				BE2913502EB5487600A22D12 /* libz.tbd */,
+				BE29134E2EB5482D00A22D12 /* libbz2.tbd */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -230,7 +124,6 @@
 /* Begin PBXHeadersBuildPhase section */
 		3C4009292242CB9D0028A45A /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				3C40093F2242CB9D0028A45A /* ffplayer.h in Headers */,
 				3C11C10D224429EC006EA640 /* player_main.h in Headers */,
@@ -238,7 +131,6 @@
 				3C11C10A22442985006EA640 /* player_param.h in Headers */,
 				3C11C1002243DDA6006EA640 /* player_base.hpp in Headers */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXHeadersBuildPhase section */
 
@@ -254,30 +146,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			name = ffplayer;
 			productName = ffplayer;
 			productReference = 3C40092E2242CB9D0028A45A /* ffplayer.framework */;
 			productType = "com.apple.product-type.framework";
-		};
-		3C4009362242CB9D0028A45A /* ffplayerTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3C4009452242CB9D0028A45A /* Build configuration list for PBXNativeTarget "ffplayerTests" */;
-			buildPhases = (
-				3C4009332242CB9D0028A45A /* Sources */,
-				3C4009342242CB9D0028A45A /* Frameworks */,
-				3C4009352242CB9D0028A45A /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3C40093A2242CB9D0028A45A /* PBXTargetDependency */,
-			);
-			name = ffplayerTests;
-			productName = ffplayerTests;
-			productReference = 3C4009372242CB9D0028A45A /* ffplayerTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -285,22 +157,18 @@
 		3C4009252242CB9D0028A45A /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1010;
-				LastUpgradeCheck = 1010;
+				LastUpgradeCheck = 2610;
 				ORGANIZATIONNAME = lithium03;
 				TargetAttributes = {
 					3C40092D2242CB9D0028A45A = {
 						CreatedOnToolsVersion = 10.1;
 						LastSwiftMigration = 1020;
 					};
-					3C4009362242CB9D0028A45A = {
-						CreatedOnToolsVersion = 10.1;
-						LastSwiftMigration = 1020;
-					};
 				};
 			};
 			buildConfigurationList = 3C4009282242CB9D0028A45A /* Build configuration list for PBXProject "ffplayer" */;
-			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -309,12 +177,12 @@
 				ja,
 			);
 			mainGroup = 3C4009242242CB9D0028A45A;
+			preferredProjectObjectVersion = 90;
 			productRefGroup = 3C40092F2242CB9D0028A45A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				3C40092D2242CB9D0028A45A /* ffplayer */,
-				3C4009362242CB9D0028A45A /* ffplayerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -322,53 +190,26 @@
 /* Begin PBXResourcesBuildPhase section */
 		3C40092C2242CB9D0028A45A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				3F9151D0236C107A00E5EF65 /* Media.xcassets in Resources */,
 				3F01301F2373A810004A2F8B /* Localizable.strings in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3C4009352242CB9D0028A45A /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3C40092A2242CB9D0028A45A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
+				BE2D3D0D2EB0B27A006DF15C /* FFPlayerUIView.swift in Sources */,
 				3F9151D3236C10C700E5EF65 /* sound.swift in Sources */,
-				3F9151D4236C10C700E5EF65 /* playerView.swift in Sources */,
 				3C4009722242DBA00028A45A /* player.swift in Sources */,
 				3F9151CE236C101A00E5EF65 /* packetQueue.cpp in Sources */,
 				3C11C0FF2243DDA6006EA640 /* player_base.cpp in Sources */,
 				3C11C10E224429EC006EA640 /* player_main.c in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3C4009332242CB9D0028A45A /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3C40093D2242CB9D0028A45A /* ffplayerTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		3C40093A2242CB9D0028A45A /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3C40092D2242CB9D0028A45A /* ffplayer */;
-			targetProxy = 3C4009392242CB9D0028A45A /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		3F0130212373A810004A2F8B /* Localizable.strings */ = {
@@ -383,10 +224,11 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		3C4009402242CB9D0028A45A /* Debug */ = {
+		3C4009402242CB9D0028A45A /* Debug configuration for PBXProject "ffplayer" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -410,6 +252,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -420,8 +263,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -441,17 +286,20 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VERSIONING_SYSTEM = "apple-generic";
 				VERSION_INFO_PREFIX = "";
 			};
 			name = Debug;
 		};
-		3C4009412242CB9D0028A45A /* Release */ = {
+		3C4009412242CB9D0028A45A /* Release configuration for PBXProject "ffplayer" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -475,6 +323,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -485,8 +334,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
@@ -500,7 +351,9 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -508,7 +361,7 @@
 			};
 			name = Release;
 		};
-		3C4009432242CB9D0028A45A /* Debug */ = {
+		3C4009432242CB9D0028A45A /* Debug configuration for PBXNativeTarget "ffplayer" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
@@ -516,25 +369,28 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				GCC_OPTIMIZATION_LEVEL = fast;
-				HEADER_SEARCH_PATHS = "";
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				HEADER_SEARCH_PATHS = ../work/output/include;
 				INFOPLIST_FILE = ffplayer/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayer;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -543,7 +399,7 @@
 			};
 			name = Debug;
 		};
-		3C4009442242CB9D0028A45A /* Release */ = {
+		3C4009442242CB9D0028A45A /* Release configuration for PBXNativeTarget "ffplayer" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = NO;
@@ -551,67 +407,32 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				GCC_OPTIMIZATION_LEVEL = fast;
-				HEADER_SEARCH_PATHS = "";
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				HEADER_SEARCH_PATHS = ../work/output/include;
 				INFOPLIST_FILE = ffplayer/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayer;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USER_HEADER_SEARCH_PATHS = "";
-			};
-			name = Release;
-		};
-		3C4009462242CB9D0028A45A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = ffplayerTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		3C4009472242CB9D0028A45A /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = ffplayerTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -621,28 +442,17 @@
 		3C4009282242CB9D0028A45A /* Build configuration list for PBXProject "ffplayer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3C4009402242CB9D0028A45A /* Debug */,
-				3C4009412242CB9D0028A45A /* Release */,
+				3C4009402242CB9D0028A45A /* Debug configuration for PBXProject "ffplayer" */,
+				3C4009412242CB9D0028A45A /* Release configuration for PBXProject "ffplayer" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		3C4009422242CB9D0028A45A /* Build configuration list for PBXNativeTarget "ffplayer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3C4009432242CB9D0028A45A /* Debug */,
-				3C4009442242CB9D0028A45A /* Release */,
+				3C4009432242CB9D0028A45A /* Debug configuration for PBXNativeTarget "ffplayer" */,
+				3C4009442242CB9D0028A45A /* Release configuration for PBXNativeTarget "ffplayer" */,
 			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3C4009452242CB9D0028A45A /* Build configuration list for PBXNativeTarget "ffplayerTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3C4009462242CB9D0028A45A /* Debug */,
-				3C4009472242CB9D0028A45A /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */

@@ -25,18 +25,19 @@
 #include "converter_param.h"
 
 extern "C" {
-#include "libavcodec/avcodec.h"
-#include "libavformat/avformat.h"
-#include "libswscale/swscale.h"
-#include "libswresample/swresample.h"
-#include "libavfilter/avfilter.h"
-#include "libavfilter/buffersink.h"
-#include "libavfilter/buffersrc.h"
-#include "libavutil/avutil.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/opt.h"
-#include "libavutil/avstring.h"
-#include "libavutil/time.h"
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
+#include <libavutil/bprint.h>
+#include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#include <libavutil/avstring.h>
+#include <libavutil/time.h>
 }
 
 #include "packetQueue.hpp"
@@ -57,6 +58,7 @@ public:
     int             main_video = -1;
     int             main_subtitle = -1;
 
+    bool            arib_to_text = true;
     
     bool            sync_video = false;
     bool            pause = false;
@@ -70,7 +72,7 @@ public:
     typedef struct AudioParams {
         int freq;
         int channels;
-        int64_t channel_layout;
+        AVChannelLayout channel_layout;
         enum AVSampleFormat fmt;
         int frame_size;
         int bytes_per_sec;
@@ -95,6 +97,7 @@ public:
         bool            main_audio = false;
         bool            present = false;
         bool            invalid_pts = false;
+        bool            audio_fin = false;
 
         AudioStreamInfo(Converter *parent): audioq(parent) {
         }
@@ -116,6 +119,7 @@ public:
         }
     };
     std::vector<std::shared_ptr<SubtitleStreamInfo> >  subtitle_info;
+    AVRational subtitle_timebase = AV_TIME_BASE_Q;
 
     class VideoStreamInfo {
     public:
@@ -126,6 +130,7 @@ public:
         std::shared_ptr<SwsContext>     sws_ctx;
         int64_t         video_current_pts_time = -1;  ///<time (av_gettime) at which we updated video_current_pts - used to have running video pts
         bool            video_eof = false;
+        bool            video_fin = false;
         bool            video_only = false;
         int             video_width = -1;
         int             video_height = -1;
@@ -147,6 +152,8 @@ public:
     double          audio_pts_delta = NAN;
     int             main_audio = -1;
 
+    double          media_duration = 0;
+    
     std::thread     parse_thread;
     std::vector<std::thread>    video_thread;
     std::vector<std::thread>    audio_thread;
@@ -158,7 +165,7 @@ public:
     void stream_component_close(int stream_index);
     
     bool Configure_VideoFilter(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFrame *frame, AVFilterGraph *graph, const VideoStreamInfo *video);
-    bool configure_audio_filters(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFilterGraph *graph, const AudioParams &audio_filter_src, int audio_out_sample_rate, int audio_out_channels);
+    bool configure_audio_filters(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFilterGraph *graph, const AudioParams &audio_filter_src, int audio_out_sample_rate, const AVChannelLayout &audio_out_channel_layout);
 
     void subtitle_overlay(AVFrame &output, double pts);
     

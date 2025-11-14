@@ -14,12 +14,12 @@ public class CueSheetRemoteItem: RemoteItem {
     var wavStream: RemoteStream!
     let track: Int
     
-    override init?(storage: String, id: String) {
+    override init?(storage: String, id: String) async {
         let section = id.components(separatedBy: "\t")
         if section.count < 2 {
             return nil
         }
-        guard let item = CloudFactory.shared[storage]?.get(fileId: section[0]) else {
+        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: section[0]) else {
             return nil
         }
         baseItem = item
@@ -28,46 +28,44 @@ public class CueSheetRemoteItem: RemoteItem {
         }
         track = t
         
-        super.init(storage: storage, id: id)
+        await super.init(storage: storage, id: id)
         
         guard let wavid = subid else {
             return nil
         }
-        guard let wavitem = CloudFactory.shared[storage]?.get(fileId: wavid) else {
+        guard let wavitem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: wavid) else {
             return nil
         }
         self.wavitem = wavitem
-        self.wavStream = self.wavitem.open()
+        self.wavStream = await self.wavitem.open()
     }
     
-    public override func open() -> RemoteStream {
-        return CueSheetStream(remote: self)
+    public override func open() async -> RemoteStream {
+        return await CueSheetStream(remote: self)
     }
     
-    override public func mkdir(newname: String, onFinish: ((String?)->Void)?){
-        onFinish?(nil)
+    override public func mkdir(newname: String) async -> String? {
+        return nil
     }
     
-    override public func delete(onFinish: ((Bool)->Void)?){
-        onFinish?(false)
+    override public func delete() async -> Bool{
+        return false
     }
     
-    override public func rename(newname: String, onFinish: ((String?)->Void)?) {
-        onFinish?(nil)
+    override public func rename(newname: String) async -> String? {
+        return nil
     }
     
-    override public func changetime(newdate: Date, onFinish: ((String?)->Void)?) {
-        onFinish?(nil)
+    override public func changetime(newdate: Date) async -> String?{
+        return nil
     }
     
-    override public func move(toParentId: String, onFinish: ((String?)->Void)?) {
-        onFinish?(nil)
+    override public func move(toParentId: String) async -> String? {
+        return nil
     }
     
-    override public func read(start: Int64?, length: Int64?, onFinish: ((Data?)->Void)?){
-        if let onFinish = onFinish {
-            wavStream.read(position: start ?? 0, length: Int(length ?? wavitem.size), onFinish: onFinish)
-        }
+    override public func read(start: Int64?, length: Int64?) async throws -> Data? {
+        return try await wavStream.read(position: start ?? 0, length: Int(length ?? wavitem.size))
     }
 }
 
@@ -76,92 +74,66 @@ public class CueSheetStream: SlotStream {
     var header: Data?
     var wavOffset: Int = -1
     
-    init(remote: CueSheetRemoteItem) {
+    init(remote: CueSheetRemoteItem) async {
         self.remote = remote
-        super.init(size: remote.size)
+        await super.init(size: remote.size)
     }
-    
-    override func firstFill() {
-        fillHeader()
-        super.firstFill()
-    }
-    
-    func fillHeader() {
-        init_group.enter()
-        DispatchQueue.global().async {
-            defer {
-                self.init_group.leave()
-            }
-            let frames = self.remote.subend - self.remote.substart
-            let stream = self.remote.wavitem.open()
-            guard let wavfile = RemoteWaveFile(stream: stream, size: self.remote.wavitem.size) else {
-                self.error = true
-                return
-            }
-            stream.isLive = false
-            self.header = wavfile.getHeader(frames: frames)
-            guard let header = self.header else {
-                self.error = true
-                return
-            }
-            let bytesPerSec = wavfile.wavFormat.BitsPerSample/8 * wavfile.wavFormat.SampleRate * wavfile.wavFormat.NumChannels
-            let bytesPerFrame = bytesPerSec / 75
 
-            self.size = Int64(bytesPerFrame * Int(frames) + header.count)
-            
-            self.wavOffset = wavfile.wavOffset + Int(self.remote.substart) * bytesPerFrame
+    override func fillHeader() async {
+        defer {
+            Task { await super.fillHeader() }
         }
-    }
-    
-    override func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
-        guard init_group.wait(timeout: DispatchTime.now()+120) == DispatchTimeoutResult.success else {
-            self.error = true
-            onFinish()
+        let frames = remote.subend - remote.substart
+        let stream = await remote.wavitem.open()
+        guard let wavfile = await RemoteWaveFile(stream: stream, size: remote.wavitem.size) else {
+            error = true
             return
         }
-        if !dataAvailable(pos: pos1) && isLive {
-            let len = (pos1 + bufSize < size) ? bufSize : size - pos1
-            guard let header = self.header else {
-                self.error = true
-                onFinish()
+        stream.isLive = false
+        header = wavfile.getHeader(frames: frames)
+        guard let header = header else {
+            error = true
+            return
+        }
+        let bytesPerSec = wavfile.wavFormat.BitsPerSample/8 * wavfile.wavFormat.SampleRate * wavfile.wavFormat.NumChannels
+        let bytesPerFrame = bytesPerSec / 75
+
+        size = Int64(bytesPerFrame * Int(frames) + header.count)
+        
+        wavOffset = wavfile.wavOffset + Int(remote.substart) * bytesPerFrame
+    }
+    
+    override func subFillBuffer(pos: ClosedRange<Int64>) async {
+        guard await initialized.wait(timeout: .seconds(10)) == .success else {
+            error = true
+            return
+        }
+        if await !buffer.dataAvailable(pos: pos), isLive {
+            let len = min(size-1, pos.upperBound) - pos.lowerBound + 1
+            guard let header = header else {
+                error = true
                 return
             }
-            if pos1 == 0 {
-                
-                remote.read(start: Int64(wavOffset), length: len-Int64(header.count)) { data in
-                    defer {
-                        onFinish()
-                    }
-                    if let data = data {
-                        var result = Data()
-                        result += header
-                        result += data
-
-                        self.queue_buf.async {
-                            self.buffer[pos1] = result
-                        }
-                    }
-                    else {
-                        print("error on readFile")
-                        self.error = true
-                    }
+            if pos.lowerBound == 0 {
+                if let data = try? await remote.read(start: Int64(wavOffset), length: len-Int64(header.count)) {
+                    var result = Data()
+                    result += header
+                    result += data
+                    await buffer.store(pos: pos.lowerBound, data: result)
+                }
+                else {
+                    print("error on readFile")
+                    error = true
                 }
             }
             else {
-                let ppos1 = pos1 - Int64(header.count) + Int64(wavOffset)
-                remote.read(start: ppos1, length: len) { data in
-                    defer {
-                        onFinish()
-                    }
-                    if let data = data {
-                        self.queue_buf.async {
-                            self.buffer[pos1] = data
-                        }
-                    }
-                    else {
-                        print("error on readFile")
-                        self.error = true
-                    }
+                let ppos1 = pos.lowerBound - Int64(header.count) + Int64(wavOffset)
+                if let data = try? await remote.read(start: ppos1, length: len) {
+                    await buffer.store(pos: pos.lowerBound, data: data)
+                }
+                else {
+                    print("error on readFile")
+                    error = true
                 }
             }
         }
@@ -173,7 +145,6 @@ class RemoteWaveFile {
     let remoteStream: RemoteStream
     let size: Int64
     
-    let group = DispatchGroup()
     var fileEnd = -1
     var wavSize = -1
     var wavOffset = -1
@@ -188,12 +159,23 @@ class RemoteWaveFile {
         var BitsPerSample: Int
     }
     
-    init?(stream: RemoteStream, size: Int64) {
+    init?(stream: RemoteStream, size: Int64) async {
         self.remoteStream = stream
         self.size = size
-        group.enter()
-        load()
-        guard group.wait(timeout: .now()+10) == .success else {
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    await self.load()
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(60))
+                    throw CancellationError()
+                }
+                let _ = try await group.next()!
+                group.cancelAll()
+            }
+        }
+        catch {
             return nil
         }
         guard wavFormat != nil, wavSize > 0, wavOffset > 0 else {
@@ -236,72 +218,61 @@ class RemoteWaveFile {
         return ret
     }
     
-    func load() {
+    func load() async {
         var ChunkSize: UInt32 = 0
-        remoteStream.read(position: 0, length: 12) { data in
-            guard let data = data, data.count == 12 else {
-                return
-            }
-            let ChunkID = data.subdata(in: 0..<4)
-            guard String(data: ChunkID, encoding: .ascii) == "RIFF" else {
-                return
-            }
-            ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
-            let Format = data.subdata(in: 8..<12)
-            guard String(data: Format, encoding: .ascii) == "WAVE" else {
-                return
-            }
-            self.fileEnd = Int(ChunkSize+8)
-            self.loadSubChunk(pos: 12)
+        guard let data = try? await remoteStream.read(position: 0, length: 12), data.count == 12 else {
+            return
         }
+        let ChunkID = data.subdata(in: 0..<4)
+        guard String(data: ChunkID, encoding: .ascii) == "RIFF" else {
+            return
+        }
+        ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let Format = data.subdata(in: 8..<12)
+        guard String(data: Format, encoding: .ascii) == "WAVE" else {
+            return
+        }
+        fileEnd = Int(ChunkSize+8)
+        await loadSubChunk(pos: 12)
     }
     
-    func loadSubChunk(pos: UInt32) {
-        remoteStream.read(position: Int64(pos), length: 8) { data in
-            guard let data = data, data.count == 8 else {
-                return
-            }
-            let ChunkID = data.subdata(in: 0..<4)
-            let ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
-            if String(data: ChunkID, encoding: .ascii) == "fmt " {
-                self.loadFmtSubChunk(pos: pos+8, ChunkSize: ChunkSize)
-            }
-            else if String(data: ChunkID, encoding: .ascii) == "data" {
-                self.wavSize = Int(ChunkSize)
-                self.wavOffset = Int(pos+8)
-            }
-            if pos+8+ChunkSize >= self.fileEnd {
-                self.group.leave()
-                return
-            }
-            self.loadSubChunk(pos: pos+8+ChunkSize)
+    func loadSubChunk(pos: UInt32) async {
+        guard let data = try? await remoteStream.read(position: Int64(pos), length: 8), data.count == 8 else {
+            return
         }
+        let ChunkID = data.subdata(in: 0..<4)
+        let ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+        if String(data: ChunkID, encoding: .ascii) == "fmt " {
+            await loadFmtSubChunk(pos: pos+8, ChunkSize: ChunkSize)
+        }
+        else if String(data: ChunkID, encoding: .ascii) == "data" {
+            wavSize = Int(ChunkSize)
+            wavOffset = Int(pos+8)
+        }
+        if pos+8+ChunkSize >= fileEnd {
+            return
+        }
+        await loadSubChunk(pos: pos+8+ChunkSize)
     }
     
-    func loadFmtSubChunk(pos: UInt32, ChunkSize: UInt32) {
+    func loadFmtSubChunk(pos: UInt32, ChunkSize: UInt32) async {
         guard ChunkSize >= 16 else {
             return
         }
-        self.group.enter()
-        remoteStream.read(position: Int64(pos), length: Int(ChunkSize)) { data in
-            defer {
-                self.group.leave()
-            }
-            guard let data = data, data.count == ChunkSize else {
-                return
-            }
-
-            let AudioFormat = data.subdata(in: 0..<2).withUnsafeBytes { $0.load(as: UInt16.self) }
-            guard AudioFormat == 1 else { // PCM == 1
-                return
-            }
-            let NumChannels = data.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self) }
-            let SampleRate = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
-            let ByteRate = data.subdata(in: 8..<12).withUnsafeBytes { $0.load(as: UInt32.self) }
-            let BlockAlign = data.subdata(in: 12..<14).withUnsafeBytes { $0.load(as: UInt16.self) }
-            let BitsPerSample = data.subdata(in: 14..<16).withUnsafeBytes { $0.load(as: UInt16.self) }
-            self.wavFormat = WaveFormatData(AudioFormat: Int(AudioFormat), NumChannels: Int(NumChannels), SampleRate: Int(SampleRate), ByteRate: Int(ByteRate), BlockAlign: Int(BlockAlign), BitsPerSample: Int(BitsPerSample))
+        guard let data = try? await remoteStream.read(position: Int64(pos), length: Int(ChunkSize)), data.count == ChunkSize else {
+            return
         }
+
+        let AudioFormat = data.subdata(in: 0..<2).withUnsafeBytes { $0.load(as: UInt16.self) }
+        guard AudioFormat == 1 else { // PCM == 1
+            return
+        }
+        let NumChannels = data.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self) }
+        let SampleRate = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let ByteRate = data.subdata(in: 8..<12).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let BlockAlign = data.subdata(in: 12..<14).withUnsafeBytes { $0.load(as: UInt16.self) }
+        let BitsPerSample = data.subdata(in: 14..<16).withUnsafeBytes { $0.load(as: UInt16.self) }
+        wavFormat = WaveFormatData(AudioFormat: Int(AudioFormat), NumChannels: Int(NumChannels), SampleRate: Int(SampleRate), ByteRate: Int(ByteRate), BlockAlign: Int(BlockAlign), BitsPerSample: Int(BitsPerSample))
     }
 }
 

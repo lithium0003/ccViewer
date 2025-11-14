@@ -8,179 +8,82 @@
 
 import Foundation
 import CommonCrypto
+import SwiftUI
+import AuthenticationServices
 
-class ViewControllerPasswordCarot: UIViewController, UITextFieldDelegate, UIPickerViewDelegate, UIPickerViewDataSource {
-    var textPassword: UITextField!
-    var stackView: UIStackView!
+struct PasswordCarotView: View {
+    let callback: (String, String, Bool) async -> Void
+    let onDismiss: () -> Void
+    @State var ok = false
+
     let header = ["^_",":D",";)","T-T","orz","ノシ","（´・ω・）"]
-    var header_selection = 0
-    var filenameEncryption: Bool = false
-    
-    var onCancel: (()->Void)!
-    var onFinish: ((String, String, Bool)->Void)!
-    var done: Bool = false
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        self.title = "CryptCarotDAV password"
-        if #available(iOS 13.0, *) {
-            view.backgroundColor = .systemBackground
-        } else {
-            view.backgroundColor = .white
-        }
+    @State var showPassword = false
+    @State var password = ""
+    @State var filenameEncryption = false
+    @State var headerSelection = "^_"
 
-        stackView = UIStackView()
-        stackView.axis = .vertical
-        stackView.alignment = .center
-        stackView.spacing = 10
-        view.addSubview(stackView)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
-        
-        let stackView1 = UIStackView()
-        stackView1.axis = .horizontal
-        stackView1.alignment = .center
-        stackView1.spacing = 20
-        stackView.insertArrangedSubview(stackView1, at: 0)
+    var body: some View {
+        ZStack {
+            Form {
+                Text("CryptCarotDAV configuration")
+                Section("Password") {
+                    HStack {
+                        if showPassword {
+                            TextField("password", text: $password)
+                        }
+                        else {
+                            SecureField("password", text: $password)
+                        }
+                        Button {
+                            showPassword.toggle()
+                        } label: {
+                            if showPassword {
+                                Image(systemName: "eye.slash")
+                            }
+                            else {
+                                Image(systemName: "eye")
+                                    .tint(.gray)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                Section("Encrypt filename") {
+                    Toggle("", isOn: $filenameEncryption)
+                }
+                Section("Prefix for filename") {
+                    Picker("", selection: $headerSelection) {
+                        ForEach(header, id: \.self) { str in
+                            Text(verbatim: str)
+                        }
+                    }
+                }
+                .disabled(!filenameEncryption)
+                Button("Select root folder") {
+                    ok = true
+                    Task {
+                        await callback(password, headerSelection, filenameEncryption)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .disabled(ok)
 
-        let label = UILabel()
-        label.text = "Password"
-        stackView1.insertArrangedSubview(label, at: 0)
-        
-        textPassword = UITextField()
-        textPassword.borderStyle = .roundedRect
-        textPassword.delegate = self
-        textPassword.clearButtonMode = .whileEditing
-        textPassword.returnKeyType = .done
-        textPassword.isSecureTextEntry = true
-        textPassword.placeholder = "password"
-        stackView1.insertArrangedSubview(textPassword, at: 1)
-        let widthConstraint = textPassword.widthAnchor.constraint(equalToConstant: 200)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
-        
-        let stackView2 = UIStackView()
-        stackView2.axis = .horizontal
-        stackView2.alignment = .center
-        stackView2.spacing = 20
-        stackView.insertArrangedSubview(stackView2, at: 1)
-
-        let label2 = UILabel()
-        label2.text = "Encrypt filename"
-        stackView2.insertArrangedSubview(label2, at: 0)
-        
-        let switchHidename = UISwitch()
-        switchHidename.addTarget(self, action: #selector(switchValueChanged), for: .valueChanged)
-        filenameEncryption = switchHidename.isOn
-        stackView2.insertArrangedSubview(switchHidename, at: 1)
-
-        let stackView3 = UIStackView()
-        stackView3.axis = .horizontal
-        stackView3.alignment = .center
-        stackView3.spacing = 20
-        stackView.insertArrangedSubview(stackView3, at: 2)
-        
-        let label3 = UILabel()
-        label3.text = "Encrypted header"
-        stackView3.insertArrangedSubview(label3, at: 0)
-        
-        let picker = UIPickerView()
-        picker.delegate = self
-        picker.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        picker.heightAnchor.constraint(equalToConstant: 100).isActive = true
-        stackView3.insertArrangedSubview(picker, at: 1)
-        
-        (stackView.arrangedSubviews[2]).isHidden = !switchHidename.isOn
-        
-        let stackView4 = UIStackView()
-        stackView4.axis = .horizontal
-        stackView4.alignment = .center
-        stackView4.spacing = 20
-        stackView.insertArrangedSubview(stackView4, at: 3)
-        
-        let button1 = UIButton(type: .system)
-        button1.setTitle("Done", for: .normal)
-        button1.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView4.insertArrangedSubview(button1, at: 0)
-
-        let button2 = UIButton(type: .system)
-        button2.setTitle("Cancel", for: .normal)
-        button2.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView4.insertArrangedSubview(button2, at: 1)
-    }
-    
-    @objc func buttonEvent(_ sender: UIButton) {
-        if sender.currentTitle == "Done" {
-            done = true
-            onFinish(textPassword.text ?? "", header[header_selection], filenameEncryption)
-        }
-        else {
-            navigationController?.popViewController(animated: true)
-        }
-    }
-    
-    override func willMove(toParent parent: UIViewController?) {
-        if parent == nil && !done {
-            onCancel()
-        }
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        
-        done = true
-        onFinish(textPassword.text ?? "", header[header_selection], filenameEncryption)
-        return true
-    }
-    
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if textPassword.isFirstResponder {
-            textPassword.resignFirstResponder()
-        }
-    }
-    
-    @objc func switchValueChanged(aSwitch: UISwitch) {
-        (stackView.arrangedSubviews[2]).isHidden = !aSwitch.isOn
-        filenameEncryption = aSwitch.isOn
-    }
-
-    func numberOfComponents(in pickerView: UIPickerView) -> Int {
-        return 1
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        return header.count
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        return header[row]
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
-        header_selection = row
-    }
-}
-
-extension UIApplication {
-    class func topViewController(controller: UIViewController? = nil) -> UIViewController? {
-        var controller2 = controller
-        if controller2 == nil {
-            controller2 = UIApplication.shared.windows.first { $0.isKeyWindow }?.rootViewController
-        }
-        if let navigationController = controller2 as? UINavigationController {
-            return topViewController(controller: navigationController.visibleViewController)
-        }
-        if let tabController = controller2 as? UITabBarController {
-            if let selected = tabController.selectedViewController {
-                return topViewController(controller: selected)
+            if ok {
+                ProgressView()
+                    .padding(30)
+                    .background {
+                        Color(uiColor: .systemBackground)
+                            .opacity(0.9)
+                    }
+                    .scaleEffect(3)
+                    .cornerRadius(10)
             }
         }
-        if let presented = controller2?.presentedViewController {
-            return topViewController(controller: presented)
+        .onDisappear {
+            if ok { return }
+            onDismiss()
         }
-        return controller2
     }
 }
 
@@ -194,63 +97,53 @@ public class CryptCarotDAV: ChildStorage {
         return .CryptCarotDAV
     }
 
-    public override init(name: String) {
-        super.init(name: name)
+    public override init(name: String) async {
+        await super.init(name: name)
         service = CloudFactory.getServiceName(service: .CryptCarotDAV)
         storageName = name
-        if self.getKeyChain(key: "\(self.storageName ?? "")_password") != nil && self.getKeyChain(key: "\(self.storageName ?? "")_header") != nil {
-            generateKey()
+        if await getKeyChain(key: "\(storageName ?? "")_password") != nil, await getKeyChain(key: "\(storageName ?? "")_header") != nil {
+            await generateKey()
         }
     }
-    
-    override public func auth(onFinish: ((Bool) -> Void)?) -> Void {
-        super.auth() { success in
-            if success {
-                if self.getKeyChain(key: "\(self.storageName ?? "")_password") != nil && self.getKeyChain(key: "\(self.storageName ?? "")_header") != nil {
-                    DispatchQueue.global().async {
-                        self.generateKey()
-                        onFinish?(true)
-                    }
+
+    public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
+
+        let authRet = await withCheckedContinuation { authContinuation in
+            Task {
+                let presentRet = await withCheckedContinuation { continuation in
+                    callback(PasswordCarotView(callback: { pass, head, cfname in
+                        if await super.auth(callback: callback, webAuthenticationSession: webAuthenticationSession, selectItem: selectItem) {
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_password", value: pass)
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_header", value: head)
+                            if cfname {
+                                let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_cryptname", value: "true")
+                            }
+                            await self.generateKey()
+                            authContinuation.resume(returning: true)
+                        }
+                        else {
+                            authContinuation.resume(returning: false)
+                        }
+                    }, onDismiss: {
+                        authContinuation.resume(returning: false)
+                    }), continuation)
+                }
+                guard presentRet else {
+                    authContinuation.resume(returning: false)
                     return
                 }
-                DispatchQueue.main.async {
-                    if let controller = UIApplication.topViewController() {
-                        let passwordView = ViewControllerPasswordCarot()
-                        passwordView.onCancel = {
-                            onFinish?(false)
-                        }
-                        passwordView.onFinish = { pass, head, cfname in
-                            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_password", value: pass)
-                            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_header", value: head)
-                            if cfname {
-                                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_cryptname", value: "true")
-                            }
-                            
-                            DispatchQueue.global().async {
-                                self.generateKey()
-                                onFinish?(true)
-                            }
-                        }
-                        controller.navigationController?.pushViewController(passwordView, animated: true)
-                    }
-                    else {
-                        onFinish?(false)
-                    }
-                }
-            }
-            else {
-                onFinish?(success)
             }
         }
+        return authRet
     }
     
-    override public func logout() {
+    override public func logout() async {
         if let name = storageName {
-            let _ = delKeyChain(key: "\(name)_password")
-            let _ = delKeyChain(key: "\(name)_header")
-            let _ = delKeyChain(key: "\(name)_cryptname")
+            let _ = await delKeyChain(key: "\(name)_password")
+            let _ = await delKeyChain(key: "\(name)_header")
+            let _ = await delKeyChain(key: "\(name)_cryptname")
         }
-        super.logout()
+        await super.logout()
     }
 
     override func ConvertDecryptName(name: String) -> String {
@@ -301,9 +194,9 @@ public class CryptCarotDAV: ChildStorage {
         return hashed
     }
     
-    func generateKey() {
-        let password = getKeyChain(key: "\(self.storageName ?? "")_password") ?? ""
-        header_str = getKeyChain(key: "\(self.storageName ?? "")_header") ?? ""
+    func generateKey() async {
+        let password = await getKeyChain(key: "\(self.storageName ?? "")_password") ?? ""
+        header_str = await getKeyChain(key: "\(self.storageName ?? "")_header") ?? ""
         let key = pbkdf2(password: password, salt: salt, iterations: 0x400)
         self.key = key.subdata(in: 0..<KeySize/8)
         self.IV = key.subdata(in: KeySize/8..<(KeySize+BlockSize)/8)
@@ -445,12 +338,12 @@ public class CryptCarotDAV: ChildStorage {
         return String(data: plain, encoding: .utf8)?.replacingOccurrences(of: "\0", with: "")
     }
     
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return CryptCarotDAVRemoteItem(storage: storageName ?? "", id: fileId)
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await CryptCarotDAVRemoteItem(storage: storageName ?? "", id: fileId)
     }
     
-    public override func getRaw(path: String) -> RemoteItem? {
-        return CryptCarotDAVRemoteItem(path: path)
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await CryptCarotDAVRemoteItem(path: path)
     }
     
     override func processFile(target: URL) -> URL? {
@@ -550,16 +443,16 @@ public class CryptCarotDAV: ChildStorage {
 public class CryptCarotDAVRemoteItem: RemoteItem {
     let remoteStorage: CryptCarotDAV
 
-    override init?(storage: String, id: String) {
-        guard let s = CloudFactory.shared[storage] as? CryptCarotDAV else {
+    override init?(storage: String, id: String) async {
+        guard let s = await CloudFactory.shared.storageList.get(storage) as? CryptCarotDAV else {
             return nil
         }
         remoteStorage = s
-        super.init(storage: storage, id: id)
+        await super.init(storage: storage, id: id)
     }
     
-    public override func open() -> RemoteStream {
-        return RemoteCryptCarotDAVStream(remote: self)
+    public override func open() async -> RemoteStream {
+        return await RemoteCryptCarotDAVStream(remote: self)
     }
 }
 
@@ -572,7 +465,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
     let key: Data
     let IV: Data
     
-    init(remote: CryptCarotDAVRemoteItem) {
+    init(remote: CryptCarotDAVRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
         CryptedLength = OrignalLength + Int64(remote.remoteStorage.BlockSizeByte) + Int64(remote.remoteStorage.CryptHeaderByte) + Int64(remote.remoteStorage.CryptFooterByte)
@@ -580,29 +473,21 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         salt = "CarotDAV Encryption 1.0 ".data(using: .ascii)!
         key = remote.remoteStorage.key
         IV = remote.remoteStorage.IV
-        super.init(size: OrignalLength)
+        await super.init(size: OrignalLength)
     }
-    
-    override func firstFill() {
-        fillHeader()
-        super.firstFill()
-    }
-    
-    func fillHeader() {
-        init_group.enter()
-        remote.read(start: 0, length: Int64(remote.remoteStorage.CryptHeaderByte)) { data in
-            if let data = data {
-                if !self.salt.elementsEqual(data.subdata(in: 0..<self.salt.count)) {
-                    print("error on header check")
-                    self.error = true
-                }
+
+    override func fillHeader() async {
+        if let data = try? await remote.read(start: 0, length: Int64(remote.remoteStorage.CryptHeaderByte)) {
+            if !salt.elementsEqual(data.subdata(in: 0..<salt.count)) {
+                print("error on header check")
+                error = true
             }
-            else {
-                print("error on header null")
-                self.error = true
-            }
-            self.init_group.leave()
         }
+        else {
+            print("error on header null")
+            error = true
+        }
+        await super.fillHeader()
     }
     
     func decode(input: Data, IV: Data) -> Data? {
@@ -632,31 +517,20 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         return Data(bytes: outBytes, count: outLength)
     }
     
-    override func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
-        guard init_group.wait(timeout: DispatchTime.now()+120) == DispatchTimeoutResult.success else {
-            self.error = true
-            onFinish()
+    override func subFillBuffer(pos: ClosedRange<Int64>) async {
+        guard await initialized.wait(timeout: .seconds(10)) == .success else {
+            error = true
             return
         }
         let blocksize = remote.remoteStorage.BlockSizeByte
         let headersize = Int64(remote.remoteStorage.CryptHeaderByte)
-        let pos2 = pos1 + headersize
-        let group = DispatchGroup()
-        group.enter()
-        defer {
-            group.leave()
-        }
-        DispatchQueue.global().async {
-            group.notify(queue: .global()) {
-                onFinish()
-            }
-        }
-        if !dataAvailable(pos: pos1) {
+        let pos2 = pos.lowerBound + headersize
+        if await !buffer.dataAvailable(pos: pos) {
             //print("crypt \(pos1) -> \(pos2)")
-            guard pos1 >= 0 && pos1 < size else {
+            guard pos.lowerBound >= 0 && pos.upperBound < size else {
                 return
             }
-            var len = (pos1 + bufSize < size) ? bufSize : size - pos1
+            var len = min(size-1, pos.upperBound) - pos.lowerBound + 1
             //print("pos1 \(pos1) size\(size) len \(len)")
             if len % Int64(blocksize) > 0 {
                 len += Int64(blocksize)
@@ -664,59 +538,37 @@ public class RemoteCryptCarotDAVStream: SlotStream {
             }
             let plen = len + Int64(blocksize)
             let ppos2 = pos2 - Int64(blocksize)
-            if pos1 == 0 {
+            if pos.lowerBound == 0 {
                 //print("pos2 \(pos2) len \(len)")
-                group.enter()
-                self.remote.read(start: pos2, length: len) { data in
-                    defer {
-                        group.leave()
-                    }
-                    if let data = data {
-                        DispatchQueue.global().async {
-                            autoreleasepool {
-                                if let plain = self.decode(input: data, IV: self.IV) {
-                                    self.queue_buf.async {
-                                        self.buffer[pos1] = plain
-                                    }
-                                }
-                                else {
-                                    print("error on decode1")
-                                    self.error = true
-                                }
-                            }
-                        }
+                if let data = try? await remote.read(start: pos2, length: len) {
+                    if let plain = decode(input: data, IV: self.IV) {
+                        await buffer.store(pos: pos.lowerBound, data: plain)
                     }
                     else {
-                        print("error on readFile")
+                        print("error on decode1")
                         self.error = true
                     }
+                }
+                else {
+                    print("error on readFile")
+                    error = true
                 }
             }
             else {
                 //print("ppos2 \(ppos2) len\(plen)")
-                group.enter()
-                self.remote.read(start: ppos2, length: plen) { data in
-                    defer {
-                        group.leave()
-                    }
-                    if let data = data, data.count == Int(plen) {
-                        DispatchQueue.global().async {
-                            if let plain = self.decode(input: data.subdata(in: blocksize..<data.count), IV: data.subdata(in: 0..<blocksize)) {
-                                self.queue_buf.async {
-                                    self.buffer[pos1] = plain
-                                }
-                            }
-                            else {
-                                print("ppos2 \(ppos2) len\(plen)")
-                                print("error on decode2")
-                                self.error = true
-                            }
-                        }
+                if let data = try? await remote.read(start: ppos2, length: plen), data.count == Int(plen) {
+                    if let plain = decode(input: data.subdata(in: blocksize..<data.count), IV: data.subdata(in: 0..<blocksize)) {
+                        await buffer.store(pos: pos.lowerBound, data: plain)
                     }
                     else {
-                        print("error on readFile")
-                        self.error = true
+                        print("ppos2 \(ppos2) len\(plen)")
+                        print("error on decode2")
+                        error = true
                     }
+                }
+                else {
+                    print("error on readFile")
+                    self.error = true
                 }
             }
         }

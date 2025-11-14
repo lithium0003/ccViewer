@@ -17,6 +17,8 @@ extern "C" {
 #include <libavutil/time.h>
 #include <libavutil/avstring.h>
 #include <libavutil/opt.h>
+#include <libavutil/bprint.h>
+#include <libavutil/avutil.h>
 #include <libswresample/swresample.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
@@ -43,6 +45,8 @@ public:
     bool            quit = false;
     int             ret = -1;
     
+    bool            arib_to_text = false;
+    
     AVFormatContext *pFormatCtx = NULL;
     
     enum sync_source {
@@ -51,12 +55,13 @@ public:
     };
     sync_source     sync_type = sync_audio;
     int64_t         master_clock_start = AV_NOPTS_VALUE;
-    double          master_clock_offset = NAN;
+    double          master_clock_offset = std::nan("");
     
     int64_t         audio_last_call = AV_NOPTS_VALUE;
-    double          audio_clock_base = NAN;
+    double          audio_clock_base = std::nan("");
     
     bool            pause = false;
+    void setPause(bool value);
     
     typedef class AudioInfo {
     public:
@@ -69,7 +74,7 @@ public:
         typedef struct AudioParams {
             int freq;
             int channels;
-            int64_t channel_layout;
+            AVChannelLayout ch_layout;
             enum AVSampleFormat fmt;
             int frame_size;
             int bytes_per_sec;
@@ -87,18 +92,19 @@ public:
         AudioParams audio_filter_src = {};
 
         float           *audio_wav;
-        double          pts_base = NAN;
+        double          pts_base = std::nan("");
         std::mutex      audio_mutex;
         std::condition_variable cond_full;
         std::atomic_ullong read_idx;
         std::atomic_ullong write_idx;
         
-        int             out_channels = 2;
+        AVChannelLayout ch_layout;
         int             sample_rate = 48000;
         int             buf_length = sample_rate * 1;
 
         AudioInfo(Player *parent) : audioq(parent), read_idx(0), write_idx(0) {
-            audio_wav = new float[buf_length*out_channels];
+            av_channel_layout_default(&ch_layout, 2);
+            audio_wav = new float[buf_length*ch_layout.nb_channels];
         }
         ~AudioInfo() {
             delete [] audio_wav;
@@ -127,7 +133,7 @@ public:
         AVStream        *video_st = NULL;
         std::shared_ptr<AVCodecContext> video_ctx;
         PacketQueue     videoq;
-        std::shared_ptr<SwsContext>     sws_ctx;
+//        std::shared_ptr<SwsContext>     sws_ctx;
         int64_t         video_current_pts_time = -1;
 
         bool            video_eof = false;
@@ -136,14 +142,12 @@ public:
         int             video_height = -1;
         int             video_srcwidth = -1;
         int             video_srcheight = -1;
-        int             screen_width = -1;
-        int             screen_height = -1;
         AVRational      video_SAR = {};
         double          video_aspect = 1.0;
         bool            deinterlace = false;
 
-        double          video_clock_start = NAN;
-        double          video_clock = NAN;
+        double          video_clock_start = std::nan("");
+        double          video_clock = std::nan("");
         
         VideoPicture    pictq[VIDEO_PICTURE_QUEUE_SIZE];
         int             pictq_size = 0, pictq_rindex = 0, pictq_windex = 0;
@@ -153,8 +157,8 @@ public:
         std::mutex      pictq_mutex;
         std::condition_variable pictq_cond;
 
-        double          frame_timer = NAN;
-        double          frame_last_pts = NAN;
+        double          frame_timer = std::nan("");
+        double          frame_last_pts = std::nan("");
         double          frame_last_delay = 10e-3;
 
         VideoInfo(Player *parent) : videoq(parent) {}

@@ -39,6 +39,7 @@ class WebVTTwriter {
                 "#EXT-X-VERSION:3",
                 "#EXT-X-TARGETDURATION:\(Int(time_hint))",
                 "#EXT-X-MEDIA-SEQUENCE:0",
+                "#EXT-X-PLAYLIST-TYPE:EVENT",
                 ].joined(separator: "\r\n")+"\r\n"
             let data = Array(header.utf8)
             m3u8file?.write(data, maxLength: data.count)
@@ -50,8 +51,8 @@ class WebVTTwriter {
         let t1 = split_points[last_write_m3u8]
         let t2 = split_points[last_write_m3u8+1]
         let entry = [
-            "#EXTINF:\(String(format: "%.8f", t2-t1)),",
-            String(format: "stream%08d.webvtt", last_write_m3u8),
+            "#EXTINF:\(String(format: "%.8f", max(1, t2-t1))),",
+            String(format: "stream%08d.vtt", last_write_m3u8),
             ].joined(separator: "\r\n")+"\r\n"
         let data = Array(entry.utf8)
         m3u8file?.write(data, maxLength: data.count)
@@ -60,7 +61,7 @@ class WebVTTwriter {
 
     func write_callback(data: Data) {
         if outfile == nil {
-            outfile = OutputStream(url: dest_url.appendingPathComponent(String(format: "stream%08d.webvtt", split_count)), append: false)
+            outfile = OutputStream(url: dest_url.appendingPathComponent(String(format: "stream%08d.vtt", split_count)), append: false)
             outfile?.open()
             initial_write()
         }
@@ -80,7 +81,7 @@ class WebVTTwriter {
             last_time = t
         }
         print(split_count)
-        outfile = OutputStream(url: dest_url.appendingPathComponent(String(format: "stream%08d.webvtt", split_count)), append: false)
+        outfile = OutputStream(url: dest_url.appendingPathComponent(String(format: "stream%08d.vtt", split_count)), append: false)
         outfile?.open()
         write_m3u8()
         initial_write()
@@ -122,7 +123,7 @@ class WebVTTwriter {
     }
 
     func initial_write() {
-        let header = "WEBVTT\r\n\r\n"
+        let header = "WEBVTT\r\n\r\n\r\n"
         write_callback(data: header.data(using: .utf8)!)
     }
     
@@ -135,9 +136,9 @@ class WebVTTwriter {
     }
     
     func sanitize_str(str: String) -> String {
-        var str2 = str.replacingOccurrences(of: "&", with: "&amp;")
-        str2 = str2.replacingOccurrences(of: "<", with: "&lt;")
-        str2 = str2.replacingOccurrences(of: ">", with: "&gt;")
+        var str2 = str.replacingOccurrences(of: "&", with: "＆")
+        str2 = str2.replacingOccurrences(of: "<", with: "＜")
+        str2 = str2.replacingOccurrences(of: ">", with: "＞")
         return str2
     }
     
@@ -150,12 +151,11 @@ class WebVTTwriter {
     }
     
     func write_text(caption: String, pts_start: Double, pts_end: Double) {
+        if caption.filter({ !$0.isWhitespace }).isEmpty { return }
         writeQueue.async {
             self.can_split(st: pts_start, et: pts_end)
             
-            self.counter += 1
-            let content = "\(self.counter)\r\n" +
-            "\(self.convert_timestamp(t: pts_start)) --> \(self.convert_timestamp(t: pts_end))\r\n" +
+            let content = "\(self.convert_timestamp(t: pts_start)) --> \(self.convert_timestamp(t: pts_end))\r\n" +
             self.sanitize_str(str: caption) + "\r\n\r\n"
             self.write_callback(data: content.data(using: .utf8)!)
         }

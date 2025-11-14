@@ -11,37 +11,219 @@ import CoreData
 import CloudKit
 import CommonCrypto
 
+class PlaylistDocument: UIDocument {
+    var userData: [(String, String, String, String)] = []
+    
+    convenience init(fileURL url: URL, userData: [(String, String, String, String)] = []) {
+        self.init(fileURL: url)
+        self.userData = userData
+    }
+
+    override func contents(forType typeName: String) throws -> Any {
+        return userData.map({ "\($0.0)\0\($0.1)\0\($0.2)\0\($0.3)" }).joined(separator: "\0").data(using: .utf8)!
+    }
+    
+    override func load(fromContents contents: Any, ofType typeName: String?) throws {
+        userData.removeAll()
+        if let userContent = contents as? Data {
+            let items = String(bytes: userContent, encoding: .utf8)?.components(separatedBy: "\0") ?? []
+            for i in 0..<items.count/4 {
+                userData.append((items[i*4], items[i*4+1], items[i*4+2], items[i*4+3]))
+            }
+        }
+    }
+}
+
 public class dataItems {
 
-    public func listData(storage: String, parentID: String) -> [RemoteData]  {
-        if Thread.isMainThread {
-            let viewContext = persistentContainer.viewContext
-            
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "folder", ascending: false),
-                                            NSSortDescriptor(key: "name", ascending: true)]
-            do{
-                return try viewContext.fetch(fetchrequest) as! [RemoteData]
+    @MainActor
+    public func listData(storage: String, parentID: String) async -> [RemoteData]  {
+        let viewContext = persistentContainer.viewContext
+        
+        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
+        fetchrequest.sortDescriptors = [NSSortDescriptor(key: "folder", ascending: false),
+                                        NSSortDescriptor(key: "name", ascending: true)]
+        do{
+            return try viewContext.fetch(fetchrequest) as! [RemoteData]
+        }
+        catch{
+            print(error)
+            return []
+        }
+    }
+
+    public func getPlaylists() async -> [String] {
+        let url: URL
+        if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
+            if let playlist = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appending(component: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist
             }
-            catch{
+            else {
                 return []
             }
         }
         else {
-            return DispatchQueue.main.sync {
-                listData(storage: storage, parentID: parentID)
+            if let playlist = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appending(path: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist
+            }
+            else {
+                return []
             }
         }
+        guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: url.path(percentEncoded: false)) else {
+            return []
+        }
+        return dirs.sorted(using: .localizedStandard)
+    }
+    
+    public func getPlaylist(playlistName: String) async -> [(String, String, String, String)] {
+        let url: URL
+        if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
+            if let playlist = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appending(component: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return []
+            }
+        }
+        else {
+            if let playlist = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appending(path: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return []
+            }
+        }
+        let playlistFile = PlaylistDocument(fileURL: url)
+        guard await playlistFile.open() else {
+            return []
+        }
+        let data = playlistFile.userData
+        if playlistFile.documentState == .inConflict {
+            let currentVersion = NSFileVersion.currentVersionOfItem(at: url)
+            try? NSFileVersion.removeOtherVersionsOfItem(at: url)
+            currentVersion?.isResolved = true
+        }
+        await playlistFile.close()
+        return data
     }
 
-    public func getMark(storage: String, targetID: String) -> Double? {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync {
-                getMark(storage: storage, targetID: targetID)
+    public func setPlaylist(playlistName: String, items: [(String, String, String, String)]) async {
+        let url: URL
+        if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
+            if let playlist = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appending(component: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return
             }
         }
+        else {
+            if let playlist = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appending(path: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return
+            }
+        }
+        let playlistFile = PlaylistDocument(fileURL: url, userData: items)
+        await playlistFile.save(to: url, for: .forOverwriting)
+        if playlistFile.documentState == .inConflict {
+            let currentVersion = NSFileVersion.currentVersionOfItem(at: url)
+            try? NSFileVersion.removeOtherVersionsOfItem(at: url)
+            currentVersion?.isResolved = true
+        }
+        await playlistFile.close()
+    }
+
+    public func deletePlaylist(playlistName: String) async {
+        let url: URL
+        if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
+            if let playlist = FileManager.default.url(forUbiquityContainerIdentifier: nil)?.appending(component: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return
+            }
+        }
+        else {
+            if let playlist = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appending(path: "Playlist") {
+                try? FileManager.default.createDirectory(at: playlist, withIntermediateDirectories: true)
+                url = playlist.appending(component: playlistName)
+            }
+            else {
+                return
+            }
+        }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    public func getMark(storage: String, targetIDs: [String], parentID: String) async -> [String: Double] {
+        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
+            return [:]
+        }
         
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await getCloudMark(storage: storage, parentID: parentID)
+        }
+
+        var targets: [String: String] = [:]
+        for targetId in targetIDs {
+            var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
+            guard let data = "storage=\(storage),target=\(targetId)".cString(using: .utf8) else {
+                continue
+            }
+            CC_SHA512(data, CC_LONG(data.count-1), &result)
+            let target = result.map({ String(format: "%02hhx", $0) }).joined()
+            targets[target] = targetId
+        }
+        
+        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
+        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
+            return [:]
+        }
+        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
+        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
+
+        return await Task { @MainActor in
+            let viewContext = persistentContainer.viewContext
+            
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
+            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", target2, storage)
+            
+            var results: [String: Double] = [:]
+            do {
+                for item in try viewContext.fetch(fetchrequest) as! [Mark] {
+                    if let hashedId = item.id, let orgId = targets[hashedId] {
+                        results[orgId] = item.position
+                    }
+                }
+            }
+            catch {
+                print(error)
+            }
+            
+            return results
+        }.value
+    }
+
+    public func getMark(storage: String, targetID: String) async -> Double? {
+        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
+            return nil
+        }
+
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await getCloudMark(storage: storage, targetID: targetID)
+        }
+
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
             return nil
@@ -49,20 +231,19 @@ public class dataItems {
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
 
-        let viewContext = persistentContainer.viewContext
-        
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-        fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-        
-        return try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
+        return await Task { @MainActor in
+            let viewContext = persistentContainer.viewContext
+            
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
+            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
+            
+            return try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
+        }.value
     }
-    
-    public func getCloudMark(storage: String, parentID: String, onFinish: @escaping ()->Void) {
+
+    func getCloudMark(storage: String, targetID: String) async {
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            DispatchQueue.global().async {
-                onFinish()
-            }
+        guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
             return
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
@@ -70,17 +251,60 @@ public class dataItems {
         
         let ckDatabase = CKContainer.default().privateCloudDatabase
 
-        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "parentId == %@", argumentArray: [target]))
-        
-        ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                DispatchQueue.global().async {
-                    onFinish()
+        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [target]))
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
+            await persistentContainer.performBackgroundTask { context in
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", targetID, storage)
+                if let result = try? context.fetch(fetchRequest) {
+                    for object in result {
+                        context.delete(object as! NSManagedObject)
+                    }
                 }
-                return
+
+                for (_, ckRecord) in result.matchResults {
+                    switch ckRecord {
+                    case .success(let record):
+                        let pos = record["lastPosition"] as Double?
+                        let id = record["targetId"] as String?
+                        let parent = record["parentId"] as String?
+
+                        if let pos = pos {
+                            let newitem = Mark(context: context)
+                            newitem.id = id
+                            newitem.parent = parent
+                            newitem.storage = storage
+                            newitem.position = pos
+                        }
+
+                    case .failure(let error):
+                        print(error)
+                    }
+                }
+                
+                try? context.save()
             }
-            self.persistentContainer.performBackgroundTask { context in
+        }
+        catch {
+            print(error)
+        }
+    }
+
+    func getCloudMark(storage: String, parentID: String) async {
+        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
+        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
+            return
+        }
+        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
+        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
+        
+        let ckDatabase = CKContainer.default().privateCloudDatabase
+
+        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "parentId == %@", argumentArray: [target2]))
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
+            await persistentContainer.performBackgroundTask { context in
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
                 if let result = try? context.fetch(fetchRequest) {
@@ -89,445 +313,54 @@ public class dataItems {
                     }
                 }
 
-                for ckRecord in ckRecords!{
-                    let pos = ckRecord["lastPosition"] as Double?
-                    let id = ckRecord["targetId"] as String?
-                    
-                    if let pos = pos {
-                        let newitem = Mark(context: context)
-                        newitem.id = id
-                        newitem.storage = storage
-                        newitem.parent = parentID
-                        newitem.position = pos
+                for (_, ckRecord) in result.matchResults {
+                    switch ckRecord {
+                    case .success(let record):
+                        let pos = record["lastPosition"] as Double?
+                        let id = record["targetId"] as String?
+                        let parent = record["parentId"] as String?
+
+                        if let pos = pos {
+                            let newitem = Mark(context: context)
+                            newitem.id = id
+                            newitem.parent = parent
+                            newitem.storage = storage
+                            newitem.position = pos
+                        }
+
+                    case .failure(let error):
+                        print(error)
                     }
                 }
                 
                 try? context.save()
-                DispatchQueue.global().async {
-                    onFinish()
-                }
             }
-        })
+        }
+        catch {
+            print(error)
+        }
     }
 
-    func subGetCurrentPlaylist(q: CKQuery? = nil, cursor: CKQueryOperation.Cursor? = nil, onFinish: @escaping ([CKRecord])->Void) {
-        
-        let operation: CKQueryOperation
-        if let query = q {
-            operation = CKQueryOperation(query: query)
-        }
-        else if let cursor = cursor {
-            operation = CKQueryOperation(cursor: cursor)
-        }
-        else {
-            onFinish([])
+    public func setMark(storage: String, targetID: String, parentID: String, position: Double?) async {
+        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
             return
         }
-        var ret = [CKRecord]()
-        operation.resultsLimit = 100
-        operation.recordFetchedBlock = { ckRecord in
-            ret += [ckRecord]
-        }
-        operation.queryCompletionBlock = { cursor, error in
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                onFinish(ret)
-                return
-            }
-            if let cursor = cursor {
-                print("next query")
-                self.subGetCurrentPlaylist(cursor: cursor) { subret in
-                    ret += subret
-                    onFinish(ret)
-                }
-                return
-            }
-            onFinish(ret)
-        }
-        
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        ckDatabase.add(operation)
-    }
-    
-    func subUploadCloudPlaylist(delete: [CKRecord.ID]? = nil, save: [CKRecord]? = nil, onFinish: @escaping ()->Void) {
-        let currentDelete: [CKRecord.ID]?
-        let remainDelete: [CKRecord.ID]?
-        if let delete = delete {
-            if delete.count > 400 {
-                currentDelete = Array(delete[0..<400])
-                remainDelete = Array(delete[400...])
-            }
-            else {
-                currentDelete = delete
-                remainDelete = nil
-            }
-        }
-        else {
-            currentDelete = nil
-            remainDelete = nil
-        }
-        let currentSave: [CKRecord]?
-        let remainSave: [CKRecord]?
-        if currentDelete != nil {
-            currentSave = nil
-            remainSave = save
-        }
-        else if let save = save {
-            if save.count > 400 {
-                currentSave = Array(save[0..<400])
-                remainSave = Array(save[400...])
-            }
-            else {
-                currentSave = save
-                remainSave = nil
-            }
-        }
-        else {
-            currentSave = nil
-            remainSave = nil
-        }
-        
-        let opetation = CKModifyRecordsOperation()
-        opetation.recordIDsToDelete = currentDelete
-        opetation.recordsToSave = currentSave
-        opetation.modifyRecordsCompletionBlock = { saved, deleted, error in
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                onFinish()
-                return
-            }
-            print(saved?.count ?? -1)
-            print(deleted?.count ?? -1)
-            if remainSave != nil || remainDelete != nil {
-                self.subUploadCloudPlaylist(delete: remainDelete, save: remainSave, onFinish: onFinish)
-            }
-            else {
-                onFinish()
-            }
-        }
-        opetation.perRecordCompletionBlock = { record, error in
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                return
-            }
-        }
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        ckDatabase.add(opetation)
-    }
-    
-    public func uploadCloudPlaylist(onFinish: @escaping ()->Void) {
-        if !Thread.isMainThread {
-            DispatchQueue.main.async {
-                self.uploadCloudPlaylist(onFinish: onFinish)
-            }
-            return
-        }
-        
-        var serialStart = Int64(0)
-        var serialEnd = Int64(0)
-        var saveItems = [CKRecord]()
-        
-        let viewContext = self.persistentContainer.viewContext
-        let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-        if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-            if let forid = result.first {
-                serialStart = forid.index
-                serialEnd = forid.serial
-            }
-        }
 
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchrequest.predicate = NSPredicate(format: "serial BETWEEN {%lld, %lld}", serialStart, serialEnd)
-        if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
-            for item in data {
-                let ckRecord = CKRecord(recordType: "PlayList")
-                ckRecord["id"] = item.id
-                ckRecord["storage"] = item.storage
-                ckRecord["folder"] = item.folder
-                ckRecord["index"] = item.index
-                ckRecord["serial"] = item.serial
-                saveItems += [ckRecord]
-            }
-        }
-
-        let ckRecord = CKRecord(recordType: "PlayList")
-        ckRecord["id"] = ""
-        ckRecord["storage"] = ""
-        ckRecord["folder"] = ""
-        ckRecord["index"] = serialStart
-        ckRecord["serial"] = serialEnd
-        saveItems += [ckRecord]
-
-        DispatchQueue.global().async {
-            let ckQuery = CKQuery(recordType: "PlayList", predicate: NSPredicate(value: true))
-            
-            self.subGetCurrentPlaylist(q: ckQuery) { ckRecords in
-                self.subUploadCloudPlaylist(delete: ckRecords.map({ $0.recordID}), save: saveItems, onFinish: onFinish)
-            }
-        }
-    }
-
-    func subGetCloudPlaylist(q: CKQuery? = nil, cursor: CKQueryOperation.Cursor? = nil, onFinish: @escaping ()->Void) {
-        let operation: CKQueryOperation
-        if let query = q {
-            operation = CKQueryOperation(query: query)
-        }
-        else if let cursor = cursor {
-            operation = CKQueryOperation(cursor: cursor)
-        }
-        else {
-            onFinish()
-            return
-        }
-        let backgroudContext = persistentContainer.newBackgroundContext()
-        operation.resultsLimit = 100
-        operation.recordFetchedBlock = { ckRecord in
-            backgroudContext.perform {
-                let id = ckRecord["id"] as String?
-                let storage = ckRecord["storage"] as String?
-                let folder = ckRecord["folder"] as String?
-                let index = ckRecord["index"] as Int64?
-                let serial = ckRecord["serial"] as Int64?
-                
-                let newitem = PlayList(context: backgroudContext)
-                newitem.id = id
-                newitem.storage = storage
-                newitem.folder = folder
-                newitem.index = index ?? -1
-                newitem.serial = serial ?? 0
-            }
-        }
-        operation.queryCompletionBlock = { cursor, error in
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                backgroudContext.perform {
-                    try? backgroudContext.save()
-                }
-                onFinish()
-                return
-            }
-            if let cursor = cursor {
-                print("next query")
-                self.subGetCloudPlaylist(cursor: cursor, onFinish: onFinish)
-                return
-            }
-            backgroudContext.perform {
-                try? backgroudContext.save()
-            }
-            onFinish()
-        }
-        
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        ckDatabase.add(operation)
-    }
-    
-    public func getCloudPlaylist(onFinish: @escaping ()->Void) {
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        DispatchQueue.global().async {
-            let ckQuery = CKQuery(recordType: "PlayList", predicate: NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", ""))
-            ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
-                guard error == nil else {
-                    print("\(String(describing: error?.localizedDescription))")
-                    onFinish()
-                    return
-                }
-                var serverSerial = Int64(0)
-                var serverSerialEnd = Int64(0)
-                for ckRecord in ckRecords!{
-                    serverSerial = ckRecord["index"] as Int64? ?? 0
-                    serverSerialEnd = ckRecord["serial"] as Int64? ?? 0
-                }
-                
-                print(serverSerial, serverSerialEnd)
-                
-                DispatchQueue.main.async {
-                    let viewContext = self.persistentContainer.viewContext
-
-                    let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-                    fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-                    if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-                        if let forid = result.first {
-                            forid.index = serverSerial
-                            forid.serial = serverSerialEnd
-                        }
-                        else {
-                            let forid = PlayList(context: viewContext)
-                            forid.folder = ""
-                            forid.id = ""
-                            forid.storage = ""
-                            forid.index = serverSerial
-                            forid.serial = serverSerialEnd
-                        }
-                    }
-                    try? viewContext.save()
-                }
-                
-                let ckQuery = CKQuery(recordType: "PlayList", predicate: NSPredicate(format: "serial BETWEEN {%lld, %lld}", serverSerial, serverSerialEnd))
-              
-                self.subGetCloudPlaylist(q: ckQuery, onFinish: onFinish)
-            })
-        }
-    }
-
-    public func touchPlaylist(items: [[String: Any]]) {
-        persistentContainer.performBackgroundTask { context in
-            let serial = Int64(Date().timeIntervalSince1970 * 1000)
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-            if let result = try? context.fetch(fetchRequest1) as? [PlayList] {
-                if let forid = result.first {
-                    forid.serial = serial
-                }
-                else {
-                    let forid = PlayList(context: context)
-                    forid.folder = ""
-                    forid.id = ""
-                    forid.storage = ""
-                    forid.index = serial
-                    forid.serial = serial
-                }
-            }
-
-            for item in items.filter({ !($0["isFolder"] as? Bool ?? true) }) {
-                if let id = item["id"] as? String, let storage = item["storage"] as? String, let folder = item["folder"] as? String, let index = item["index"] as? Int64 {
-                    let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-                    fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@ && index == %lld", id, storage, folder, index)
-                    if let data = try? context.fetch(fetchrequest) as? [PlayList] {
-                        if let target = data.first {
-                            target.serial = serial
-                        }
-                    }
-                }
-            }
-            try? context.save()
-        }
-    }
-    
-    public func getPlaylist() -> [[String: Any]] {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync {
-                self.getPlaylist()
-            }
-        }
-        let viewContext = self.persistentContainer.viewContext
-
-        var result = [[String: Any]]()
-        var startSerial = Int64(0)
-        var endSerial = Int64(0)
-        let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-        if let result = try? viewContext.fetch(fetchRequest1) as? [PlayList] {
-            if let forid = result.first {
-                endSerial = forid.serial
-                startSerial = forid.index
-            }
-        }
-
-        let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchRequest2.predicate = NSPredicate(format: "NOT serial BETWEEN {%lld, %lld}", startSerial, endSerial)
-        if let result = try? viewContext.fetch(fetchRequest2) as? [PlayList] {
-            for item in result {
-                viewContext.delete(item)
-            }
-        }
-        try? viewContext.save()
-
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-        fetchrequest.predicate = NSPredicate(format: "id != %@ && storage != %@ && serial BETWEEN {%lld, %lld}", "", "", startSerial, endSerial)
-        if let data = try? viewContext.fetch(fetchrequest) as? [PlayList] {
-            result = data.map { item in
-                var ret = [String: Any]()
-                ret["id"] = item.id
-                ret["storage"] = item.storage
-                ret["folder"] = item.folder
-                ret["index"] = item.index
-                return ret
-            }
-        }
-        return result
-    }
-
-    public func updatePlaylist(prevItem: [String: Any], newItem: [String: Any]) {
-        persistentContainer.performBackgroundTask { context in
-            let serial = Int64(Date().timeIntervalSince1970 * 1000)
-
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", "", "", "")
-            if let result = try? context.fetch(fetchRequest1) as? [PlayList] {
-                if let forid = result.first {
-                    forid.serial = serial
-                }
-                else {
-                    let forid = PlayList(context: context)
-                    forid.folder = ""
-                    forid.id = ""
-                    forid.storage = ""
-                    forid.index = serial
-                    forid.serial = serial
-                }
-            }
-            else {
-                let forid = PlayList(context: context)
-                forid.folder = ""
-                forid.id = ""
-                forid.storage = ""
-                forid.index = serial
-                forid.serial = serial
-            }
-            try? context.save()
-
-            var newData: PlayList
-            if let id = prevItem["id"] as? String, let storage = prevItem["storage"] as? String, let folder = prevItem["folder"] as? String {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "PlayList")
-                if let index = prevItem["index"] as? Int64 {
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@ && index == %lld", id, storage, folder, index)
-                }
-                else {
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@ && folder == %@", id, storage, folder)
-                }
-                if let result = try? context.fetch(fetchRequest) as? [PlayList] {
-                    newData = result.first ?? PlayList(context: context)
-                    for object in result.dropFirst() {
-                        context.delete(object)
-                    }
-                }
-                else {
-                    newData = PlayList(context: context)
-                }
-            }
-            else {
-                newData = PlayList(context: context)
-            }
-            if let newid = newItem["id"] as? String, let newstorage = newItem["storage"] as? String, let newfolder = newItem["folder"] as? String {
-                newData.id = newid
-                newData.storage = newstorage
-                newData.folder = newfolder
-                if let index = newItem["index"] as? Int64 {
-                    newData.index = index
-                }
-                else {
-                    newData.index = Int64(Date().timeIntervalSince1970 * 1000)
-                }
-                newData.serial = serial
-            }
-            else {
-                context.delete(newData)
-            }
-            try? context.save()
-        }
-    }
-    
-    public func setMark(storage: String, targetID: String, parentID: String, position: Double?, onFinish: @escaping ()->Void) {
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
-            onFinish()
             return
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
 
-        persistentContainer.performBackgroundTask { context in
+        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
+        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
+            return
+        }
+        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
+        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
+
+        await persistentContainer.performBackgroundTask { context in
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
             if let result = try? context.fetch(fetchRequest) {
@@ -539,8 +372,8 @@ public class dataItems {
             if let position = position {
                 let newitem = Mark(context: context)
                 newitem.id = target
+                newitem.parent = target2
                 newitem.storage = storage
-                newitem.parent = parentID
                 newitem.position = position
                 
                 try? context.save()
@@ -548,99 +381,70 @@ public class dataItems {
             else {
                 try? context.save()
             }
-            onFinish()
+        }
+        
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await setCloudMark(storage: storage, targetID: targetID, parentID: parentID, position: position)
         }
     }
 
-    public func setCloudMark(storage: String, targetID: String, parentID: String, position: Double?, group: DispatchGroup) {
+    func setCloudMark(storage: String, targetID: String, parentID: String, position: Double?) async {
         var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
             return
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
+
         var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
             return
         }
         CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
-        let parent = result2.map({ String(format: "%02hhx", $0) }).joined()
+        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
 
         let ckDatabase = CKContainer.default().privateCloudDatabase
         
         let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [target]))
 
-        group.enter()
-        ckDatabase.perform(ckQuery, inZoneWith: nil, completionHandler: { (ckRecords, error) in
-            defer {
-                group.leave()
-            }
-            guard error == nil else {
-                print("\(String(describing: error?.localizedDescription))")
-                return
-            }
-            if ckRecords?.count ?? 0 > 0 {
-                if let position = position {
-                    for ckRecord in ckRecords!{
-                        ckRecord["lastPosition"] = position
-                        ckRecord["targetId"] = target
-                        ckRecord["parentId"] = parent
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
 
-                        group.enter()
-                        ckDatabase.save(ckRecord, completionHandler: { (ckRecord, error) in
-                            defer {
-                                group.leave()
-                            }
-                            guard error == nil else {
-                                print("\(String(describing: error?.localizedDescription))")
-                                return
-                            }
-                        })
-                    }
-                }
-                else {
-                    for ckRecord in ckRecords!{
-                        group.enter()
-                        ckDatabase.delete(withRecordID: ckRecord.recordID, completionHandler: { (recordId, error) in
-                            defer {
-                                group.leave()
-                            }
-                            guard error == nil else {
-                                print("\(String(describing: error?.localizedDescription))")
-                                return
-                            }
-                        })
-                    }
-                }
-            }
-            else {
+            if result.matchResults.isEmpty {
                 if let position = position {
                     let ckRecord = CKRecord(recordType: "PlayTime")
                     ckRecord["lastPosition"] = position
                     ckRecord["targetId"] = target
-                    ckRecord["parentId"] = parent
+                    ckRecord["parentId"] = target2
 
-                    group.enter()
-                    ckDatabase.save(ckRecord, completionHandler: { (ckRecords, error) in
-                        defer {
-                            group.leave()
-                        }
-                        guard error == nil else {
-                            print("\(String(describing: error?.localizedDescription))")
-                            return
-                        }
-                    })
+                    try await ckDatabase.save(ckRecord)
                 }
             }
-        })
-    }
-    
-    public func getImage(storage: String, parentId: String, baseName: String) -> RemoteData? {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync {
-                self.getImage(storage: storage, parentId: parentId, baseName: baseName)
+            for (_, record) in result.matchResults {
+                switch record {
+                case .success(let ckRecord):
+                    if let position = position {
+                        ckRecord["lastPosition"] = position
+                        ckRecord["targetId"] = target
+                        ckRecord["parentId"] = target2
+
+                        try await ckDatabase.save(ckRecord)
+                    }
+                    else {
+                        try await ckDatabase.deleteRecord(withID: ckRecord.recordID)
+                    }
+                case .failure(let error):
+                    print(error)
+                }
             }
         }
+        catch {
+            print(error)
+        }
+    }
+    
+    @MainActor
+    public func getImage(storage: String, parentId: String, baseName: String) async -> RemoteData? {
         let viewContext = persistentContainer.viewContext
         
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -669,52 +473,17 @@ public class dataItems {
         return nil
     }
     
-    public func getData(storage: String, fileId: String, onFinish: @escaping (RemoteData?)->Void) {
-        if !Thread.isMainThread {
-            DispatchQueue.main.async {
-                let viewContext = self.persistentContainer.viewContext
-                
-                let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                let ret = ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
-                DispatchQueue.global().async {
-                    onFinish(ret)
-                }
-            }
-        }
-        else {
-            let viewContext = self.persistentContainer.viewContext
-            
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            let ret = ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
-            DispatchQueue.global().async {
-                onFinish(ret)
-            }
-        }
-    }
-    
-    public func getData(storage: String, fileId: String) -> RemoteData?  {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync {
-                self.getData(storage: storage, fileId: fileId)
-            }
-        }
-        let viewContext = persistentContainer.viewContext
-        
+    @MainActor
+    public func getData(storage: String, fileId: String) async -> RemoteData? {
+        let viewContext = self.persistentContainer.viewContext
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
         return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
     }
-    
-    public func getData(path: String) -> RemoteData?  {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync {
-                self.getData(path: path)
-            }
-        }
-        let viewContext = persistentContainer.viewContext
-        
+
+    @MainActor
+    public func getData(path: String) async -> RemoteData? {
+        let viewContext = self.persistentContainer.viewContext
         let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchrequest.predicate = NSPredicate(format: "path == %@", path)
         return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
@@ -736,7 +505,6 @@ public class dataItems {
         let description = NSPersistentStoreDescription(url: location)
         description.shouldInferMappingModelAutomatically = true
         description.shouldMigrateStoreAutomatically = true
-        description.setOption(FileProtectionType.completeUnlessOpen as NSObject, forKey: NSPersistentStoreFileProtectionKey)
         container.persistentStoreDescriptions = [description]
         
         container.loadPersistentStores(completionHandler: { (storeDescription, error) in

@@ -7,7 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "converter_main.h"
+#import <ffconverter/converter_main.h>
 
 //! Project version number for ffconverter.
 FOUNDATION_EXPORT double ffconverterVersionNumber;

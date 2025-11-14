@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 52;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -11,40 +11,21 @@
 		3F48A07C237C06FB008B6690 /* packetQueue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3F48A07A237C06FB008B6690 /* packetQueue.cpp */; };
 		3F48A07D237C06FB008B6690 /* packetQueue.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 3F48A07B237C06FB008B6690 /* packetQueue.hpp */; };
 		3F48A07F237C327D008B6690 /* WebVTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F48A07E237C327D008B6690 /* WebVTT.swift */; };
-		3F92E583231FC801003A11F6 /* ffconverter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F92E579231FC801003A11F6 /* ffconverter.framework */; };
-		3F92E588231FC801003A11F6 /* ffconverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F92E587231FC801003A11F6 /* ffconverterTests.swift */; };
 		3F92E58A231FC801003A11F6 /* ffconverter.h in Headers */ = {isa = PBXBuildFile; fileRef = 3F92E57C231FC801003A11F6 /* ffconverter.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		3F92E6A2231FC8BE003A11F6 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F92E6A1231FC8BE003A11F6 /* libz.tbd */; };
-		3F92E6A4231FC8D1003A11F6 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F92E6A3231FC8D1003A11F6 /* libbz2.tbd */; };
 		3FA954B62321D682005B086A /* converter_main.h in Headers */ = {isa = PBXBuildFile; fileRef = 3FA954B42321D682005B086A /* converter_main.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		3FA954B72321D682005B086A /* converter_main.c in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954B52321D682005B086A /* converter_main.c */; };
 		3FA954BB2322364C005B086A /* converter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954B92322364C005B086A /* converter.cpp */; };
 		3FA954BC2322364C005B086A /* converter.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 3FA954BA2322364C005B086A /* converter.hpp */; };
-		3FA954C02322990A005B086A /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954BF2322990A005B086A /* CoreVideo.framework */; };
-		3FA954C223229939005B086A /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954C123229939005B086A /* CoreFoundation.framework */; };
-		3FA954C423229985005B086A /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954C323229985005B086A /* CoreMedia.framework */; };
-		3FA954C6232299A6005B086A /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954C5232299A6005B086A /* VideoToolbox.framework */; };
-		3FA954C8232299C3005B086A /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954C7232299C3005B086A /* CoreAudio.framework */; };
-		3FA954CA232299D1005B086A /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954C9232299D1005B086A /* AudioToolbox.framework */; };
-		3FA954CB232299EC005B086A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954BD232298D4005B086A /* Security.framework */; };
-		3FA954CD23229A02005B086A /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954CC23229A02005B086A /* libiconv.tbd */; };
 		3FA954CF23229F33005B086A /* convert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954CE23229F33005B086A /* convert.swift */; };
-		3FA954D12322A486005B086A /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FA954D02322A486005B086A /* RemoteCloud.framework */; };
 		3FA954D82322EE13005B086A /* server.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D72322EE13005B086A /* server.swift */; };
 		3FA954DA23230EA1005B086A /* mpegts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D923230EA1005B086A /* mpegts.swift */; };
 		3FA954DC23230F38005B086A /* encoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954DB23230F38005B086A /* encoder.swift */; };
-		3FAFAB6C237ED76C0047C8F7 /* ffmpeg.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3FAFAB6B237ED76C0047C8F7 /* ffmpeg.xcframework */; };
+		BE0572F52EC1B1CF00515817 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572F42EC1B1CF00515817 /* RemoteCloud.framework */; };
+		BE0572FD2EC1BB4C00515817 /* ffmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572FC2EC1BB4C00515817 /* ffmpeg.a */; };
+		BE0572FF2EC1BB6A00515817 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572FE2EC1BB6000515817 /* libbz2.tbd */; };
+		BE0573012EC1BB8100515817 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0573002EC1BB7B00515817 /* libz.tbd */; };
+		BE0573032EC1BB9A00515817 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0573022EC1BB9000515817 /* libiconv.tbd */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		3F92E584231FC801003A11F6 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3F92E570231FC801003A11F6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3F92E578231FC801003A11F6;
-			remoteInfo = ffconverter;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		3F48A06F237AB695008B6690 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -52,34 +33,23 @@
 		3F48A07A237C06FB008B6690 /* packetQueue.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = packetQueue.cpp; sourceTree = "<group>"; };
 		3F48A07B237C06FB008B6690 /* packetQueue.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = packetQueue.hpp; sourceTree = "<group>"; };
 		3F48A07E237C327D008B6690 /* WebVTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebVTT.swift; sourceTree = "<group>"; };
-		3F9151D8236C1FB600E5EF65 /* ffmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ffmpeg.xcframework; path = ../../work/ffmpeg.xcframework; sourceTree = "<group>"; };
 		3F92E579231FC801003A11F6 /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F92E57C231FC801003A11F6 /* ffconverter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ffconverter.h; sourceTree = "<group>"; };
 		3F92E57D231FC801003A11F6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3F92E582231FC801003A11F6 /* ffconverterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ffconverterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3F92E587231FC801003A11F6 /* ffconverterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ffconverterTests.swift; sourceTree = "<group>"; };
-		3F92E589231FC801003A11F6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3F92E6A1231FC8BE003A11F6 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
-		3F92E6A3231FC8D1003A11F6 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
 		3FA954B42321D682005B086A /* converter_main.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = converter_main.h; sourceTree = "<group>"; };
 		3FA954B52321D682005B086A /* converter_main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = converter_main.c; sourceTree = "<group>"; };
 		3FA954B82321D753005B086A /* converter_param.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = converter_param.h; sourceTree = "<group>"; };
 		3FA954B92322364C005B086A /* converter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = converter.cpp; sourceTree = "<group>"; };
 		3FA954BA2322364C005B086A /* converter.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = converter.hpp; sourceTree = "<group>"; };
-		3FA954BD232298D4005B086A /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
-		3FA954BF2322990A005B086A /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
-		3FA954C123229939005B086A /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
-		3FA954C323229985005B086A /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
-		3FA954C5232299A6005B086A /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
-		3FA954C7232299C3005B086A /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
-		3FA954C9232299D1005B086A /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
-		3FA954CC23229A02005B086A /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 		3FA954CE23229F33005B086A /* convert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = convert.swift; sourceTree = "<group>"; };
-		3FA954D02322A486005B086A /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FA954D72322EE13005B086A /* server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = server.swift; sourceTree = "<group>"; };
 		3FA954D923230EA1005B086A /* mpegts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = mpegts.swift; sourceTree = "<group>"; };
 		3FA954DB23230F38005B086A /* encoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = encoder.swift; sourceTree = "<group>"; };
-		3FAFAB6B237ED76C0047C8F7 /* ffmpeg.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ffmpeg.xcframework; path = ../work/ffmpeg.xcframework; sourceTree = "<group>"; };
+		BE0572F42EC1B1CF00515817 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE0572FC2EC1BB4C00515817 /* ffmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = ffmpeg.a; path = ../work/output/ffmpeg.a; sourceTree = SOURCE_ROOT; };
+		BE0572FE2EC1BB6000515817 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
+		BE0573002EC1BB7B00515817 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		BE0573022EC1BB9000515817 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,26 +57,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3FA954D12322A486005B086A /* RemoteCloud.framework in Frameworks */,
-				3FA954CD23229A02005B086A /* libiconv.tbd in Frameworks */,
-				3FA954CB232299EC005B086A /* Security.framework in Frameworks */,
-				3FA954CA232299D1005B086A /* AudioToolbox.framework in Frameworks */,
-				3FA954C8232299C3005B086A /* CoreAudio.framework in Frameworks */,
-				3FA954C6232299A6005B086A /* VideoToolbox.framework in Frameworks */,
-				3FAFAB6C237ED76C0047C8F7 /* ffmpeg.xcframework in Frameworks */,
-				3FA954C423229985005B086A /* CoreMedia.framework in Frameworks */,
-				3FA954C223229939005B086A /* CoreFoundation.framework in Frameworks */,
-				3FA954C02322990A005B086A /* CoreVideo.framework in Frameworks */,
-				3F92E6A4231FC8D1003A11F6 /* libbz2.tbd in Frameworks */,
-				3F92E6A2231FC8BE003A11F6 /* libz.tbd in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3F92E57F231FC801003A11F6 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3F92E583231FC801003A11F6 /* ffconverter.framework in Frameworks */,
+				BE0572FF2EC1BB6A00515817 /* libbz2.tbd in Frameworks */,
+				BE0573012EC1BB8100515817 /* libz.tbd in Frameworks */,
+				BE0572FD2EC1BB4C00515817 /* ffmpeg.a in Frameworks */,
+				BE0572F52EC1B1CF00515817 /* RemoteCloud.framework in Frameworks */,
+				BE0573032EC1BB9A00515817 /* libiconv.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -116,9 +71,8 @@
 		3F92E56F231FC801003A11F6 = {
 			isa = PBXGroup;
 			children = (
-				3FAFAB6B237ED76C0047C8F7 /* ffmpeg.xcframework */,
+				BE0572FC2EC1BB4C00515817 /* ffmpeg.a */,
 				3F92E57B231FC801003A11F6 /* ffconverter */,
-				3F92E586231FC801003A11F6 /* ffconverterTests */,
 				3F92E57A231FC801003A11F6 /* Products */,
 				3F92E6A0231FC8BD003A11F6 /* Frameworks */,
 			);
@@ -128,7 +82,6 @@
 			isa = PBXGroup;
 			children = (
 				3F92E579231FC801003A11F6 /* ffconverter.framework */,
-				3F92E582231FC801003A11F6 /* ffconverterTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -155,30 +108,13 @@
 			path = ffconverter;
 			sourceTree = "<group>";
 		};
-		3F92E586231FC801003A11F6 /* ffconverterTests */ = {
-			isa = PBXGroup;
-			children = (
-				3F92E587231FC801003A11F6 /* ffconverterTests.swift */,
-				3F92E589231FC801003A11F6 /* Info.plist */,
-			);
-			path = ffconverterTests;
-			sourceTree = "<group>";
-		};
 		3F92E6A0231FC8BD003A11F6 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				3F9151D8236C1FB600E5EF65 /* ffmpeg.xcframework */,
-				3FA954D02322A486005B086A /* RemoteCloud.framework */,
-				3FA954CC23229A02005B086A /* libiconv.tbd */,
-				3FA954C9232299D1005B086A /* AudioToolbox.framework */,
-				3FA954C7232299C3005B086A /* CoreAudio.framework */,
-				3FA954C5232299A6005B086A /* VideoToolbox.framework */,
-				3FA954C323229985005B086A /* CoreMedia.framework */,
-				3FA954C123229939005B086A /* CoreFoundation.framework */,
-				3FA954BF2322990A005B086A /* CoreVideo.framework */,
-				3FA954BD232298D4005B086A /* Security.framework */,
-				3F92E6A3231FC8D1003A11F6 /* libbz2.tbd */,
-				3F92E6A1231FC8BE003A11F6 /* libz.tbd */,
+				BE0573022EC1BB9000515817 /* libiconv.tbd */,
+				BE0573002EC1BB7B00515817 /* libz.tbd */,
+				BE0572FE2EC1BB6000515817 /* libbz2.tbd */,
+				BE0572F42EC1B1CF00515817 /* RemoteCloud.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -218,40 +154,20 @@
 			productReference = 3F92E579231FC801003A11F6 /* ffconverter.framework */;
 			productType = "com.apple.product-type.framework";
 		};
-		3F92E581231FC801003A11F6 /* ffconverterTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3F92E590231FC801003A11F6 /* Build configuration list for PBXNativeTarget "ffconverterTests" */;
-			buildPhases = (
-				3F92E57E231FC801003A11F6 /* Sources */,
-				3F92E57F231FC801003A11F6 /* Frameworks */,
-				3F92E580231FC801003A11F6 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3F92E585231FC801003A11F6 /* PBXTargetDependency */,
-			);
-			name = ffconverterTests;
-			productName = ffconverterTests;
-			productReference = 3F92E582231FC801003A11F6 /* ffconverterTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		3F92E570231FC801003A11F6 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1030;
-				LastUpgradeCheck = 1030;
+				LastUpgradeCheck = 2610;
 				ORGANIZATIONNAME = lithium03;
 				TargetAttributes = {
 					3F92E578231FC801003A11F6 = {
 						CreatedOnToolsVersion = 10.3;
 						LastSwiftMigration = 1030;
-					};
-					3F92E581231FC801003A11F6 = {
-						CreatedOnToolsVersion = 10.3;
 					};
 				};
 			};
@@ -270,7 +186,6 @@
 			projectRoot = "";
 			targets = (
 				3F92E578231FC801003A11F6 /* ffconverter */,
-				3F92E581231FC801003A11F6 /* ffconverterTests */,
 			);
 		};
 /* End PBXProject section */
@@ -281,13 +196,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				3F48A06E237AB695008B6690 /* Localizable.strings in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3F92E580231FC801003A11F6 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -309,23 +217,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3F92E57E231FC801003A11F6 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3F92E588231FC801003A11F6 /* ffconverterTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		3F92E585231FC801003A11F6 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3F92E578231FC801003A11F6 /* ffconverter */;
-			targetProxy = 3F92E584231FC801003A11F6 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		3F48A070237AB695008B6690 /* Localizable.strings */ = {
@@ -344,6 +236,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -367,6 +260,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -377,8 +271,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -398,6 +294,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -409,6 +306,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -432,6 +330,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -442,8 +341,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -456,6 +357,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -472,23 +374,26 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				HEADER_SEARCH_PATHS = "";
+				ENABLE_MODULE_VERIFIER = YES;
+				HEADER_SEARCH_PATHS = ../work/output/include;
 				INFOPLIST_FILE = ffconverter/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverter;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -505,65 +410,30 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				HEADER_SEARCH_PATHS = "";
+				ENABLE_MODULE_VERIFIER = YES;
+				HEADER_SEARCH_PATHS = ../work/output/include;
 				INFOPLIST_FILE = ffconverter/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverter;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USER_HEADER_SEARCH_PATHS = "";
 				USE_HEADERMAP = NO;
-			};
-			name = Release;
-		};
-		3F92E591231FC801003A11F6 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = ffconverterTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverterTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		3F92E592231FC801003A11F6 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7A9X38B4YU;
-				INFOPLIST_FILE = ffconverterTests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverterTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -584,15 +454,6 @@
 			buildConfigurations = (
 				3F92E58E231FC801003A11F6 /* Debug */,
 				3F92E58F231FC801003A11F6 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3F92E590231FC801003A11F6 /* Build configuration list for PBXNativeTarget "ffconverterTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3F92E591231FC801003A11F6 /* Debug */,
-				3F92E592231FC801003A11F6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

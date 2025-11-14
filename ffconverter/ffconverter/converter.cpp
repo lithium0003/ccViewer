@@ -12,6 +12,10 @@ AVPacket flush_pkt;
 AVPacket eof_pkt;
 AVPacket abort_pkt;
 
+extern char *FLUSH_STR;
+extern char *EOF_STR;
+extern char *ABORT_STR;
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -25,20 +29,28 @@ extern "C" {
         Converter *convert = new Converter();
         param->converter = convert;
         convert->param = param;
+
+        convert->arib_to_text = param->arib_convert_text != 0;
     }
     
     void freeParam(struct convert_param * param)
     {
         printf("freeParam\n");
+        if(!param) return;
         delete (Converter *)param->converter;
+        param->converter = nullptr;
     }
     
     int createParseThread(struct convert_param * param) {
+        if(!param) return -1;
+        if(!(Converter *)param->converter) return -1;
         ((Converter *)param->converter)->parse_thread = std::thread(decode_thread, param);
         return 0;
     }
     
     int waitParseThread(struct convert_param * param) {
+        if(!param) return -1;
+        if(!(Converter *)param->converter) return -1;
         ((Converter *)param->converter)->parse_thread.join();
         ((Converter *)param->converter)->Finalize();
         return 0;
@@ -170,10 +182,10 @@ void decode_thread(struct convert_param *stream)
         }
     }
 
-
     for(const auto &audio: converter->audio_info) {
         s_langs.resize(s_langs.size() + audio->language.size() + 1);
     }
+    s_langs.push_back(0);
     cp = &s_langs[0];
     for(const auto &audio: converter->audio_info) {
         s_langp.push_back(cp);
@@ -205,7 +217,18 @@ void decode_thread(struct convert_param *stream)
         auto subtitle = converter->subtitle_info[i];
         auto id = subtitle->subtitle_st->codecpar->codec_id;
         auto desc = avcodec_descriptor_get(id);
-        if (desc != NULL) {
+        if (id == AV_CODEC_ID_ARIB_CAPTION) {
+            if(converter->arib_to_text) {
+                txt_subtitleStream.push_back(converter->subtitleStream[i]);
+                subtitle->isText = true;
+                subtitle->textIndex = (int)txt_subtitleStream.size()-1;
+            }
+            else {
+                img_subtitleStream.push_back(converter->subtitleStream[i]);
+                subtitle->isText = false;
+            }
+        }
+        else if (desc != NULL) {
             if(desc->props & AV_CODEC_PROP_BITMAP_SUB){
                 img_subtitleStream.push_back(converter->subtitleStream[i]);
                 subtitle->isText = false;
@@ -227,6 +250,7 @@ void decode_thread(struct convert_param *stream)
             }
         }
     }
+    v_langs.push_back(0);
     cp = &v_langs[0];
     for(int i = 0; i < txt_subtitleStream.size(); i++) {
         for(int j = 0; j < converter->subtitle_info.size(); j++){
@@ -331,6 +355,22 @@ void decode_thread(struct convert_param *stream)
         goto failed_run;
     }
     
+    if (converter->pFormatCtx->duration) {
+        converter->media_duration = converter->pFormatCtx->duration / 1000000.0;
+    }
+    else if (converter->videoStream.size() > 0 && converter->pFormatCtx->streams[converter->main_video]->duration) {
+        converter->media_duration = converter->pFormatCtx->streams[converter->main_video]->duration / 1000000.0;
+    }
+    else if (converter->audioStream.size() > 0 && converter->pFormatCtx->streams[main_audio]->duration) {
+        converter->media_duration = converter->pFormatCtx->streams[main_audio]->duration / 1000000.0;
+    }
+    stream->set_duration(stream->stream, converter->media_duration);
+
+    stream->wait_to_start(stream->stream);
+    if (converter->IsQuit()) {
+        goto finish;
+    }
+
     // main decode loop
     av_log(NULL, AV_LOG_INFO, "decode_thread read loop\n");
     for (;;) {
@@ -341,7 +381,7 @@ void decode_thread(struct convert_param *stream)
         if (converter->videoStream.size() > 0) {
             bool isFull = false;
             for(auto video: converter->video_info){
-                if(video->videoq.size > MAX_VIDEOQ_SIZE) {
+                if(video->videoq.size() > MAX_VIDEOQ_SIZE) {
                     isFull = true;
                     break;
                 }
@@ -354,7 +394,7 @@ void decode_thread(struct convert_param *stream)
         else if (converter->audioStream.size() > 0) {
             bool isFull = false;
             for(auto audio: converter->audio_info){
-                if(audio->audioq.size > MAX_AUDIOQ_SIZE) {
+                if(audio->audioq.size() > MAX_AUDIOQ_SIZE) {
                     isFull = true;
                     break;
                 }
@@ -428,25 +468,38 @@ void decode_thread(struct convert_param *stream)
             start_skip = NAN;
             continue;
         }
+        
+        if((packet.flags & (AV_PKT_FLAG_CORRUPT | AV_PKT_FLAG_DISCARD)) > 0) {
+            av_packet_unref(&packet);
+            av_log(NULL, AV_LOG_INFO, "flag %d %lld\n", packet.flags, packet.pts);
+            continue;
+        }
 
         error = false;
         bool found = false;
         // Is this a packet from the video stream?
         for(int i = 0; i < converter->videoStream.size(); i++) {
             if (packet.stream_index == converter->videoStream[i]) {
-                av_log(NULL, AV_LOG_INFO, "video packet %lld\n", packet_count);
-                converter->video_info[i]->video_eof = false;
-                converter->video_info[i]->videoq.put(&packet);
+                av_log(NULL, AV_LOG_INFO, "video %d packet %lld\n", packet.stream_index, packet_count);
+                if(converter->video_info[i]->videoq.put(&packet) == 0) {
+                    converter->video_info[i]->video_eof = false;
+                }
                 video_last = packet_count;
                 found = true;
+                break;
             }
         }
         if (!found) {
             for(int i = 0; i < converter->subtitleStream.size(); i++) {
                 if (packet.stream_index == converter->subtitleStream[i]) {
-                    av_log(NULL, AV_LOG_INFO, "subtile packet %lld\n", packet_count);
+                    av_log(NULL, AV_LOG_INFO, "subtile %d packet %lld\n", packet.stream_index, packet_count);
+                    if(av_q2d(converter->pFormatCtx->streams[packet.stream_index]->time_base) > 0) {
+                        printf("subtitle timebase %f\n", av_q2d(converter->pFormatCtx->streams[packet.stream_index]->time_base));
+                        converter->subtitle_timebase = converter->pFormatCtx->streams[packet.stream_index]->time_base;
+                    }
                     converter->subtitle_info[i]->subtitleq.put(&packet);
                     found = true;
+                    break;
                 }
             }
         }
@@ -455,10 +508,11 @@ void decode_thread(struct convert_param *stream)
             bool main_packet = false;
             for(int i = 0; i < converter->audioStream.size(); i++) {
                 if (packet.stream_index == converter->audioStream[i]) {
-                    av_log(NULL, AV_LOG_INFO, "audio packet %lld\n", packet_count);
-                    converter->audio_info[i]->audio_eof = Converter::audio_eof_enum::playing;
+                    av_log(NULL, AV_LOG_INFO, "audio %d packet %lld\n", packet.stream_index, packet_count);
                     converter->audio_info[i]->absent = false;
-                    converter->audio_info[i]->audioq.put(&packet);
+                    if(converter->audio_info[i]->audioq.put(&packet) == 0) {
+                        converter->audio_info[i]->audio_eof = Converter::audio_eof_enum::playing;
+                    }
                     audio_last[i] = packet_count;
                     if(converter->audio_info[i]->present) {
                         if(converter->main_audio < 0 || (video_last != AV_NOPTS_VALUE && video_last - audio_last[converter->main_audio] > 1000)) {
@@ -503,10 +557,7 @@ void decode_thread(struct convert_param *stream)
                 }
             }
         }
-        // release packet if not used
-        if(!found) {
-            av_packet_unref(&packet);
-        }
+        av_packet_unref(&packet);
     }
     /* all done - wait for it */
     while (!converter->IsQuit(true)) {
@@ -548,34 +599,26 @@ void video_dummy_thread(Converter *is)
     int out_width = 1920;
     int out_height = 1080;
     AVFrame outputFrame = { 0 };
-    //outputFrame.format = AVPixelFormat::AV_PIX_FMT_YUYV422;
-    outputFrame.format = AVPixelFormat::AV_PIX_FMT_BGRA;
+    outputFrame.format = AVPixelFormat::AV_PIX_FMT_YUV420P;
     outputFrame.width = out_width;
     outputFrame.height = out_height;
     av_frame_get_buffer(&outputFrame, 32);
+    memset(outputFrame.data[0], 0, out_height * outputFrame.linesize[0]);
+    memset(outputFrame.data[1], 127, out_height / 2 * outputFrame.linesize[1]);
+    memset(outputFrame.data[2], 127, out_height / 2 * outputFrame.linesize[2]);
     double pts = 0;
     int64_t count = 0;
-
-    while(is->main_video < 0) {
-        if(is->IsQuit()) goto finish;
-        av_usleep(10*1000);
-    }
-    while(is->main_audio < 0) {
-        if(is->IsQuit()) goto finish;
-        av_usleep(10*1000);
-    }
 
     av_log(NULL, AV_LOG_INFO, "video_thread %d read loop\n", index);
     while (true) {
         if (is->IsQuit()) break;
 
         int key = 1;
-        while(pts > is->audio_info[is->main_audio]->audio_last_pts) {
-            if(is->IsQuit()) goto finish;
-            av_usleep(10*1000);
+        if (pts > is->media_duration) {
+            break;
         }
-        pts = (double)(count++) / 30.0;
-        encode(stream, pts, key, outputFrame.data[0], outputFrame.linesize[0], outputFrame.height);
+        pts = (double)(count++) * 1001 / 30000;
+        encode(stream, pts, key, outputFrame.data, outputFrame.linesize, outputFrame.height);
     }
 loopend:
     av_log(NULL, AV_LOG_INFO, "video_thread loop end %d\n", index);
@@ -585,6 +628,7 @@ finish:
     av_frame_unref(&outputFrame);
     is->video_info[index]->video_eof = true;
     av_log(NULL, AV_LOG_INFO, "video_thread end %d\n", index);
+    is->video_info[index]->video_fin = true;
     return;
 }
 
@@ -613,8 +657,7 @@ void video_thread(Converter *is, int index)
     //int out_width = 1280;
     //int out_height = 720;
     AVFrame outputFrame = { 0 };
-    //outputFrame.format = AVPixelFormat::AV_PIX_FMT_YUYV422;
-    outputFrame.format = AVPixelFormat::AV_PIX_FMT_BGRA;
+    outputFrame.format = AVPixelFormat::AV_PIX_FMT_YUV420P;
     outputFrame.width = out_width;
     outputFrame.height = out_height;
     av_frame_get_buffer(&outputFrame, 32);
@@ -651,25 +694,27 @@ void video_thread(Converter *is, int index)
         }
         if (is->IsQuit()) break;
         
-        if (packet.data == flush_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "video buffer flush %d\n", index);
-            avcodec_flush_buffers(video_ctx);
-            packet = { 0 };
-            inpkt = &packet;
-            inframe = &frame1;
-            is->video_info[index]->video_eof = false;
-            continue;
-        }
-        if (packet.data == eof_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "video buffer EOF %d\n", index);
-            packet = { 0 };
-            inpkt = NULL;
-        }
-        if (packet.data == abort_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "video buffer ABORT %d\n", index);
-            is->video_info[index]->video_eof = true;
-            packet = { 0 };
-            break;
+        if(packet.data) {
+            if (strcmp((char *)packet.data, FLUSH_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "video buffer flush %d\n", index);
+                avcodec_flush_buffers(video_ctx);
+                packet = { 0 };
+                inpkt = &packet;
+                inframe = &frame1;
+                is->video_info[index]->video_eof = false;
+                continue;
+            }
+            if (strcmp((char *)packet.data, ABORT_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "video buffer ABORT %d\n", index);
+                is->video_info[index]->video_eof = true;
+                packet = { 0 };
+                break;
+            }
+            if (strcmp((char *)packet.data, EOF_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "video buffer EOF %d\n", index);
+                packet = { 0 };
+                inpkt = NULL;
+            }
         }
         
         if(is->main_video != index) {
@@ -735,14 +780,14 @@ void video_thread(Converter *is, int index)
                 if (!filt_out) break;
                 while ((ret = av_buffersink_get_frame(filt_out, &frame2)) >= 0) {
                     
-                    key = frame2.key_frame;
+                    key = frame2.flags & AV_FRAME_FLAG_KEY;
                     //printf("key2 %d\n", key);
                     sws_context = sws_getCachedContext(sws_context,
                                                        frame2.width, frame2.height,
                                                        (AVPixelFormat)frame2.format,
                                                        frame2.width, frame2.height,
-                                                       AVPixelFormat::AV_PIX_FMT_BGRA,
-                                                       SWS_BICUBLIN, NULL, NULL, NULL);
+                                                       AVPixelFormat::AV_PIX_FMT_YUV420P,
+                                                       SWS_BICUBIC, NULL, NULL, NULL);
                     
                     int64_t pts_t;
                     if ((pts_t = frame2.best_effort_timestamp) != AV_NOPTS_VALUE) {
@@ -778,13 +823,12 @@ void video_thread(Converter *is, int index)
                     sws_scale(sws_context, frame2.data,
                               frame2.linesize, 0, frame2.height,
                               outputFrame.data, outputFrame.linesize);
+                    av_frame_unref(&frame2);
 
                     is->subtitle_overlay(outputFrame, pts+is->video_info[index]->video_clock_start);
                     
-                    encode(stream, pts, key, outputFrame.data[0], outputFrame.linesize[0], outputFrame.height);
+                    encode(stream, pts, key, outputFrame.data, outputFrame.linesize, outputFrame.height);
                     is->video_info[index]->video_prev_pts = pts_t;
-
-                    av_frame_unref(&frame2);
                 } //while(av_buffersink_get_frame)
                 
                 if (!inframe) {
@@ -810,6 +854,7 @@ finish:
     av_frame_unref(&outputFrame);
     is->video_info[index]->video_eof = true;
     av_log(NULL, AV_LOG_INFO, "video_thread end %d\n", index);
+    is->video_info[index]->video_fin = true;
     return;
 }
 
@@ -919,15 +964,6 @@ bool Converter::Configure_VideoFilter(AVFilterContext **filt_in, AVFilterContext
 }
 
 static inline
-int64_t get_valid_channel_layout(int64_t channel_layout, int channels)
-{
-    if (channel_layout && av_get_channel_layout_nb_channels(channel_layout) == channels)
-        return channel_layout;
-    else
-        return 0;
-}
-
-static inline
 int cmp_audio_fmts(enum AVSampleFormat fmt1, int64_t channel_count1,
                    enum AVSampleFormat fmt2, int64_t channel_count2)
 {
@@ -953,9 +989,13 @@ void audio_thread(Converter *is, int index)
     uint8_t  *silence_buf = NULL;
     int silence_buflen = 0;
 
-    int audio_out_channels = 2;
+    AVChannelLayout audio_out_channel_layout;
+    av_channel_layout_default(&audio_out_channel_layout, 2);
     int audio_out_sample_rate = 48000;
     
+    int64_t delta_pts_t = AV_NOPTS_VALUE;
+    double delta_pts = 0;
+
     while(true) {
         int ret;
         if (is->IsQuit()) break;
@@ -968,22 +1008,24 @@ void audio_thread(Converter *is, int index)
             if (is->audio_info[index]->audio_eof == is->audio_eof_enum::playing && ret == 0) {
                 continue;
             }
-            if (inpkt->data == flush_pkt.data) {
-                av_log(NULL, AV_LOG_INFO, "audio %d buffer flush\n", index);
-                avcodec_flush_buffers(aCodecCtx);
-                pkt = { 0 };
-                inpkt = &pkt;
-                inframe = &audio_frame_in;
-                continue;
-            }
-            if (inpkt->data == eof_pkt.data) {
-                av_log(NULL, AV_LOG_INFO, "audio %d buffer EOF\n", index);
-                is->audio_info[index]->audio_eof = is->audio_eof_enum::input_eof;
-            }
-            if (inpkt->data == abort_pkt.data) {
-                av_log(NULL, AV_LOG_INFO, "audio %d buffer ABORT\n", index);
-                is->audio_info[index]->audio_eof = is->audio_eof_enum::eof;
-                goto quit_audio;
+            if(inpkt->data) {
+                if (strcmp((char *)inpkt->data, FLUSH_STR) == 0) {
+                    av_log(NULL, AV_LOG_INFO, "audio %d buffer flush\n", index);
+                    avcodec_flush_buffers(aCodecCtx);
+                    pkt = { 0 };
+                    inpkt = &pkt;
+                    inframe = &audio_frame_in;
+                    continue;
+                }
+                if (strcmp((char *)inpkt->data, ABORT_STR) == 0) {
+                    av_log(NULL, AV_LOG_INFO, "audio %d buffer ABORT\n", index);
+                    is->audio_info[index]->audio_eof = is->audio_eof_enum::eof;
+                    goto quit_audio;
+                }
+                if (strcmp((char *)inpkt->data, EOF_STR) == 0) {
+                    av_log(NULL, AV_LOG_INFO, "audio %d buffer EOF\n", index);
+                    is->audio_info[index]->audio_eof = is->audio_eof_enum::input_eof;
+                }
             }
         }
         if (is->audio_info[index]->audio_eof >= is->audio_eof_enum::input_eof) {
@@ -1006,24 +1048,25 @@ void audio_thread(Converter *is, int index)
                     inframe = NULL;
                 
                 if (inframe) {
-                    auto dec_channel_layout = get_valid_channel_layout(inframe->channel_layout, inframe->channels);
-                    if (!dec_channel_layout)
-                        dec_channel_layout = av_get_default_channel_layout(inframe->channels);
+                    printf("ch %d %d\n", index, inframe->sample_rate);
+                    auto dec_channel_layout = inframe->ch_layout;
+                    if (dec_channel_layout.nb_channels == 0)
+                        av_channel_layout_default(&dec_channel_layout, 2);
                     bool reconfigure =
                     cmp_audio_fmts(is->audio_info[index]->audio_filter_src.fmt, is->audio_info[index]->audio_filter_src.channels,
-                                   (enum AVSampleFormat)inframe->format, inframe->channels) ||
-                    is->audio_info[index]->audio_filter_src.channel_layout != dec_channel_layout ||
+                                   (enum AVSampleFormat)inframe->format, inframe->ch_layout.nb_channels) ||
+                    av_channel_layout_compare(&is->audio_info[index]->audio_filter_src.channel_layout, &dec_channel_layout) != 0 ||
                     is->audio_info[index]->audio_filter_src.freq != inframe->sample_rate;
                     
                     if (reconfigure) {
                         av_log(NULL, AV_LOG_INFO, "audio %d reconfigure\n", index);
                         is->audio_info[index]->audio_filter_src.fmt = (enum AVSampleFormat)inframe->format;
-                        is->audio_info[index]->audio_filter_src.channels = inframe->channels;
+                        is->audio_info[index]->audio_filter_src.channels = inframe->ch_layout.nb_channels;
                         is->audio_info[index]->audio_filter_src.channel_layout = dec_channel_layout;
                         is->audio_info[index]->audio_filter_src.freq = inframe->sample_rate;
                         
                         graph = std::shared_ptr<AVFilterGraph>(avfilter_graph_alloc(), [](AVFilterGraph *ptr) { avfilter_graph_free(&ptr); });
-                        if (!is->configure_audio_filters(&filt_in, &filt_out, graph.get(), is->audio_info[index]->audio_filter_src, audio_out_sample_rate, audio_out_channels))
+                        if (!is->configure_audio_filters(&filt_in, &filt_out, graph.get(), is->audio_info[index]->audio_filter_src, audio_out_sample_rate, audio_out_channel_layout))
                             goto quit_audio;
                     }
                 }
@@ -1042,16 +1085,14 @@ void audio_thread(Converter *is, int index)
                     
                     float *audio_buf = (float *)audio_frame_out.data[0];
                     int out_samples = audio_frame_out.nb_samples;
-                    int out_size = sizeof(float) * out_samples * audio_out_channels;
-                    int64_t pts_t;
-                    int64_t delta_pts_t = AV_NOPTS_VALUE;
-                    double pts = 0;
-                    double delta_pts = 0;
-                    if ((pts_t = audio_frame_out.best_effort_timestamp) != AV_NOPTS_VALUE) {
-                        if(is->audio_info[index]->audio_start_pts != AV_NOPTS_VALUE && is->audio_info[index]->audio_start_pts > 0x1FFFFFFFF && pts_t < is->audio_info[index]->audio_start_pts) {
-                            av_log(NULL, AV_LOG_INFO, "audio %d pts wrap-around %lld->%lld\n", index, is->audio_info[index]->audio_start_pts, pts_t);
+                    int out_size = sizeof(float) * out_samples * audio_out_channel_layout.nb_channels;
+                    int64_t pts_t0 = audio_frame_out.best_effort_timestamp;
+                    double pts = -1;
+                    if (pts_t0 != AV_NOPTS_VALUE) {
+                        if(is->audio_info[index]->audio_start_pts != AV_NOPTS_VALUE && is->audio_info[index]->audio_start_pts > 0x1FFFFFFFF && pts_t0 < is->audio_info[index]->audio_start_pts) {
+                            av_log(NULL, AV_LOG_INFO, "audio %d pts wrap-around %lld->%lld\n", index, is->audio_info[index]->audio_start_pts, pts_t0);
 
-                            pts_t += 0x1FFFFFFFF;
+                            pts_t0 += 0x1FFFFFFFF;
                         }
                         while(is->main_video < 0) {
                             if(is->IsQuit()) goto quit_audio;
@@ -1062,38 +1103,41 @@ void audio_thread(Converter *is, int index)
                             if(is->IsQuit()) goto quit_audio;
                             av_usleep(10*1000);
                         }
-                        if(is->video_info[is->main_video]->video_start_pts != AV_NOPTS_VALUE && is->video_info[is->main_video]->video_start_pts > 0x1FFFFFFFF && pts_t < is->video_info[is->main_video]->video_start_pts - 0x1FFFFFFF) {
-                            pts_t += 0x1FFFFFFFF;
+                        if(is->video_info[is->main_video]->video_start_pts != AV_NOPTS_VALUE && is->video_info[is->main_video]->video_start_pts > 0x1FFFFFFFF && pts_t0 < is->video_info[is->main_video]->video_start_pts - 0x1FFFFFFF) {
+                            pts_t0 += 0x1FFFFFFFF;
                         }
-                        av_log(NULL, AV_LOG_INFO, "audio %d pts %lld\n", index, pts_t);
-                        pts = av_q2d(is->audio_info[index]->audio_st->time_base)*pts_t;
+                        av_log(NULL, AV_LOG_INFO, "audio %d pts %lld\n", index, pts_t0);
+                        pts = av_q2d(is->audio_info[index]->audio_st->time_base)*pts_t0;
                         av_log(NULL, AV_LOG_INFO, "audio %d clock %f\n", index, pts);
                         
                         pts -= is->video_info[is->main_video]->video_clock_start;
                         av_log(NULL, AV_LOG_INFO, "audio %d sync clock %f\n", index, pts);
-                        pts_t = pts / av_q2d(is->audio_info[index]->audio_st->time_base);
-                        av_log(NULL, AV_LOG_INFO, "audio %d sync pts %lld\n", index, pts_t);
                         
                         if(isnan(is->audio_info[index]->audio_clock_start)) {
-                            av_log(NULL, AV_LOG_INFO, "set audio %d start %f, %lld\n", index, pts, pts_t);
+                            av_log(NULL, AV_LOG_INFO, "set audio %d start %f, %lld\n", index, pts, pts_t0);
                             is->audio_info[index]->audio_clock_start = pts;
-                            is->audio_info[index]->audio_start_pts = pts_t;
+                            is->audio_info[index]->audio_start_pts = pts_t0;
                         }
                         if(is->audio_info[index]->audio_last_pts_t != AV_NOPTS_VALUE) {
-                            delta_pts_t = pts_t - is->audio_info[index]->audio_last_pts_t;
+                            delta_pts_t = pts_t0 - is->audio_info[index]->audio_last_pts_t;
                             delta_pts = av_q2d(is->audio_info[index]->audio_st->time_base)*delta_pts_t;
                         }
-                        else if (pts > 0) {
-                            delta_pts_t = pts_t;
+                        else if (pts >= 0) {
+                            delta_pts_t = pts / av_q2d(is->audio_info[index]->audio_st->time_base);
                             delta_pts = pts;
                         }
                         else {
                             av_frame_unref(&audio_frame_out);
-                            av_log(NULL, AV_LOG_INFO, "audio %d pts %f, %lld < 0 skip\n", index, pts, pts_t);
+                            av_log(NULL, AV_LOG_INFO, "audio %d pts %f, %lld < 0 skip\n", index, pts, pts_t0);
                             continue;
                         }
                     }
-                    av_log(NULL, AV_LOG_INFO, "audio %d pts %f, %lld\n", index, pts, pts_t);
+                    else {
+                        pts = std::nan("");
+                        delta_pts_t = 0;
+                        delta_pts = 0;
+                    }
+                    av_log(NULL, AV_LOG_INFO, "audio %d pts %f, %lld\n", index, pts, pts_t0);
                     
                     if (!isnan(duration) && pts > duration) {
                         is->Quit();
@@ -1110,20 +1154,27 @@ void audio_thread(Converter *is, int index)
                     
                     is->audio_info[index]->present = true;
 
+                    if (!__builtin_isfinite(pts)) {
+                        is->audio_info[index]->frame_count += out_samples;
+
+                        encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
+
+                        av_frame_unref(&audio_frame_out);
+                        continue;
+                    }
                     if(delta_sample + out_samples < 0) {
                         av_log(NULL, AV_LOG_INFO, "audio %d skip\n", index);
                         av_frame_unref(&audio_frame_out);
                         continue;
                     }
-                    if (abs(delta_sample) < 1500) {
+                    if (abs(delta_sample) < 8196) {
                         pts += (double)(out_samples) / audio_out_sample_rate;
                         is->audio_info[index]->frame_count += out_samples;
-                        
-                        pts_t = av_rescale_q(is->audio_info[index]->frame_count, av_make_q(1, audio_out_sample_rate), is->audio_info[index]->audio_st->time_base);
-                        is->audio_info[index]->audio_last_pts_t = pts_t;
+
+                        is->audio_info[index]->audio_last_pts_t = pts_t0;
                         is->audio_info[index]->audio_last_pts = pts;
 
-                        av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t);
+                        av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
 
                         encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
                     }
@@ -1132,21 +1183,20 @@ void audio_thread(Converter *is, int index)
                             av_log(NULL, AV_LOG_INFO, "audio %d 0 delta %lld < 0\n", index, delta_sample);
 
                             int offset = int(-delta_sample);
-                            int fix_out_size = sizeof(float) * int(out_samples+delta_sample) * audio_out_channels;
+                            int fix_out_size = sizeof(float) * int(out_samples+delta_sample) * audio_out_channel_layout.nb_channels;
                             pts += (double)(out_samples+delta_sample) / audio_out_sample_rate;
                             is->audio_info[index]->frame_count += out_samples+delta_sample;
                             
-                            pts_t = av_rescale_q(is->audio_info[index]->frame_count, av_make_q(1, audio_out_sample_rate), is->audio_info[index]->audio_st->time_base);
-                            is->audio_info[index]->audio_last_pts_t = pts_t;
+                            is->audio_info[index]->audio_last_pts_t = pts_t0;
                             is->audio_info[index]->audio_last_pts = pts;
-                            av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t);
+                            av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
 
-                            encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)&audio_buf[offset*audio_out_channels], fix_out_size, index);
+                            encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)&audio_buf[offset*audio_out_channel_layout.nb_channels], fix_out_size, index);
                         }
                         else {
                             av_log(NULL, AV_LOG_INFO, "audio %d 0 delta %lld > 0\n", index, delta_sample);
                             
-                            int pad_size = sizeof(float) * int(delta_sample) * audio_out_channels;
+                            int pad_size = sizeof(float) * int(delta_sample) * audio_out_channel_layout.nb_channels;
                             if (silence_buflen < pad_size) {
                                 delete [] silence_buf;
                                 silence_buf = new uint8_t[pad_size];
@@ -1163,18 +1213,17 @@ void audio_thread(Converter *is, int index)
                             pts += (double)(out_samples) / audio_out_sample_rate;
                             is->audio_info[index]->frame_count += out_samples;
                             
-                            pts_t = av_rescale_q(is->audio_info[index]->frame_count, av_make_q(1, audio_out_sample_rate), is->audio_info[index]->audio_st->time_base);
-                            is->audio_info[index]->audio_last_pts_t = pts_t;
+                            is->audio_info[index]->audio_last_pts_t = pts_t0;
                             is->audio_info[index]->audio_last_pts = pts;
 
-                            av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t);
+                            av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
 
                             encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
                         }
                     }
                     av_frame_unref(&audio_frame_out);
 
-                    printf("%d,%f,%f,%lld\n", index, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, pts, pts_t);
+                    printf("%d,%f,%f,%lld\n", index, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, pts, pts_t0);
                     
                     // check other audio
                     if(is->audio_info[index]->main_audio) {
@@ -1191,7 +1240,7 @@ void audio_thread(Converter *is, int index)
                                     delete [] silence_buf;
                                     silence_buf = new uint8_t[out_size];
                                     silence_buflen = out_size;
-                                    memset(silence_buf, 0, sizeof(float) * out_samples * audio_out_channels);
+                                    memset(silence_buf, 0, sizeof(float) * out_samples * audio_out_channel_layout.nb_channels);
                                 }
                                 is->audio_info[i]->frame_count += out_samples;
                                 
@@ -1228,6 +1277,7 @@ quit_audio:
     delete [] silence_buf;
     is->audio_info[index]->audio_eof = is->audio_eof_enum::eof;
     av_log(NULL, AV_LOG_INFO, "audio_thread %d end\n", index);
+    is->audio_info[index]->audio_fin = true;
     return;
 }
 
@@ -1277,59 +1327,70 @@ quit_audio:
     av_log(NULL, AV_LOG_INFO, "audio_thread loop %d end\n", index);
     delete [] silence_buf;
     av_log(NULL, AV_LOG_INFO, "audio_thread %d end\n", index);
+    is->audio_info[index]->audio_fin = true;
     return;
 }
 
-bool Converter::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFilterGraph *graph, const AudioParams &audio_filter_src, int audio_out_sample_rate, int audio_out_channels)
+bool Converter::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFilterGraph *graph, const AudioParams &audio_filter_src, int audio_out_sample_rate, const AVChannelLayout &audio_out_channel_layout)
 {
     char asrc_args[256] = { 0 };
     AVFilterContext *filt_asrc = NULL, *filt_asink = NULL;
+    AVBPrint bp;
 
     if (!graph) return false;
     
-    int ret = snprintf(asrc_args, sizeof(asrc_args),
-                       "sample_rate=%d:sample_fmt=%s:channels=%d:time_base=%d/%d",
-                       audio_filter_src.freq, av_get_sample_fmt_name(audio_filter_src.fmt),
-                       audio_filter_src.channels,
-                       1, audio_filter_src.freq);
-    if (audio_filter_src.channel_layout)
-        snprintf(asrc_args + ret, sizeof(asrc_args) - ret,
-                 ":channel_layout=0x%" PRIx64, audio_filter_src.channel_layout);
-    
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
+    av_channel_layout_describe_bprint(&audio_filter_src.channel_layout, &bp);
+
+    snprintf(asrc_args, sizeof(asrc_args),
+                   "sample_rate=%d:sample_fmt=%s:time_base=%d/%d:channel_layout=%s",
+                   audio_filter_src.freq, av_get_sample_fmt_name(audio_filter_src.fmt),
+                   1, audio_filter_src.freq, bp.str);
+
     if (avfilter_graph_create_filter(&filt_asrc,
-                                     avfilter_get_by_name("abuffer"), "ffplay_abuffer",
+                                     avfilter_get_by_name("abuffer"), "ffconvert_abuffer",
                                      asrc_args, NULL, graph) < 0)
         return false;
     
-    if (avfilter_graph_create_filter(&filt_asink,
-                                     avfilter_get_by_name("abuffersink"), "ffplay_abuffersink",
-                                     NULL, NULL, graph) < 0)
+    filt_asink = avfilter_graph_alloc_filter(graph, avfilter_get_by_name("abuffersink"),
+                                                 "ffconvert_abuffersink");
+    if (!filt_asink) {
         return false;
+    }
 
-    const enum AVSampleFormat out_sample_fmts[] = {AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_NONE};
-    if (av_opt_set_int_list(filt_asink, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-        return false;
-
-    const int64_t out_channel_layouts[] = {av_get_default_channel_layout(audio_out_channels), -1};
-    if (av_opt_set_int_list(filt_asink, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-        return false;
-
-    const int out_sample_rates[] = {audio_out_sample_rate, -1};
-    if (av_opt_set_int_list(filt_asink, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-        return false;
-
-    AVFilterContext *filt_last = filt_asrc;
-
-    if (avfilter_link(filt_last, 0, filt_asink, 0) != 0)
+    if(av_opt_set(filt_asink, "sample_formats", "flt", AV_OPT_SEARCH_CHILDREN) < 0)
         return false;
     
-    if (avfilter_graph_config(graph, NULL) < 0)
+    if(av_opt_set_array(filt_asink, "channel_layouts", AV_OPT_SEARCH_CHILDREN,
+                        0, 1, AV_OPT_TYPE_CHLAYOUT, &audio_out_channel_layout) < 0)
+        return false;
+
+    if(av_opt_set_array(filt_asink, "samplerates", AV_OPT_SEARCH_CHILDREN,
+                        0, 1, AV_OPT_TYPE_INT, &audio_out_sample_rate) < 0)
+        return false;
+
+    if(avfilter_init_dict(filt_asink, NULL) < 0)
         return false;
     
+    if(avfilter_link(filt_asrc, 0, filt_asink, 0) < 0)
+        return false;
+    
+    if(avfilter_graph_config(graph, NULL) < 0)
+        return false;
+
     *filt_in = filt_asrc;
     *filt_out = filt_asink;
+    av_bprint_finalize(&bp, NULL);
     return true;
 }
+
+struct sub_info {
+    double start;
+    double end;
+    std::string text;
+    bool ass;
+    int ch;
+};
 
 int subtitle_thread(Converter *is, int index)
 {
@@ -1339,6 +1400,7 @@ int subtitle_thread(Converter *is, int index)
     AVPacket packet = { 0 };
     std::shared_ptr<SwsContext> sub_convert_ctx;
     int64_t old_serial = 0;
+    sub_info prev_sub;
 
     while(is->main_video < 0) {
         if(is->IsQuit())
@@ -1349,36 +1411,39 @@ int subtitle_thread(Converter *is, int index)
     is->subtitle_info[index]->subpictq_active_serial = av_gettime();
     while (!is->IsQuit()) {
         AVCodecContext *subtitle_ctx = is->subtitle_info[index]->subtitle_ctx.get();
-        AVRational timebase = is->pFormatCtx->streams[is->subtitleStream[index]]->time_base;
         if (is->subtitle_info[index]->subtitleq.get(&packet, 1) < 0) {
             // means we quit getting packets
             av_log(NULL, AV_LOG_INFO, "subtitle Quit %d\n", index);
             break;
         }
     retry:
-        if (packet.data == flush_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "subtitle buffer flush %d\n", index);
-            avcodec_flush_buffers(subtitle_ctx);
-            old_serial = 0;
-            packet = { 0 };
-            continue;
-        }
-        if (packet.data == eof_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "subtitle buffer EOF %d\n", index);
-            packet = { 0 };
-            while (!is->IsQuit() && is->subtitle_info[index]->subtitleq.get(&packet, 0) == 0)
-                av_usleep(100*1000);
-            if (is->IsQuit()) break;
-            goto retry;
-        }
-        if (packet.data == abort_pkt.data) {
-            av_log(NULL, AV_LOG_INFO, "subtitle buffer ABORT %d\n", index);
-            packet = { 0 };
-            break;
+        if(packet.data) {
+            if (strcmp((char *)packet.data, FLUSH_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "subtitle buffer flush %d\n", index);
+                avcodec_flush_buffers(subtitle_ctx);
+                old_serial = 0;
+                packet = { 0 };
+                continue;
+            }
+            if (strcmp((char *)packet.data, ABORT_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "subtitle buffer ABORT %d\n", index);
+                packet = { 0 };
+                break;
+            }
+            if (strcmp((char *)packet.data, EOF_STR) == 0) {
+                av_log(NULL, AV_LOG_INFO, "subtitle buffer EOF %d\n", index);
+                packet = { 0 };
+                while (!is->IsQuit() && is->subtitle_info[index]->subtitleq.get(&packet, 0) == 0)
+                    av_usleep(100*1000);
+                if (is->IsQuit()) break;
+                goto retry;
+            }
         }
         int got_frame = 0;
         int ret;
         AVSubtitle sub;
+        double pts = 0;
+        pts = packet.pts * av_q2d(is->subtitle_timebase);
         if ((ret = avcodec_decode_subtitle2(subtitle_ctx, &sub, &got_frame, &packet)) < 0) {
             av_packet_unref(&packet);
             char buf[AV_ERROR_MAX_STRING_SIZE];
@@ -1386,123 +1451,99 @@ int subtitle_thread(Converter *is, int index)
             av_log(NULL, AV_LOG_ERROR, "error avcodec_decode_subtitle2() %d %s\n", ret, errstr);
             return -1;
         }
-        if(sub.pts == AV_NOPTS_VALUE)
-            sub.pts = packet.pts;
         av_packet_unref(&packet);
         if (got_frame == 0) continue;
 
-        double pts = 0;
-
-        //printf("subtitle pts %lld\n", sub.pts);
-        if (sub.pts != AV_NOPTS_VALUE)
-            pts = sub.pts * av_q2d(timebase);
-        std::shared_ptr<SubtitlePicture> sp(new SubtitlePicture);
-        sp->pts = pts;
-        sp->serial = av_gettime();
-        while (old_serial >= sp->serial) sp->serial++;
-        old_serial = sp->serial;
-        sp->start_display_time = sub.start_display_time;
-        sp->end_display_time = sub.end_display_time;
-        sp->numrects = sub.num_rects;
-        sp->subrects.reset(new std::shared_ptr<AVSubtitleRect>[sub.num_rects]());
-        sp->type = sub.format;
-        
-        if(sp->type == 1 || (sp->type == 0 && is->main_subtitle == index)) {
-            for (size_t i = 0; i < sub.num_rects; i++)
-            {
-                sp->subw = subtitle_ctx->width ? subtitle_ctx->width : is->video_info[is->main_video]->video_ctx->width;
-                sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->video_info[is->main_video]->video_ctx->height;
-
-                if (((sp->subrects[i] = std::shared_ptr<AVSubtitleRect>(
-                    (AVSubtitleRect *)av_mallocz(sizeof(AVSubtitleRect)),
-                    [](AVSubtitleRect *p) {
-                    if (p->text)
-                        av_free(p->text);
-                    if (p->ass)
-                        av_free(p->ass);
-                    if (p->data[0])
-                        av_free(p->data[0]);
-                    av_free(p);
-                })) == NULL)) {
+        // av_log(NULL, AV_LOG_INFO, "subtitle pts %lld\n", sub.pts);
+        if (sub.pts != AV_NOPTS_VALUE) {
+            pts = sub.pts * av_q2d(AV_TIME_BASE_Q);
+        }
+        // av_log(NULL, AV_LOG_INFO, "subtitle time %f\n", pts);
+        if(sub.format == 0 && is->main_subtitle == index) {
+            std::shared_ptr<SubtitlePicture> sp(new SubtitlePicture);
+            sp->pts = pts;
+            sp->serial = av_gettime();
+            while (old_serial >= sp->serial) sp->serial++;
+            old_serial = sp->serial;
+            sp->sub = sub;
+            sp->subw = subtitle_ctx->width ? subtitle_ctx->width : is->video_info[is->main_video]->video_ctx->width;
+            sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->video_info[is->main_video]->video_ctx->height;
+            for (size_t i = 0; i < sub.num_rects; i++) {
+                int width = sub.rects[i]->w * is->video_info[is->main_video]->video_aspect;
+                uint8_t *data[4];
+                int linesize[4];
+                if (av_image_alloc(data, linesize, width, sub.rects[i]->h, AV_PIX_FMT_BGRA, 16) < 0) {
                     av_log(NULL, AV_LOG_FATAL, "Cannot allocate subtitle data\n");
                     return -1;
                 }
+                auto sub_convert_ctx = sws_getCachedContext(NULL,
+                                                            sub.rects[i]->w, sub.rects[i]->h, AV_PIX_FMT_PAL8,
+                                                            width, sub.rects[i]->h, AV_PIX_FMT_BGRA,
+                                                            SWS_BICUBIC, NULL, NULL, NULL);
+                if (!sub_convert_ctx) {
+                    av_log(NULL, AV_LOG_FATAL, "Cannot initialize the sub conversion context\n");
+                    return -1;
+                }
+                sws_scale(sub_convert_ctx,
+                    sub.rects[i]->data, sub.rects[i]->linesize,
+                    0, sub.rects[i]->h, data, linesize);
+                sws_freeContext(sub_convert_ctx);
 
-                sp->subrects[i]->type = sub.rects[i]->type;
-                if (sub.rects[i]->ass)
-                    sp->subrects[i]->ass = av_strdup(sub.rects[i]->ass);
-                if (sub.rects[i]->text)
-                    sp->subrects[i]->text = av_strdup(sub.rects[i]->text);
-                if (sub.format == 0) {
-                    int width = is->video_info[is->main_video]->video_ctx->width * is->video_info[is->main_video]->video_aspect;
-                    int height = is->video_info[is->main_video]->video_ctx->height;
-                    double ax = 1;
-                    double ay = 1;
-                    int offsetx = 0;
-                    int offsety = 0;
-                    if((double)width/height > 16.0/9.0) {
-                        ax = 1920.0/width;
-                        ay = ax;
-                        offsety = (1080 - height*ay)/2;
-                    }
-                    else {
-                        ay = 1080.0/height;
-                        ax = ay;
-                        offsetx = (1920 - width*ax)/2;
-                    }
-                    width = sub.rects[i]->w * is->video_info[is->main_video]->video_aspect * ax;
-                    height = sub.rects[i]->h * ay;
-                    
-                    if (av_image_alloc(sp->subrects[i]->data, sp->subrects[i]->linesize, width, height, AV_PIX_FMT_ARGB, 16) < 0) {
-                        av_log(NULL, AV_LOG_FATAL, "Cannot allocate subtitle data\n");
-                        return -1;
-                    }
-                    sub_convert_ctx = std::shared_ptr<SwsContext>(sws_getCachedContext(NULL,
-                        sub.rects[i]->w, sub.rects[i]->h, AV_PIX_FMT_PAL8,
-                        width, height, AV_PIX_FMT_ARGB,
-                        SWS_BICUBIC, NULL, NULL, NULL), &sws_freeContext);
-                    if (!sub_convert_ctx) {
-                        av_log(NULL, AV_LOG_FATAL, "Cannot initialize the sub conversion context\n");
-                        return -1;
-                    }
-                    sws_scale(sub_convert_ctx.get(),
-                        sub.rects[i]->data, sub.rects[i]->linesize,
-                        0, sub.rects[i]->h, sp->subrects[i]->data, sp->subrects[i]->linesize);
-                    sp->subrects[i]->w = width;
-                    sp->subrects[i]->h = height;
-                    sp->subrects[i]->x = sub.rects[i]->x * ax * is->video_info[is->main_video]->video_aspect + offsetx;
-                    sp->subrects[i]->y = sub.rects[i]->y * ay + offsety;
+                av_freep(&sub.rects[i]->data[0]);
+                av_freep(&sub.rects[i]->data[1]);
+                av_freep(&sub.rects[i]->data[2]);
+                av_freep(&sub.rects[i]->data[3]);
+                sp->sub.rects[i]->w = width;
+                sp->sub.rects[i]->data[0] = data[0];
+                sp->sub.rects[i]->data[1] = data[1];
+                sp->sub.rects[i]->data[2] = data[2];
+                sp->sub.rects[i]->data[3] = data[3];
+                sp->sub.rects[i]->linesize[0] = linesize[0];
+                sp->sub.rects[i]->linesize[1] = linesize[1];
+                sp->sub.rects[i]->linesize[2] = linesize[2];
+                sp->sub.rects[i]->linesize[3] = linesize[3];
+            }
+            is->subtitle_info[index]->subpictq.put(sp);
+        }
+        else if(sub.format == 1){
+            bool ass = false;
+            std::ostringstream os;
+            for (int i = 0; i < sub.num_rects; i++) {
+                if (sub.rects[i]->text) {
+                    os << sub.rects[i]->text << std::endl;
+                }
+                if (sub.rects[i]->ass) {
+                    os << sub.rects[i]->ass << std::endl;
+                    ass = true;
                 }
             }
-            if (sp->type == 0) {
-                is->subtitle_info[index]->subpictq.put(sp);
+            while (isnan(is->video_info[is->main_video]->video_clock_start)) {
+                if(is->IsQuit())
+                    break;
+                av_usleep(100*1000);
             }
-            else if (sp->type == 1) {
-                bool ass = false;
-                std::ostringstream os;
-                for (int i = 0; i < sp->numrects; i++) {
-                    if (sp->subrects[i]->text) {
-                        os << sp->subrects[i]->text << std::endl;
-                    }
-                    if (sp->subrects[i]->ass) {
-                        os << sp->subrects[i]->ass << std::endl;
-                        ass = true;
-                    }
-                }
-                while (isnan(is->video_info[is->main_video]->video_clock_start)) {
-                    if(is->IsQuit())
-                        break;
-                    av_usleep(100*1000);
-                }
-                double vst = is->video_info[is->main_video]->video_clock_start;
-                if(isnan(vst))
-                    vst = 0;
-                double st = sp->pts + (double)sp->start_display_time / 1000 - vst;
-                double et = sp->pts + (double)sp->end_display_time / 1000 - vst;
+            double vst = is->video_info[is->main_video]->video_clock_start;
+            if(isnan(vst))
+                vst = 0;
+            if(prev_sub.end < 0) {
+                prev_sub.end = pts - vst;
+                encode(stream, prev_sub.start, prev_sub.end, prev_sub.text.c_str(), prev_sub.ass, prev_sub.ch);
+                prev_sub = { 0 };
+            }
+            if(sub.end_display_time == 0xFFFFFFFF || sub.end_display_time == 0) {
+                double st = pts + (double)sub.start_display_time / 1000 - vst;
+                prev_sub = { st, -1, os.str(), ass, is->subtitle_info[index]->textIndex };
+            }
+            else {
+                double st = pts + (double)sub.start_display_time / 1000 - vst;
+                double et = pts + (double)sub.end_display_time / 1000 - vst;
                 encode(stream, st, et, os.str().c_str(), ass?1:0, is->subtitle_info[index]->textIndex);
             }
+            avsubtitle_free(&sub);
         }
-        avsubtitle_free(&sub);
+        else {
+            avsubtitle_free(&sub);
+        }
     }
     av_log(NULL, AV_LOG_INFO, "subtitle thread %d end\n", index);
     return 0;
@@ -1520,34 +1561,73 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
             ;
         if (sp->serial < subtitle->subpictq_active_serial)
             return;
+        
+        if(sp->sub.end_display_time == 0xffffffff || sp->sub.end_display_time == 0) {
+            std::shared_ptr<SubtitlePicture> sp2;
+            if(subtitle->subpictq.peek2(sp2) == 0) {
+                if(pts > sp2->pts) {
+                    subtitle->subpictq.get(sp);
+                    sp = sp2;
+                }
+            }
+            else {
+                if(pts > sp->pts + 5) {
+                    subtitle->subpictq.get(sp);
+                }
+            }
+        }
+        else {
+            if (pts > sp->pts + (double)sp->sub.end_display_time / 1000) {
+                subtitle->subpictq.get(sp);
+            }
+        }
+        printf("video %f, cc %f %d %d\n", pts, sp->pts, sp->sub.start_display_time, sp->sub.end_display_time);
 
-        if (pts > sp->pts + (double)sp->end_display_time / 1000)
-            subtitle->subpictq.get(sp);
-
-        if (pts <= sp->pts + (double)sp->end_display_time / 1000 &&
-            pts >= sp->pts + (double)sp->start_display_time / 1000) {
-
-            if (sp->type == 0) {
-                for (int i = 0; i < sp->numrects; i++) {
-                    int s_w = sp->subrects[i]->w;
-                    int s_h = sp->subrects[i]->h;
-                    int s_x = sp->subrects[i]->x;
-                    int s_y = sp->subrects[i]->y;
+        bool show = pts <= sp->pts + (double)sp->sub.end_display_time / 1000 &&
+                    pts >= sp->pts + (double)sp->sub.start_display_time / 1000;
+        if(sp->sub.end_display_time == 0xffffffff || sp->sub.end_display_time == 0) {
+            show = pts >= sp->pts + (double)sp->sub.start_display_time / 1000;
+        }
+        
+        if (show) {
+            if (sp->sub.format == 0) {
+                for (int i = 0; i < sp->sub.num_rects; i++) {
+                    int s_w = sp->sub.rects[i]->w;
+                    int s_h = sp->sub.rects[i]->h;
+                    int s_x = sp->sub.rects[i]->x;
+                    int s_y = sp->sub.rects[i]->y;
                     for(int y = s_y, sy = 0; y < output.height && sy < s_h; y++, sy++){
-                        uint8_t *sublp = sp->subrects[i]->data[0];
-                        uint8_t *displp = output.data[0];
-                        sublp = sublp + sy * sp->subrects[i]->linesize[0];
-                        displp = displp + y * output.linesize[0];
+                        uint8_t *sublp = sp->sub.rects[i]->data[0];
+                        uint8_t *displyp = output.data[0];
+                        uint8_t *displup = output.data[1];
+                        uint8_t *displvp = output.data[2];
+                        sublp = sublp + sy * sp->sub.rects[i]->linesize[0];
+                        displyp = displyp + y * output.linesize[0];
+                        displup = displup + y / 2 * output.linesize[1];
+                        displvp = displvp + y / 2 * output.linesize[2];
                         for(int x = s_x, sx = 0; x < output.width && sx < s_w; x++, sx++){
                             uint8_t *subp = &sublp[sx * 4];
-                            uint8_t *disp = &displp[x * 4];
-                            double a = subp[0] / 255.0;
-                            uint8_t r = subp[1];
-                            uint8_t g = subp[2];
-                            uint8_t b = subp[3];
-                            disp[0] = disp[0]*(1-a) + b*a;
-                            disp[1] = disp[1]*(1-a) + g*a;
-                            disp[2] = disp[2]*(1-a) + r*a;
+                            double dispy = displyp[x] / 255.0;
+                            double dispu = (displup[x/2] - 128.0) / 255.0;
+                            double dispv = (displvp[x/2] - 128.0) / 255.0;
+                            double a = subp[3] / 255.0;
+                            double r = subp[2] / 255.0;
+                            double g = subp[1] / 255.0;
+                            double b = subp[0] / 255.0;
+                            double r1 = 1.0 * dispy                 + 1.402 * dispv;
+                            double g1 = 1.0 * dispy - 0.344 * dispu - 0.714 * dispv;
+                            double b1 = 1.0 * dispy + 1.772 * dispu;
+                            double r2 = r1*(1-a) + r*a;
+                            double g2 = g1*(1-a) + g*a;
+                            double b2 = b1*(1-a) + b*a;
+                            double Y =  0.299 * r2 + 0.587 * g2 + 0.114 * b2;
+                            double U = -0.169 * r2 - 0.331 * g2 + 0.500 * b2;
+                            double V =  0.500 * r2 - 0.419 * g2 - 0.081 * b2;
+                            displyp[x] = Y * 255;
+                            if (y % 2 == 1 && x % 2 == 1) {
+                                displup[x/2] = U * 255 + 128;
+                                displvp[x/2] = V * 255 + 128;
+                            }
                         }
                     }
                 }
@@ -1559,12 +1639,12 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
 int Converter::stream_component_open(int stream_index)
 {
     std::shared_ptr<AVCodecContext> codecCtx;
-    AVCodec *codec;
-    
+    const AVCodec *codec;
+
     if (stream_index < 0 || (unsigned)stream_index >= pFormatCtx->nb_streams) {
         return -1;
     }
-    
+
     codec = avcodec_find_decoder(pFormatCtx->streams[stream_index]->codecpar->codec_id);
     if (!codec) {
         av_log(NULL, AV_LOG_PANIC, "Unsupported codec!\n");
@@ -1580,7 +1660,15 @@ int Converter::stream_component_open(int stream_index)
     
     AVDictionary *opts = NULL;
     av_dict_set(&opts, "threads", "auto", 0);
-    
+    if(codecCtx->codec_id == AV_CODEC_ID_ARIB_CAPTION) {
+        if(arib_to_text) {
+            av_dict_set_int(&opts, "sub_type", SUBTITLE_TEXT, 0);
+        }
+        else {
+            av_dict_set_int(&opts, "sub_type", SUBTITLE_BITMAP, 0);
+        }
+    }
+
     if (avcodec_open2(codecCtx.get(), codec, &opts) < 0) {
         av_log(NULL, AV_LOG_PANIC, "Unsupported codec!\n");
         return -1;
@@ -1786,6 +1874,9 @@ bool Converter::IsQuit(bool pure)
     if(!pure && quit) return quit;
     bool isAllQuit = true;
     for(const auto &audio: audio_info) {
+        if(audio->audio_fin) {
+            continue;
+        }
         if(audio->audio_eof != audio_eof_enum::eof) {
             isAllQuit = false;
             break;
@@ -1793,6 +1884,9 @@ bool Converter::IsQuit(bool pure)
     }
     if(isAllQuit) {
         for(const auto &video: video_info) {
+            if(video->video_fin) {
+                continue;
+            }
             if(!video->video_eof) {
                 isAllQuit = false;
                 break;

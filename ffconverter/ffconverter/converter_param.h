@@ -15,10 +15,13 @@ struct convert_param {
     void *converter;
     double start;
     double duration;
+    int arib_convert_text;
+    void(*wait_to_start)(void *opaque);
+    void(*set_duration)(void *opaque, double duration);
     int(*read_packet)(void *opaque, unsigned char *buf, int buf_size);
     long long(*seek)(void *opaque, long long offset, int whence);
     void(*cancel)(void *opaque);
-    void(*encode)(void *opaque, double pts, int key, unsigned char *data, int linesize, int height);
+    void(*encode)(void *opaque, double pts, int key, unsigned char **data, int *linesize, int height);
     void(*encode_sound)(void *opaque, double pts, unsigned char *data, int size, int ch);
     void(*encode_text)(void *opaque, double pts_s, double pts_e, const char *data, int ass, int ch);
     void(*finish)(void *opaque);
@@ -40,7 +43,7 @@ extern "C" {
 }
 #endif /* __cplusplus */
 
-#define MAX_AUDIOQ_SIZE (1 * 1024 * 1024)
-#define MAX_VIDEOQ_SIZE (16 * 1024 * 1024)
+#define MAX_AUDIOQ_SIZE (512)
+#define MAX_VIDEOQ_SIZE (512)
 
 #endif /* converter_param_h */

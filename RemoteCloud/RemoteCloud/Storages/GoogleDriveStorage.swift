@@ -10,16 +10,45 @@ import Foundation
 import AuthenticationServices
 import os.log
 import CoreData
+import SwiftUI
+import CryptoKit
+import GoogleSignIn
 
-public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDataDelegate, URLSessionDownloadDelegate {
+struct GoogleLoginView: View {
+    let authContinuation: CheckedContinuation<Bool, Never>
+    let scopes: [String]
+
+    var body: some View {
+        Color.clear
+            .task {
+                try? await Task.sleep(for: .seconds(1))
+                Task { @MainActor in
+                    do {
+                        guard let rootViewController = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first?.rootViewController else { return }
+                        try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController, hint: nil, additionalScopes: scopes)
+                        authContinuation.resume(returning: true)
+                    } catch {
+                        // Respond to any authorization errors.
+                        print(error)
+                        authContinuation.resume(returning: false)
+                    }
+                }
+            }
+    }
+}
+
+public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
 
     public override func getStorageType() -> CloudStorages {
         return .GoogleDrive
     }
 
-    var webAuthSession: ASWebAuthenticationSession?
-    var spaces = "drive"
-    let uploadSemaphore = DispatchSemaphore(value: 5)
+    let uploadSemaphore = Semaphore(value: 5)
+    let scope = [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.metadata",
+    ]
+    var spaces = ""
     
     public convenience init(name: String) {
         self.init()
@@ -28,239 +57,82 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         rootName = "root"
     }
     
-    override func isAuthorized(onFinish: ((Bool) -> Void)?) -> Void {
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/about?fields=kind")!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(false)
-                return
-            }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                if let _ = json["kind"] as? String {
-                    onFinish?(true)
-                }
-                else{
-                    onFinish?(false)
-                }
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
-            }
-        }
-        task.resume()
-    }
-    
-    override func authorize(onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "authorize(google:\(storageName ?? ""))")
-        
-        let scope = "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.metadata".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        let callbackUrlScheme = SecretItems.Google.callbackUrlScheme
-        let clientid = SecretItems.Google.client_id
-        let url = "https://accounts.google.com/o/oauth2/v2/auth?scope=\(scope ?? "")&response_type=code&redirect_uri=\(callbackUrlScheme):/oauth2redirect&client_id=\(clientid)"
-        let authURL = URL(string: url);
-        
-        self.webAuthSession = ASWebAuthenticationSession.init(url: authURL!, callbackURLScheme: callbackUrlScheme, completionHandler: { (callBack:URL?, error:Error?) in
-            
-            // handle auth response
-            guard error == nil, let successURL = callBack else {
-                onFinish?(false)
-                return
-            }
-            
-            let oauthToken = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "code"}).first
-            
-            if let oauthTokenString = oauthToken?.value {
-                self.getToken(oauthToken: oauthTokenString, onFinish: onFinish)
-            }
-            else{
-                onFinish?(false)
-            }
-        })
-        if #available(iOS 13.0, *) {
-            self.webAuthSession?.presentationContextProvider = self
-        }
-
-        self.webAuthSession?.start()
-    }
-    
-    override func getToken(oauthToken: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "getToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let callbackUrlScheme = SecretItems.Google.callbackUrlScheme
-        let clientid = SecretItems.Google.client_id
-        let post = "code=\(oauthToken)&redirect_uri=\(callbackUrlScheme):/oauth2redirect&client_id=\(clientid)&grant_type=authorization_code"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(false)
-                return
-            }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let refreshToken = json["refresh_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let expires_in = json["expires_in"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                self.tokenLife = TimeInterval(expires_in)
-                self.saveToken(accessToken: accessToken, refreshToken: refreshToken)
-                onFinish?(true)
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
-            }
-        }
-        task.resume()
-    }
-    
-    override func refreshToken(onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "refreshToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let clientid = SecretItems.Google.client_id
-        let post = "refresh_token=\(refreshToken)&client_id=\(clientid)&grant_type=refresh_token"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(true)
-                return
-            }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let expires_in = json["expires_in"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                self.tokenLife = TimeInterval(expires_in)
-                self.saveToken(accessToken: accessToken, refreshToken: self.refreshToken)
-                onFinish?(true)
-            } catch let e {
-                print(e)
-                onFinish?(true)
-                return
-            }
-        }
-        task.resume()
+    override func isAuthorized() async -> Bool {
+        GIDSignIn.sharedInstance.currentUser != nil
     }
 
-    func refreshTokenBackground(session: URLSession, info: [String: Any], rToken: String, onFinish: ((String?)->Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "refreshToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let clientid = SecretItems.Google.client_id
-        let post = "refresh_token=\(rToken)&client_id=\(clientid)&grant_type=refresh_token"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let downloadTask = session.downloadTask(with: request)
-        let taskid = (session.configuration.identifier ?? "") + ".\(downloadTask.taskIdentifier)"
-        taskQueue.async {
-            self.task_upload[taskid] = info
-            self.task_upload[taskid]?["refresh"] = rToken
-            self.onFinsh_upload[taskid] = onFinish
-            downloadTask.resume()
+    public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
+        if await checkToken() {
+            return true
         }
+        if await isAuthorized() {
+            return true
+        }
+        let authRet = await withCheckedContinuation { authContinuation in
+            Task {
+                let presentRet = await withCheckedContinuation { continuation in
+                    callback(GoogleLoginView(authContinuation: authContinuation, scopes: scope), continuation)
+                }
+                guard presentRet else {
+                    authContinuation.resume(returning: false)
+                    return
+                }
+            }
+        }
+        return authRet
     }
 
-    override func revokeToken(token: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "revokeToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://accounts.google.com/o/oauth2/revoke?token=\(token)")!)
-        request.httpMethod = "GET"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print(error.localizedDescription)
-                onFinish?(false)
-                return
-            }
-            if let response = response as? HTTPURLResponse {
-                if response.statusCode == 200 {
-                    os_log("%{public}@", log: self.log, type: .info, "revokeToken(google:\(self.storageName ?? "")) success")
-                    onFinish?(true)
-                }
-                else {
-                    onFinish?(false)
-                }
-            }
-            else {
-                onFinish?(false)
-            }
+    public override func logout() async {
+        GIDSignIn.sharedInstance.signOut()
+        await super.logout()
+    }
+
+    override func accessToken() async -> String {
+        guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+            return ""
         }
-        task.resume()
+        return currentUser.accessToken.tokenString
+    }
+
+    override func getRefreshToken() async -> String {
+        guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+            return ""
+        }
+        return currentUser.refreshToken.tokenString
+    }
+
+    override func checkToken() async -> Bool {
+        guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+            let task = Task { @MainActor in
+                guard let rootViewController = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first?.rootViewController else { return false }
+                do {
+                    try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController, hint: nil, additionalScopes: scope)
+                }
+                catch {
+                    print(error)
+                    return false
+                }
+                guard GIDSignIn.sharedInstance.currentUser != nil else {
+                    return false
+                }
+                return true
+            }
+            return await task.value
+        }
+        do {
+            try await currentUser.refreshTokensIfNeeded()
+            return true
+        }
+        catch {
+            print(error)
+            return false
+        }
     }
     
-    func listFiles(q: String, pageToken: String, teamDrive: String? = nil, callCount: Int = 0, onFinish: (([[String:Any]]?)->Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.listFiles(q: q, pageToken: pageToken, teamDrive: teamDrive, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "listFiles(google:\(storageName ?? ""))")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
+    func listFiles(q: String, pageToken: String, teamDrive: String? = nil) async -> [[String:Any]]? {
+        let action = { [self] () async throws -> [[String:Any]]? in
+            os_log("%{public}@", log: log, type: .debug, "listFiles(google:\(storageName ?? ""))")
+
             let fields = "nextPageToken,incompleteSearch,files(id,mimeType,name,trashed,parents,viewedByMeTime,modifiedTime,createdTime,md5Checksum,size)"
             
             let team: String
@@ -272,149 +144,95 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             }
             var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files?\(team)pageSize=1000&fields=\(fields)&spaces=\(self.spaces)&q=\(q)&pageToken=\(pageToken)")!)
             request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
             request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    if let error = error {
-                        print(error)
-                        throw RetryError.Failed
-                    }
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        if let eobj = e as? [String: Any] {
-                            if let ecode = eobj["code"] as? Int, ecode == 401 {
-                                os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(self.storageName ?? ""))")
-                                self.cacheTokenDate = Date(timeIntervalSince1970: 0)
-                                self.tokenDate = Date(timeIntervalSince1970: 0)
-                            }
-                        }
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    let nextPageToken = json["nextPageToken"] as? String ?? ""
-                    if nextPageToken == "" {
-                        onFinish?(json["files"] as? [[String: Any]])
-                    }
-                    else {
-                        self.listFiles(q: q, pageToken: nextPageToken, teamDrive: teamDrive, callCount: callCount) { files in
-                            if var files = files {
-                                if let newfiles = json["files"] as? [[String: Any]] {
-                                    files += newfiles
-                                }
-                                onFinish?(files)
-                            }
-                            else {
-                                onFinish?(json["files"] as? [[String: Any]])
-                            }
-                        }
+
+            guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                throw RetryError.Retry
+            }
+            let object = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let json = object as? [String: Any] else {
+                throw RetryError.Retry
+            }
+
+            if let e = json["error"] {
+                if let eobj = e as? [String: Any] {
+                    if let ecode = eobj["code"] as? Int, ecode == 401 {
+                        os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(storageName ?? ""))")
+                        cacheTokenDate = Date(timeIntervalSince1970: 0)
                     }
                 }
-                catch RetryError.Retry {
-                    if callCount < 100 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.listFiles(q: q, pageToken: pageToken, teamDrive: teamDrive, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
+                print(e)
+                throw RetryError.Retry
+            }
+            let nextPageToken = json["nextPageToken"] as? String ?? ""
+            if nextPageToken != "" {
+                let files = await listFiles(q: q, pageToken: nextPageToken, teamDrive: teamDrive)
+                if var files = files {
+                    if let newfiles = json["files"] as? [[String: Any]] {
+                        files += newfiles
                     }
-                    print("retry > 100")
-                    onFinish?(nil)
-                } catch let e {
-                    print(e)
-                    onFinish?(nil)
-                    return
+                    return files
                 }
             }
-            task.resume()
+            return json["files"] as? [[String: Any]]
+        }
+        do {
+            if pageToken != "" {
+                return try await action()
+            }
+            else {
+                return try await callWithRetry(action: action)
+            }
+        }
+        catch {
+            return nil
         }
     }
 
-    func listTeamdrives(q: String, pageToken: String, callCount: Int = 0, onFinish: (([[String:Any]]?)->Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.listTeamdrives(q: q, pageToken: pageToken, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "listTeamdrives(google:\(storageName ?? ""))")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
+    func listTeamdrives(q: String, pageToken: String) async -> [[String:Any]]? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "listTeamdrives(google:\(storageName ?? ""))")
 
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives?q=\(q)&pageToken=\(pageToken)")!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    if let error = error {
-                        print(error)
-                        throw RetryError.Failed
-                    }
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    let nextPageToken = json["nextPageToken"] as? String ?? ""
-                    if nextPageToken == "" {
-                        onFinish?(json["drives"] as? [[String: Any]])
-                    }
-                    else {
-                        self.listTeamdrives(q: q, pageToken: nextPageToken, callCount: callCount) { drives in
-                            if var drives = drives {
-                                if let newfiles = json["drives"] as? [[String: Any]] {
-                                    drives += newfiles
-                                }
-                                onFinish?(drives)
-                            }
-                            else {
-                                onFinish?(json["drives"] as? [[String: Any]])
-                            }
-                        }
-                    }
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives?q=\(q)&pageToken=\(pageToken)")!)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
                 }
-                catch RetryError.Retry {
-                    if callCount < 100 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.listTeamdrives(q: q, pageToken: pageToken, callCount: callCount+1, onFinish: onFinish)
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+
+                if let e = json["error"] {
+                    if let eobj = e as? [String: Any] {
+                        if let ecode = eobj["code"] as? Int, ecode == 401 {
+                            os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(storageName ?? ""))")
+                            cacheTokenDate = Date(timeIntervalSince1970: 0)
                         }
-                        return
                     }
-                    print("retry > 100")
-                    onFinish?(nil)
-                } catch let e {
                     print(e)
-                    onFinish?(nil)
-                    return
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                let nextPageToken = json["nextPageToken"] as? String ?? ""
+                if nextPageToken != "" {
+                    let files = await listTeamdrives(q: q, pageToken: nextPageToken)
+                    if var files = files {
+                        if let newfiles = json["drives"] as? [[String: Any]] {
+                            files += newfiles
+                        }
+                        return files
+                    }
+                }
+                return json["drives"] as? [[String: Any]]
+            })
+        }
+        catch {
+            return nil
         }
     }
 
@@ -570,25 +388,18 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         }
     }
 
-    override func ListChildren(fileId: String, path: String, onFinish: (() -> Void)?) {
+    override func listChildren(fileId: String, path: String) async {
         if spaces == "appDataFolder" {
             let fixFileId = (fileId == "") ? rootName : fileId
-            listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "") { result in
-                if let items = result {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    
-                    for item in items {
-                        self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
-                    }
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?()
-                        }
-                    }
+            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
+            if let items = result {
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                
+                for item in items {
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
                 }
-                else {
-                    onFinish?()
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
                 }
             }
             return
@@ -596,30 +407,20 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
         if fileId == "" {
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             storeRootItems(context: backgroundContext)
-            backgroundContext.perform {
+            await backgroundContext.perform {
                 try? backgroundContext.save()
-                DispatchQueue.global().async {
-                    onFinish?()
-                }
             }
             return
         }
         if fileId == "teamdrives" {
-            listTeamdrives(q: "", pageToken: "") { result in
-                if let items = result {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    for item in items {
-                        self.storeTeamDriveItem(item: item, context: backgroundContext)
-                    }
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?()
-                        }
-                    }
+            let result = await listTeamdrives(q: "", pageToken: "")
+            if let items = result {
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                for item in items {
+                    storeTeamDriveItem(item: item, context: backgroundContext)
                 }
-                else {
-                    onFinish?()
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
                 }
             }
             return
@@ -629,212 +430,129 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             let comp = fileId.components(separatedBy: " ")
             let teamId = comp[0]
             let fixFileId = comp[1]
-            listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId) { result in
-                if let items = result {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    for item in items {
-                        self.storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: backgroundContext)
-                    }
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?()
-                        }
-                    }
+            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId)
+            if let items = result {
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                for item in items {
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: backgroundContext)
                 }
-                else {
-                    onFinish?()
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
                 }
             }
         }
         else {
             let fixFileId = (fileId == "mydrive") ? rootName : fileId
-            listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "") { result in
-                if let items = result {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    for item in items {
-                        self.storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
-                    }
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?()
-                        }
-                    }
+            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
+            if let items = result {
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                for item in items {
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
                 }
-                else {
-                    onFinish?()
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
                 }
             }
         }
     }
     
-    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil, callCount: Int = 0, onFinish: ((Data?) -> Void)?) {
-        if let cache = CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
+    override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
+        if let cache = await CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
             if let data = try? Data(contentsOf: cache) {
                 os_log("%{public}@", log: log, type: .debug, "hit cache(google:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-                onFinish?(data)
-                return
+                return data
             }
         }
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.readFile(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        self.lastCall = Date()
-        os_log("%{public}@", log: log, type: .debug, "readFile(google:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            let fixFileId: String
-            if fileId.contains(" ") {
-                let comp = fileId.components(separatedBy: " ")
-                fixFileId = comp[1]
-            }
-            else {
-                fixFileId = fileId
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?alt=media")!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            if start != nil || length != nil {
-                let s = start ?? 0
-                if length == nil {
-                    request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "readFile(google:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
+
+                let fixFileId: String
+                if fileId.contains(" ") {
+                    let comp = fileId.components(separatedBy: " ")
+                    fixFileId = comp[1]
                 }
                 else {
-                    request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
+                    fixFileId = fileId
                 }
-            }
-
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                var waittime = self.callWait
-                if let error = error {
-                    print(error)
-                    if (error as NSError).code == -1009 {
-                        waittime += 30
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?alt=media")!)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                if start != nil || length != nil {
+                    let s = start ?? 0
+                    if length == nil {
+                        request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
+                    }
+                    else {
+                        request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
                     }
                 }
-                if let l = length {
-                    if data?.count ?? 0 != l {
-                        if callCount > 50 {
-                            print("retry > 50")
-                            onFinish?(data)
-                            return
-                        }
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<waittime)) {
-                            self.readFile(fileId: fileId, start: start, length: length, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
+                
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
                 }
-                if let d = data {
-                    CloudFactory.shared.cache.saveCache(storage: self.storageName!, id: fileId, offset: start ?? 0, data: d)
+                if let length, data.count != length {
+                    throw RetryError.Retry
                 }
-                onFinish?(data)
-            }
-            task.resume()
+                await CloudFactory.shared.cache.saveCache(storage: storageName!, id: fileId, offset: start ?? 0, data: data)
+                return data
+            })
+        }
+        catch {
+            return nil
         }
     }
     
-    func createDrive(newname: String, requestId: String? = nil, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.createDrive(newname: newname, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "createDrive(google:\(storageName ?? "") \(newname)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            let requestId_new: String
-            if let requestId_old = requestId {
-                requestId_new = requestId_old
-            }
-            else {
-                requestId_new = UUID().uuidString
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives?requestId=\(requestId_new)")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-
-            let json: [String: Any] = ["name": newname]
-            let postData = try? JSONSerialization.data(withJSONObject: json)
-            request.httpBody = postData
-
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    if let error = error {
-                        print(error)
-                        throw RetryError.Failed
-                    }
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    guard let id = json["id"] as? String else {
-                        throw RetryError.Retry
-                    }
-                    
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.storeTeamDriveItem(item: json, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
-                        }
-                    }
+    func createDrive(newname: String, requestId: String? = nil) async -> String? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "createDrive(google:\(storageName ?? "") \(newname)")
+                
+                let requestId_new: String
+                if let requestId_old = requestId {
+                    requestId_new = requestId_old
                 }
-                catch RetryError.Retry {
-                    if callCount < 10 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.createDrive(newname: newname, requestId: requestId_new, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
+                else {
+                    requestId_new = UUID().uuidString
                 }
-                catch let e {
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives?requestId=\(requestId_new)")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                
+                let json: [String: Any] = ["name": newname]
+                let postData = try? JSONSerialization.data(withJSONObject: json)
+                request.httpBody = postData
+                
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(nil)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                guard let id = json["id"] as? String else {
+                    throw RetryError.Retry
+                }
+                
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                storeTeamDriveItem(item: json, context: backgroundContext)
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
+                }
+                return id
+            })
+        }
+        catch {
+            return nil
         }
     }
     
-    public override func makeFolder(parentId: String, parentPath: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
         let fixParentId: String
         var teamID: String? = nil
         if parentId.contains(" ") {
@@ -852,324 +570,166 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             fixParentId = parentId
         }
         if fixParentId == "" {
-            onFinish?(nil)
-            return
+            return nil
         }
         if fixParentId == "teamdrives" {
-            createDrive(newname: newname, onFinish: onFinish)
-            return
+            return await createDrive(newname: newname)
         }
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                self.makeFolder(parentId: fixParentId, parentPath: parentPath, newname: newname, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "makeFolder(google:\(storageName ?? "") \(parentId) \(newname)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files?supportsTeamDrives=true")!)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "makeFolder(google:\(storageName ?? "") \(parentId) \(newname)")
 
-            let json: [String: Any] = ["name": newname, "parents": [fixParentId], "mimeType": "application/vnd.google-apps.folder"]
-            let postData = try? JSONSerialization.data(withJSONObject: json)
-            request.httpBody = postData
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    if let error = error {
-                        print(error)
-                        throw RetryError.Failed
-                    }
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    guard let id = json["id"] as? String else {
-                        throw RetryError.Retry
-                    }
-                    let fixId: String
-                    if let teamID = teamID {
-                        fixId = "\(teamID) \(id)"
-                    }
-                    else {
-                        fixId = id
-                    }
-                    DispatchQueue.global().async {
-                        self.getFile(fileId: fixId, parentId: parentId, parentPath: parentPath) { success in
-                            if success {
-                                onFinish?(fixId)
-                            }
-                            else {
-                                onFinish?(nil)
-                            }
-                        }
-                    }
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files?supportsTeamDrives=true")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+
+                let json: [String: Any] = ["name": newname, "parents": [fixParentId], "mimeType": "application/vnd.google-apps.folder"]
+                let postData = try? JSONSerialization.data(withJSONObject: json)
+                request.httpBody = postData
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
                 }
-                catch RetryError.Retry {
-                    if callCount < 10 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.makeFolder(parentId: parentId, parentPath: parentPath, newname: newname, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
                 }
-                catch let e {
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(nil)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                guard let id = json["id"] as? String else {
+                    throw RetryError.Retry
+                }
+                let fixId: String
+                if let teamID = teamID {
+                    fixId = "\(teamID) \(id)"
+                }
+                else {
+                    fixId = id
+                }
+                if await getFile(fileId: fixId, parentId: parentId, parentPath: parentPath) {
+                    return fixId
+                }
+                return nil
+            })
+        }
+        catch {
+            return nil
         }
     }
 
-    func getFile(fileId: String, parentId: String? = nil, parentPath: String? = nil, callCount: Int = 0, onFinish: ((Bool)->Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(false)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.getFile(fileId: fileId, parentId: parentId, parentPath: parentPath, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "getFile(google:\(storageName ?? "") \(fileId)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(false)
-                return
-            }
-            
-            let fields = "id,mimeType,name,trashed,parents,viewedByMeTime,modifiedTime,createdTime,md5Checksum,size"
-            
-            let fixFileId: String
-            if fileId.contains(" ") {
-                let comp = fileId.components(separatedBy: " ")
-                fixFileId = comp[1]
-            }
-            else {
-                fixFileId = fileId
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?fields=\(fields)&supportsTeamDrives=true")!)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    DispatchQueue.global().async {
-                        let teamID: String?
-                        if fileId.contains(" ") {
-                            let comp = fileId.components(separatedBy: " ")
-                            teamID = comp[0]
-                        }
-                        else {
-                            teamID = nil
-                        }
-                        self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: backgroundContext)
-                        backgroundContext.perform {
-                            try? backgroundContext.save()
-                            DispatchQueue.global().async {
-                                onFinish?(true)
-                            }
-                        }
-                    }
+    func getFile(fileId: String, parentId: String? = nil, parentPath: String? = nil) async -> Bool {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "getFile(google:\(storageName ?? "") \(fileId)")
+                let fields = "id,mimeType,name,trashed,parents,viewedByMeTime,modifiedTime,createdTime,md5Checksum,size"
+                
+                let fixFileId: String
+                if fileId.contains(" ") {
+                    let comp = fileId.components(separatedBy: " ")
+                    fixFileId = comp[1]
                 }
-                catch RetryError.Retry {
-                    if callCount < 10 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.getFile(fileId: fileId, parentId: parentId, parentPath: parentPath, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(false)
+                else {
+                    fixFileId = fileId
                 }
-                catch let e {
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?fields=\(fields)&supportsTeamDrives=true")!)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(false)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let teamID: String?
+                if fileId.contains(" ") {
+                    let comp = fileId.components(separatedBy: " ")
+                    teamID = comp[0]
+                }
+                else {
+                    teamID = nil
+                }
+                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: backgroundContext)
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
+                }
+                return true
+            })
+        }
+        catch {
+            return false
         }
     }
 
-    func getFileBackground(session: URLSession, fileId: String, parentId: String, parentPath: String, aToken: String, rToken: String, onFinish: ((String?)->Void)?) {
-        guard Date() < tokenDate + tokenLife - 5*60, rToken != "" else {
-            refreshTokenBackground(session: session, info: ["getFileId": fileId, "parentId": parentId, "parentPath": parentPath], rToken: rToken, onFinish: onFinish)
-            return
-        }
+    func updateFile(fileId: String, metadata: [String: Any]) async -> String? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "updateFile(google:\(storageName ?? "") \(fileId)")
 
-        os_log("%{public}@", log: log, type: .debug, "getFile(google:\(storageName ?? "") \(fileId)")
-        
-        let fields = "id,mimeType,name,trashed,parents,viewedByMeTime,modifiedTime,createdTime,md5Checksum,size"
-        
-        let fixFileId: String
-        if fileId.contains(" ") {
-            let comp = fileId.components(separatedBy: " ")
-            fixFileId = comp[1]
-        }
-        else {
-            fixFileId = fileId
-        }
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?fields=\(fields)&supportsTeamDrives=true")!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(aToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-
-        let downloadTask = session.downloadTask(with: request)
-        let taskid = (session.configuration.identifier ?? "") + ".\(downloadTask.taskIdentifier)"
-        taskQueue.async {
-            self.task_upload[taskid] = ["parentId": parentId, "parentPath": parentPath]
-            self.onFinsh_upload[taskid] = onFinish
-            downloadTask.resume()
-        }
-    }
-
-    func updateFile(fileId: String, metadata: [String: Any], callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.updateFile(fileId: fileId, metadata: metadata, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "updateFile(google:\(storageName ?? "") \(fileId)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            let fixFileId: String
-            if fileId.contains(" ") {
-                let comp = fileId.components(separatedBy: " ")
-                fixFileId = comp[1]
-            }
-            else {
-                fixFileId = fileId
-            }
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?supportsTeamDrives=true")!)
-            request.httpMethod = "PATCH"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-            let postData = try? JSONSerialization.data(withJSONObject: metadata)
-            request.httpBody = postData
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    guard let id = json["id"] as? String else {
-                        throw RetryError.Retry
-                    }
-                    DispatchQueue.global().asyncAfter(deadline: .now()+1) {
-                        let fixId: String
-                        if fileId.contains(" ") {
-                            let comp = fileId.components(separatedBy: " ")
-                            fixId = "\(comp[0]) \(id)"
-                        }
-                        else {
-                            fixId = id
-                        }
-                        self.getFile(fileId: fixId) { s in
-                            if s {
-                                onFinish?(fixId)
-                            }
-                            else {
-                                onFinish?(nil)
-                            }
-                        }
-                    }
+                let fixFileId: String
+                if fileId.contains(" ") {
+                    let comp = fileId.components(separatedBy: " ")
+                    fixFileId = comp[1]
                 }
-                catch RetryError.Retry {
-                    if callCount < 100 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.updateFile(fileId: fileId, metadata: metadata, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
+                else {
+                    fixFileId = fileId
                 }
-                catch let e {
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?supportsTeamDrives=true")!)
+                request.httpMethod = "PATCH"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                let postData = try? JSONSerialization.data(withJSONObject: metadata)
+                request.httpBody = postData
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
+                }
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(nil)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                guard let id = json["id"] as? String else {
+                    throw RetryError.Retry
+                }
+                let fixId: String
+                if fileId.contains(" ") {
+                    let comp = fileId.components(separatedBy: " ")
+                    fixId = "\(comp[0]) \(id)"
+                }
+                else {
+                    fixId = id
+                }
+                try? await Task.sleep(for: .seconds(1))
+                if await getFile(fileId: fixId) {
+                    return fixId
+                }
+                return nil
+            })
+        }
+        catch {
+            return nil
         }
     }
 
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.moveItem(fileId: fileId, fromParentId: fromParentId, toParentId: toParentId, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
+    @MainActor
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if toParentId == fromParentId {
-            callSemaphore.signal()
-            onFinish?(nil)
-            return
+            return nil
         }
         var targetId = fileId
         if fileId.contains(" ") {
@@ -1178,348 +738,197 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             let driveId = comp[0]
             let fixFileId = comp[1]
             if driveId == fixFileId {
-                callSemaphore.signal()
-                onFinish?(nil)
-                return
+                return nil
             }
             targetId = fixFileId
         }
-        let toParentFix: String
-        if toParentId.contains(" ") {
-            let comp = toParentId.components(separatedBy: " ")
-            toParentFix = comp[1]
-        }
-        else {
-            toParentFix = (toParentId == "") ? rootName : toParentId
-        }
-        var toParentPath: String?
-        let formParentFix: String
-        if fromParentId.contains(" ") {
-            let comp = fromParentId.components(separatedBy: " ")
-            formParentFix = comp[1]
-        }
-        else {
-            formParentFix = (fromParentId == "") ? rootName : fromParentId
-        }
-
-        if toParentId != "" {
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        toParentPath = items.first?.path ?? ""
-                    }
+        do {
+            return try await callWithRetry(action: { [self] in
+                let toParentFix: String
+                if toParentId.contains(" ") {
+                    let comp = toParentId.components(separatedBy: " ")
+                    toParentFix = comp[1]
                 }
-            }
-            else {
-                DispatchQueue.main.sync {
+                else {
+                    toParentFix = (toParentId == "") ? rootName : toParentId
+                }
+                var toParentPath: String?
+                let formParentFix: String
+                if fromParentId.contains(" ") {
+                    let comp = fromParentId.components(separatedBy: " ")
+                    formParentFix = comp[1]
+                }
+                else {
+                    formParentFix = (fromParentId == "") ? rootName : fromParentId
+                }
+
+                if toParentId != "" {
                     let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
                     
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storageName ?? "")
                     if let result = try? viewContext.fetch(fetchRequest) {
                         if let items = result as? [RemoteData] {
                             toParentPath = items.first?.path ?? ""
                         }
                     }
                 }
-            }
-        }
-        os_log("%{public}@", log: self.log, type: .debug, "moveItem(google:\(self.storageName ?? "") \(formParentFix)->\(toParentFix)")
-        self.lastCall = Date()
-        self.checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(targetId)?addParents=\(toParentFix)&removeParents=\(formParentFix)&supportsTeamDrives=true")!)
-            request.httpMethod = "PATCH"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-            let json: [String: Any] = [:]
-            let postData = try? JSONSerialization.data(withJSONObject: json)
-            request.httpBody = postData
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    guard let id = json["id"] as? String else {
-                        throw RetryError.Retry
-                    }
-                    DispatchQueue.global().async {
-                        let fixId: String
-                        if fileId.contains(" ") {
-                            // teamdrive
-                            let comp = fileId.components(separatedBy: " ")
-                            let driveId = comp[0]
-                            fixId = "\(driveId) \(id)"
-                        }
-                        else {
-                            fixId = id
-                        }
-                        self.getFile(fileId: fixId, parentId: toParentId, parentPath: toParentPath) { s in
-                            if s {
-                                onFinish?(fixId)
-                            }
-                            else {
-                                onFinish?(nil)
-                            }
-                        }
-                    }
-                }
-                catch RetryError.Retry {
-                    if callCount < 100 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.moveItem(fileId: fileId, fromParentId: fromParentId, toParentId: toParentId, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
-                }
-                catch let e {
-                    print(e)
-                    onFinish?(nil)
-                }
-            }
-            task.resume()
-        }
-    }
+                os_log("%{public}@", log: log, type: .debug, "moveItem(google:\(storageName ?? "") \(formParentFix)->\(toParentFix)")
+                
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(targetId)?addParents=\(toParentFix)&removeParents=\(formParentFix)&supportsTeamDrives=true")!)
+                request.httpMethod = "PATCH"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                let json: [String: Any] = [:]
+                let postData = try? JSONSerialization.data(withJSONObject: json)
+                request.httpBody = postData
 
-    func deleteDrive(driveId: String, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(false)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.deleteDrive(driveId: driveId, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "deleteDrive(google:\(storageName ?? "") \(driveId)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(false)
-                return
-            }
-            
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
-            request.httpMethod = "DELETE"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    if data.count == 0 {
-                        CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", "\(driveId) \(driveId)", self.storageName ?? "")
-                            if let result = try? context.fetch(fetchRequest) {
-                                for object in result {
-                                    context.delete(object as! NSManagedObject)
-                                }
-                            }
-                            try? context.save()
-
-                            DispatchQueue.global().async {
-                                onFinish?(true)
-                            }
-                        }
-                        return
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    print(json)
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
-                catch RetryError.Retry {
-                    if callCount < 5 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.deleteDrive(driveId: driveId, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(false)
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
                 }
-                catch let e {
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(false)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                guard let id = json["id"] as? String else {
+                    throw RetryError.Retry
+                }
+                let fixId: String
+                if fileId.contains(" ") {
+                    // teamdrive
+                    let comp = fileId.components(separatedBy: " ")
+                    let driveId = comp[0]
+                    fixId = "\(driveId) \(id)"
+                }
+                else {
+                    fixId = id
+                }
+                if await getFile(fileId: fixId, parentId: toParentId, parentPath: toParentPath) {
+                    await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                    return fixId
+                }
+                return nil
+            })
         }
+        catch {
+            return nil
+        }
+    }
 
+    func deleteDrive(driveId: String) async -> Bool {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "deleteDrive(google:\(storageName ?? "") \(driveId)")
+
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
+                request.httpMethod = "DELETE"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                if data.count == 0 {
+                    return await CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
+                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", "\(driveId) \(driveId)", self.storageName ?? "")
+                        if let result = try? context.fetch(fetchRequest) {
+                            for object in result {
+                                context.delete(object as! NSManagedObject)
+                            }
+                        }
+                        try? context.save()
+                        return true
+                    }
+                }
+                return false
+            })
+        }
+        catch {
+            return false
+        }
     }
     
-    override func deleteItem(fileId: String, callCount: Int = 0, onFinish: ((Bool) -> Void)?) {
+    override func deleteItem(fileId: String) async -> Bool {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
-            onFinish?(false)
-            return
+            return false
         }
         if fileId.contains(" ") {
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
             let fixFileId = comp[1]
             if driveId == fixFileId {
-                deleteDrive(driveId: driveId) { success in
-                    guard success else {
-                        onFinish?(false)
-                        return
-                    }
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.deleteChildRecursive(parent: driveId, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(true)
-                        }
-                    }
-                }
-            }
-            else {
-                let json: [String: Any] = ["trashed": true]
-                updateFile(fileId: fileId, metadata: json) { id in
-                    guard let id = id else {
-                        onFinish?(false)
-                        return
-                    }
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.deleteChildRecursive(parent: id, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(true)
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            let json: [String: Any] = ["trashed": true]
-            updateFile(fileId: fileId, metadata: json) { id in
-                guard let id = id else {
-                    onFinish?(false)
-                    return
+                guard await deleteDrive(driveId: driveId) else {
+                    return false
                 }
                 let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                self.deleteChildRecursive(parent: id, context: backgroundContext)
-                backgroundContext.perform {
+                deleteChildRecursive(parent: driveId, context: backgroundContext)
+                await backgroundContext.perform {
                     try? backgroundContext.save()
-                    DispatchQueue.global().async {
-                        onFinish?(true)
-                    }
                 }
+                return true
             }
         }
+        let json: [String: Any] = ["trashed": true]
+        guard let id = await updateFile(fileId: fileId, metadata: json) else {
+            return false
+        }
+        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        deleteChildRecursive(parent: id, context: backgroundContext)
+        await backgroundContext.perform {
+            try? backgroundContext.save()
+        }
+        await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+        return true
     }
 
-    func updateDrive(driveId: String, metadata: [String: Any], callCount: Int = 0, onFinish: ((String?) -> Void)?) {
-        if lastCall.timeIntervalSinceNow > -callWait || callSemaphore.wait(wallTimeout: .now()+Double.random(in: 0..<callWait)) == .timedOut {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                onFinish?(nil)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<callWait)) {
-                self.updateDrive(driveId: driveId, metadata: metadata, callCount: callCount+1, onFinish: onFinish)
-            }
-            return
-        }
-        os_log("%{public}@", log: log, type: .debug, "updateDrive(google:\(storageName ?? "") \(driveId)")
-        lastCall = Date()
-        checkToken() { success in
-            guard success else {
-                self.callSemaphore.signal()
-                onFinish?(nil)
-                return
-            }
-            
-            var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
-            request.httpMethod = "PATCH"
-            request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-            request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-            let postData = try? JSONSerialization.data(withJSONObject: metadata)
-            request.httpBody = postData
-            
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                self.callSemaphore.signal()
-                do {
-                    guard let data = data else {
-                        throw RetryError.Retry
-                    }
-                    let object = try JSONSerialization.jsonObject(with: data, options: [])
-                    guard let json = object as? [String: Any] else {
-                        throw RetryError.Retry
-                    }
-                    if let e = json["error"] {
-                        print(e)
-                        throw RetryError.Retry
-                    }
-                    guard let id = json["id"] as? String else {
-                        throw RetryError.Retry
-                    }
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    self.storeTeamDriveItem(item: json, context: backgroundContext)
-                    backgroundContext.perform {
-                        try? backgroundContext.save()
-                        DispatchQueue.global().async {
-                            onFinish?(id)
-                        }
-                    }
+    func updateDrive(driveId: String, metadata: [String: Any]) async -> String? {
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "updateDrive(google:\(storageName ?? "") \(driveId)")
+
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
+                request.httpMethod = "PATCH"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                let postData = try? JSONSerialization.data(withJSONObject: metadata)
+                request.httpBody = postData
+                
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
                 }
-                catch RetryError.Retry {
-                    if callCount < 100 {
-                        DispatchQueue.global().asyncAfter(deadline: .now()+Double.random(in: 0..<self.callWait)) {
-                            self.updateDrive(driveId: driveId, metadata: metadata, callCount: callCount+1, onFinish: onFinish)
-                        }
-                        return
-                    }
-                    onFinish?(nil)
+                let object = try JSONSerialization.jsonObject(with: data, options: [])
+                guard let json = object as? [String: Any] else {
+                    throw RetryError.Retry
                 }
-                catch let e {
+                if let e = json["error"] {
                     print(e)
-                    onFinish?(nil)
+                    throw RetryError.Retry
                 }
-            }
-            task.resume()
+                guard let id = json["id"] as? String else {
+                    throw RetryError.Retry
+                }
+                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                storeTeamDriveItem(item: json, context: backgroundContext)
+                await backgroundContext.perform {
+                    try? backgroundContext.save()
+                }
+                return id
+            })
+        }
+        catch {
+            return nil
         }
     }
 
-    
-    override func renameItem(fileId: String, newname: String, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func renameItem(fileId: String, newname: String) async -> String? {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
-            onFinish?(nil)
-            return
+            return nil
         }
         let json: [String: Any] = ["name": newname]
         if fileId.contains(" ") {
@@ -1528,21 +937,19 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             let driveId = comp[0]
             let fixFileId = comp[1]
             if driveId == fixFileId {
-                updateDrive(driveId: driveId, metadata: json, onFinish: onFinish)
-            }
-            else {
-                updateFile(fileId: fileId, metadata: json, onFinish: onFinish)
+                return await updateDrive(driveId: driveId, metadata: json)
             }
         }
-        else {
-            updateFile(fileId: fileId, metadata: json, onFinish: onFinish)
+        let newid = await updateFile(fileId: fileId, metadata: json)
+        if newid != nil {
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
         }
+        return newid
     }
     
-    override func changeTime(fileId: String, newdate: Date, callCount: Int = 0, onFinish: ((String?) -> Void)?) {
+    override func changeTime(fileId: String, newdate: Date) async -> String? {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
-            onFinish?(nil)
-            return
+            return nil
         }
         if fileId.contains(" ") {
             // teamdrive
@@ -1550,32 +957,47 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             let driveId = comp[0]
             let fixFileId = comp[1]
             if driveId == fixFileId {
-                onFinish?(nil)
-                return
+                return nil
             }
         }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
         let json: [String: Any] = ["modifiedTime": formatter.string(from: newdate)]
-        updateFile(fileId: fileId, metadata: json, onFinish: onFinish)
+        return await updateFile(fileId: fileId, metadata: json)
     }
     
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return NetworkRemoteItem(storage: storageName ?? "", id: fileId)
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(storage: storageName ?? "", id: fileId)
     }
     
-    public override func getRaw(path: String) -> RemoteItem? {
-        return NetworkRemoteItem(path: path)
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await NetworkRemoteItem(path: path)
     }
     
-    override func uploadFile(parentId: String, sessionId: String, uploadname: String, target: URL, onFinish: ((String?)->Void)?) {
+    @MainActor
+    func getParentPath(parentId: String) async -> String? {
+        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        
+        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
+        if let result = try? viewContext.fetch(fetchRequest) {
+            if let items = result as? [RemoteData] {
+                return items.first?.path ?? ""
+            }
+        }
+        return nil
+    }
+    
+    override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
+        defer {
+            try? FileManager.default.removeItem(at: target)
+        }
+
         if parentId == "teamdrives" {
-            onFinish?(nil)
-            return
+            return nil
         }
         if rootName == "root" && parentId == "" {
-            onFinish?(nil)
-            return
+            return nil
         }
         var fixParentId = parentId
         var parentPath = "\(storageName ?? ""):/"
@@ -1591,970 +1013,157 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionTaskDelegate, URLSess
             let comp = parentId.components(separatedBy: " ")
             fixParentId = comp[1]
         }
-
-        os_log("%{public}@", log: log, type: .debug, "uploadFile(google:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
-        guard let targetStream = InputStream(url: target) else {
-            onFinish?(nil)
-            return
-        }
-        targetStream.open()
-        
-        var buf:[UInt8] = [UInt8](repeating: 0, count: 32*1024*1024)
-        let len = targetStream.read(&buf, maxLength: buf.count)
-        
-        let group = DispatchGroup()
         if fixParentId != rootName {
-            if Thread.isMainThread {
-                let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
-                }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            parentPath = items.first?.path ?? ""
-                        }
-                    }
-                }
-            }
+            parentPath = await getParentPath(parentId: parentId) ?? parentPath
         }
-        uploadSemaphore.wait()
-        group.notify(queue: .global()) {
-            let onFinish: (String?)->Void = { id in
-                self.uploadSemaphore.signal()
-                onFinish?(id)
-            }
-            self.checkToken() { success in
-                do {
-                    guard success else {
-                        throw RetryError.Failed
-                    }
-                    let attr = try FileManager.default.attributesOfItem(atPath: target.path)
-                    let fileSize = attr[.size] as! UInt64
 
-                    UploadManeger.shared.UploadFixSize(identifier: sessionId, size: Int(fileSize))
-                    
-                    var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsTeamDrives=true")!)
-                    request.httpMethod = "POST"
-                    request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
-                    request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-                    request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-                    let json: [String: Any] = [
-                        "name": uploadname,
-                        "parents": [fixParentId]
-                    ]
-                    let postData = try? JSONSerialization.data(withJSONObject: json)
-                    request.httpBody = postData
-
-                    let task = URLSession.shared.dataTask(with: request) {data, response, error in
-                        do {
-                            if let error = error {
-                                print(error)
-                                throw RetryError.Failed
-                            }
-                            guard let httpResponse = response as? HTTPURLResponse else {
-                                print(response ?? "")
-                                throw RetryError.Failed
-                            }
-                            guard let location = httpResponse.allHeaderFields["Location"] as? String else {
-                                throw RetryError.Failed
-                            }
-                            
-                            let uploadUrl = URL(string: location)!
-                            var request2: URLRequest = URLRequest(url: uploadUrl)
-                            request2.httpMethod = "PUT"
-                            
-                            let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                            try? Data(bytes: buf, count: len).write(to: tmpurl)
-                            
-                            request2.setValue("bytes 0-\(len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
-
-                            let config = URLSessionConfiguration.background(withIdentifier: "\(Bundle.main.bundleIdentifier!).\(self.storageName ?? "").\(Int.random(in: 0..<0xffffffff))")
-                            //config.isDiscretionary = true
-                            config.sessionSendsLaunchEvents = true
-                            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-                            self.sessions += [session]
-                            
-                            let task2 = session.uploadTask(with: request2, fromFile: tmpurl)
-                            let taskid = (session.configuration.identifier ?? "") + ".\(task2.taskIdentifier)"
-                            self.taskQueue.async {
-                                self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": self.accessToken, "rToken": self.refreshToken, "offset": len, "size": Int(fileSize), "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-                                self.onFinsh_upload[taskid] = onFinish
-                                task2.resume()
-                            }
-                        }
-                        catch {
-                            targetStream.close()
-                            try? FileManager.default.removeItem(at: target)
-                            onFinish(nil)
-                        }
-                    }
-                    task.resume()
-                }
-                catch {
-                    targetStream.close()
-                    try? FileManager.default.removeItem(at: target)
-                    onFinish(nil)
-                }
-            }
-        }
-    }
-    
-    var task_upload = [String: [String: Any]]()
-    var onFinsh_upload = [String: ((String?)->Void)?]()
-    var sessions = [URLSession]()
-    let taskQueue = DispatchQueue(label: "taskDict")
-    
-    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        CloudFactory.shared.urlSessionDidFinishCallback?(session)
-    }
-    
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let taskId = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-        guard let taskdata = taskQueue.sync(execute: {
-            self.task_upload.removeValue(forKey: taskId)
-        }) else {
-            return
-        }
-        guard let onFinish = taskQueue.sync(execute: {
-            self.onFinsh_upload.removeValue(forKey: taskId)
-        }) else {
-            print("onFinish not found")
-            return
-        }
-        guard let target = taskdata["orgtarget"] as? URL else {
-            print(task.response ?? "")
-            onFinish?(nil)
-            return
-        }
-        guard var targetStream = taskdata["target"] as? InputStream else {
-            print(task.response ?? "")
-            onFinish?(nil)
-            return
-        }
-        if let tmp = taskdata["tmpfile"] as? URL {
-            try? FileManager.default.removeItem(at: tmp)
-        }
         do {
-            guard let uploadUrl = taskdata["upload"] as? URL, var offset = taskdata["offset"] as? Int, let fileSize = taskdata["size"] as? Int else {
-                print(task.response ?? "")
-                throw RetryError.Failed
-            }
-            guard let parentId = taskdata["parentId"] as? String, let parentPath = taskdata["parentPath"] as? String else {
-                print(task.response ?? "")
-                throw RetryError.Failed
-            }
-            if let error = error {
-                print(error)
-                throw RetryError.Failed
-            }
-            guard let httpResponse = task.response as? HTTPURLResponse else {
-                print(task.response ?? "")
-                throw RetryError.Failed
-            }
-            guard let aToken = taskdata["aToken"] as? String, let rToken = taskdata["rToken"] as? String else {
-                throw RetryError.Failed
-            }
-            guard let sessionId = taskdata["session"] as? String else {
-                throw RetryError.Failed
-            }
-            switch httpResponse.statusCode {
-            case 200...201:
-                if let target = taskdata["target"] as? URL {
-                    try? FileManager.default.removeItem(at: target)
-                }
-                guard let data = taskdata["data"] as? Data else {
-                    print(httpResponse)
-                    throw RetryError.Failed
-                }
-                print(String(data: data, encoding: .utf8) ?? "")
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                    throw RetryError.Failed
-                }
-                guard let id = object["id"] as? String else {
-                    throw RetryError.Failed
-                }
-                guard let parentId = taskdata["parentId"] as? String, let parentPath = taskdata["parentPath"] as? String else {
-                    throw RetryError.Failed
-                }
-                self.getFileBackground(session: session, fileId: id, parentId: parentId, parentPath: parentPath, aToken: aToken, rToken: rToken, onFinish: onFinish)
-            case 308:
-                guard let range = httpResponse.allHeaderFields["Range"] as? String else {
-                    throw RetryError.Failed
-                }
-                print("308 resume \(range)")
-                if Int(range.replacingOccurrences(of: #"bytes=(\d+)-\d+"#, with: "$1", options: .regularExpression)) ?? -1 != 0 {
-                    throw RetryError.Failed
-                }
-                let reqOffset = (Int(range.replacingOccurrences(of: #"bytes=\d+-(\d+)"#, with: "$1", options: .regularExpression)) ?? -1) + 1
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "uploadFile(google:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
 
-                print(reqOffset)
-                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: reqOffset)
+                let handle = try FileHandle(forReadingFrom: target)
+                defer {
+                    try? handle.close()
+                }
+
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let fileSize = attr[.size] as! UInt64
+                try await progress?(0, Int64(fileSize))
+
+                var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsTeamDrives=true")!)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
+                request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+                request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+                let json: [String: Any] = [
+                    "name": uploadname,
+                    "parents": [fixParentId]
+                ]
+                let postData = try? JSONSerialization.data(withJSONObject: json)
+                request.httpBody = postData
                 
-                if offset != reqOffset {
-                    guard let tstream = InputStream(url: target) else {
-                        throw RetryError.Failed
+                guard let (_, response) = try? await URLSession.shared.data(for: request) else {
+                    throw RetryError.Retry
+                }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print(response)
+                    throw RetryError.Retry
+                }
+                guard let location = httpResponse.allHeaderFields["Location"] as? String else {
+                    throw RetryError.Retry
+                }
+                
+                let uploadUrl = URL(string: location)!
+                var request2: URLRequest = URLRequest(url: uploadUrl)
+                request2.httpMethod = "PUT"
+
+                await uploadProgressManeger.setCallback(url: uploadUrl, total: Int64(fileSize), callback: progress)
+                defer {
+                    Task { await uploadProgressManeger.removeCallback(url: uploadUrl) }
+                }
+
+                var offset = 0
+                var eof = false
+                while !eof {
+                    guard let srcData = try handle.read(upToCount: 32*1024*1024) else {
+                        throw RetryError.Retry
                     }
-                    targetStream.close()
-                    targetStream = tstream
-                    targetStream.open()
-                    
-                    offset = 0
-                    while offset < reqOffset {
-                        var buflen = reqOffset - offset
-                        if buflen > 1024*1024 {
-                            buflen = 1024*1024
+                    if srcData.count < 32*1024*1024 {
+                        eof = true
+                    }
+                    request2.setValue("bytes \(offset)-\(offset+srcData.count-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
+                    await uploadProgressManeger.setOffset(url: uploadUrl, offset: Int64(offset))
+                    offset += srcData.count
+
+                    guard let (data2, response2) = try? await URLSession.shared.upload(for: request2, from: srcData, delegate: self) else {
+                        throw RetryError.Retry
+                    }
+                    guard let httpResponse = response2 as? HTTPURLResponse else {
+                        print(response2)
+                        throw RetryError.Retry
+                    }
+                    switch httpResponse.statusCode {
+                    case 200...201:
+                        print(String(data: data2, encoding: .utf8) ?? "")
+                        guard let object = try? JSONSerialization.jsonObject(with: data2, options: []) as? [String: Any] else {
+                            throw RetryError.Retry
                         }
-                        var buf:[UInt8] = [UInt8](repeating: 0, count: buflen)
-                        let len = targetStream.read(&buf, maxLength: buf.count)
-                        if len <= 0 {
-                            print(targetStream.streamError!)
-                            throw RetryError.Failed
+                        guard let id = object["id"] as? String else {
+                            throw RetryError.Retry
                         }
-                        offset += len
+                        if await getFile(fileId: id, parentId: parentId, parentPath: parentPath) {
+                            try await progress?(Int64(fileSize), Int64(fileSize))
+                            return id
+                        }
+                    case 308:
+                        guard let range = httpResponse.allHeaderFields["Range"] as? String else {
+                            throw RetryError.Retry
+                        }
+                        print("308 resume \(range)")
+                        if Int(range.replacingOccurrences(of: #"bytes=(\d+)-\d+"#, with: "$1", options: .regularExpression)) ?? -1 != 0 {
+                            throw RetryError.Retry
+                        }
+                        let reqOffset = (Int(range.replacingOccurrences(of: #"bytes=\d+-(\d+)"#, with: "$1", options: .regularExpression)) ?? -1) + 1
+
+                        print(reqOffset)
+                        
+                        if offset != reqOffset {
+                            try handle.seek(toOffset: UInt64(reqOffset))
+                            offset = reqOffset
+                        }
+                        eof = false
+                        continue
+                    case 404:
+                        print("404 start from begining")
+
+                        try handle.seek(toOffset: 0)
+                        offset = 0
+                        eof = false
+                        continue
+                        
+                    default:
+                        print("\(httpResponse.statusCode) resume request")
+                        print("\(httpResponse.allHeaderFields)")
+
+                        try handle.seek(toOffset: 0)
+                        offset = 0
+                        eof = false
+                        continue
                     }
                 }
-                
-                var buf:[UInt8] = [UInt8](repeating: 0, count: 32*1024*1024)
-                let len = targetStream.read(&buf, maxLength: buf.count)
-                
-                var request: URLRequest = URLRequest(url: uploadUrl)
-                request.httpMethod = "PUT"
-                
-                let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                try? Data(bytes: buf, count: len).write(to: tmpurl)
-                
-                request.setValue("bytes \(offset)-\(offset+len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
-                
-                let task = session.uploadTask(with: request, fromFile: tmpurl)
-                let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-                taskQueue.async {
-                    self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-                    self.onFinsh_upload[taskid] = onFinish
-                    task.resume()
-                }
-            case 404:
-                print("404 start from begining")
-
-                guard let tstream = InputStream(url: target) else {
-                    throw RetryError.Failed
-                }
-                targetStream.close()
-                targetStream = tstream
-                targetStream.open()
-
-                offset = 0
-                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: 0)
-
-                var buf:[UInt8] = [UInt8](repeating: 0, count: 32*1024*1024)
-                let len = targetStream.read(&buf, maxLength: buf.count)
-                
-                var request: URLRequest = URLRequest(url: uploadUrl)
-                request.httpMethod = "PUT"
-                
-                let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                try? Data(bytes: buf, count: len).write(to: tmpurl)
-                
-                request.setValue("bytes \(offset)-\(offset+len-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
-                
-                let task = session.uploadTask(with: request, fromFile: tmpurl)
-                let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-                taskQueue.async {
-                    self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": offset+len, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-                    self.onFinsh_upload[taskid] = onFinish
-                    task.resume()
-                }
-                
-            default:
-                print("\(httpResponse.statusCode) resume request")
-                print("\(httpResponse.allHeaderFields)")
-                if let data = taskdata["data"] as? Data {
-                    print(String(bytes: data, encoding: .utf8) ?? "")
-                }
-                
-                guard let tstream = InputStream(url: target) else {
-                    throw RetryError.Failed
-                }
-                targetStream.close()
-                targetStream = tstream
-                targetStream.open()
-
-                UploadManeger.shared.UploadProgress(identifier: sessionId, possition: 0)
-
-                var request: URLRequest = URLRequest(url: uploadUrl)
-                request.httpMethod = "PUT"
-                request.setValue("bytes */\(fileSize)", forHTTPHeaderField: "Content-Range")
-
-                let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
-                try? Data().write(to: tmpurl)
-
-                let task = session.uploadTask(with: request, fromFile: tmpurl)
-                let taskid = (session.configuration.identifier ?? "") + ".\(task.taskIdentifier)"
-                taskQueue.async {
-                    self.task_upload[taskid] = ["target": targetStream, "data": Data(),"upload": uploadUrl, "parentId": parentId, "parentPath": parentPath, "aToken": aToken, "rToken": rToken, "offset": 0, "size": fileSize, "tmpfile": tmpurl, "orgtarget": target, "session": sessionId]
-                    self.onFinsh_upload[taskid] = onFinish
-                    task.resume()
-                }
-                
-            }
+                throw RetryError.Retry
+            }, semaphore: uploadSemaphore, maxCall: 3)
         }
         catch {
-            targetStream.close()
-            try? FileManager.default.removeItem(at: target)
-            onFinish?(nil)
+            return nil
         }
     }
-    
-    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let taskId = (session.configuration.identifier ?? "") + ".\(dataTask.taskIdentifier)"
-        if var taskdata = taskQueue.sync(execute: { self.task_upload[taskId] }) {
-            guard var recvData = taskdata["data"] as? Data else {
-                return
-            }
-            recvData.append(data)
-            taskdata["data"] = recvData
-            taskQueue.async {
-                self.task_upload[taskId] = taskdata
-            }
-        }
-    }
-    
+
     public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        print("\(bytesSent) / \(totalBytesSent) / \(totalBytesExpectedToSend)")
-    }
-    
-    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        print("d \(bytesWritten) / \(totalBytesWritten) / \(totalBytesExpectedToWrite)")
-    }
-    
-    public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        let taskId = (session.configuration.identifier ?? "") + ".\(downloadTask.taskIdentifier)"
-        guard let taskdata = taskQueue.sync(execute: {
-            self.task_upload.removeValue(forKey: taskId)
-        }) else {
-            return
-        }
-        guard let onFinish = taskQueue.sync(execute: {
-            self.onFinsh_upload.removeValue(forKey: taskId)
-        }) else {
-            print("onFinish not found")
-            return
-        }
-        guard let httpResponse = downloadTask.response as? HTTPURLResponse else {
-            print(downloadTask.response ?? "")
-            onFinish?(nil)
-            return
-        }
-        if taskdata["location"] as? String == nil, let _ = taskdata["target"] as? URL, let _ = httpResponse.allHeaderFields["Location"] as? String {
-            taskQueue.async {
-                self.task_upload[taskId] = taskdata
-                self.onFinsh_upload[taskId] = onFinish
-            }
-            return
-        }
-        do {
-            let data = try Data(contentsOf: location)
-            let object = try JSONSerialization.jsonObject(with: data, options: [])
-            if let rToken = taskdata["refresh"] as? String {
-                guard let json = object as? [String: Any] else {
-                    onFinish?(nil)
-                    return
+        if let url = task.originalRequest?.url {
+            Task {
+                do {
+                    try await uploadProgressManeger.progress(url: url, currnt: totalBytesSent)
                 }
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(nil)
-                    return
+                catch {
+                    task.cancel()
                 }
-                
-                if let getItemId = taskdata["getItemId"] as? String {
-                    guard let parentId = taskdata["parentId"] as? String else {
-                        onFinish?(nil)
-                        return
-                    }
-                    guard let parentPath = taskdata["parentPath"] as? String else {
-                        onFinish?(nil)
-                        return
-                    }
-                    getFileBackground(session: session, fileId: getItemId, parentId: parentId, parentPath: parentPath, aToken: accessToken, rToken: rToken, onFinish: onFinish)
-                }
-                return
-            }
-            guard let parentId = taskdata["parentId"] as? String, let parentPath = taskdata["parentPath"] as? String else {
-                onFinish?(nil)
-                return
-            }
-            guard let json = object as? [String: Any] else {
-                onFinish?(nil)
-                return
-            }
-            if let e = json["error"] {
-                print(e)
-                onFinish?(nil)
-                return
-            }
-            guard let id = json["id"] as? String else {
-                onFinish?(nil)
-                return
-            }
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            self.storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-            backgroundContext.perform {
-                try? backgroundContext.save()
-                print("done")
-                
-                self.taskQueue.async {
-                    self.sessions.removeAll(where: { $0.configuration.identifier == session.configuration.identifier })
-                }
-                
-                onFinish?(id)
-            }
-        }
-        catch let e {
-            onFinish?(nil)
-            print(e)
-        }
-    }
-}
-
-public class GoogleDriveStorageCustom: GoogleDriveStorage {
-    var code_verifier: String = ""
-    var client_id: String = ""
-    var client_secret: String = ""
-    
-    public convenience init(name: String) {
-        self.init()
-        service = CloudFactory.getServiceName(service: .GoogleDrive)
-        storageName = name
-        rootName = "root"
-        if let scope = self.getKeyChain(key: "\(self.storageName ?? "")_clientscope") {
-            if scope.contains("drive.appfolder") {
-                spaces = "appDataFolder"
-                rootName = "appDataFolder"
-            }
-        }
-        if refreshToken != "" {
-            refreshToken() { success in
-                // ignore error
-            }
-        }
-    }
-
-    override public func logout() {
-        if let name = storageName {
-            let _ = delKeyChain(key: "\(name)_clientid")
-            let _ = delKeyChain(key: "\(name)_clientsecret")
-            let _ = delKeyChain(key: "\(name)_clientscope")
-        }
-        super.logout()
-    }
-
-    override func authorize(onFinish: ((Bool) -> Void)?) {
-        DispatchQueue.main.async {
-            if let clientid = self.getKeyChain(key: "\(self.storageName ?? "")_clientid"), let secret = self.getKeyChain(key: "\(self.storageName ?? "")_clientsecret"), let scope = self.getKeyChain(key: "\(self.storageName ?? "")_clientscope") {
-                if scope.contains("drive.appfolder") {
-                    self.spaces = "appDataFolder"
-                    self.rootName = "appDataFolder"
-                }
-                self.customAuthorize(clientid: clientid, secret: secret, scope: scope, onFinish: onFinish)
-                return
-            }
-            
-            if let controller = UIApplication.topViewController() {
-                let customizeView = ViewControllerGoogleCustom()
-                customizeView.onCancel = {
-                    onFinish?(false)
-                }
-                customizeView.onFinish = { clientid, secret, scope in
-                    if scope.contains("drive.appfolder") {
-                        self.spaces = "appDataFolder"
-                        self.rootName = "appDataFolder"
-                    }
-                    guard clientid != "", secret != "", let scope = scope.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-                        DispatchQueue.main.async {
-                            super.authorize(onFinish: onFinish)
-                        }
-                        return
-                    }
-                    
-                    let _ = self.setKeyChain(key: "\(self.storageName ?? "")_clientid", value: clientid)
-                    let _ = self.setKeyChain(key: "\(self.storageName ?? "")_clientsecret", value: secret)
-                    let _ = self.setKeyChain(key: "\(self.storageName ?? "")_clientscope", value: scope)
-
-                    DispatchQueue.global().async {
-                        self.customAuthorize(clientid: clientid, secret: secret, scope: scope, onFinish: onFinish)
-                    }
-                }
-                controller.navigationController?.pushViewController(customizeView, animated: true)
-            }
-            else {
-                onFinish?(false)
             }
         }
     }
     
-    func customAuthorize(clientid: String, secret: String, scope: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "authorize(google:\(storageName ?? ""))")
-        
-        code_verifier = ""
-        let chars = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-        for _ in 0..<64 {
-            code_verifier += String(chars.randomElement()!)
+    public override func targetIsMovable(srcFileId: String, dstFileId: String) async -> Bool {
+        if srcFileId == "" || srcFileId == "mydrive" || srcFileId == "teamdrives" {
+            return false
         }
-        client_id = clientid
-        client_secret = secret
-        
-        let url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=\(clientid)&redirect_uri=urn:ietf:wg:oauth:2.0:oob&response_type=code&scope=\(scope)&code_challenge_method=plain&code_challenge=\(code_verifier)"
-        let authURL = URL(string: url)
-        
-        DispatchQueue.main.async {
-            if let controller = UIApplication.topViewController() {
-                let codeView = ViewControllerGoogleCode()
-                codeView.onCancel = {
-                    onFinish?(false)
-                }
-                codeView.onFinish = { code in
-                    guard code != "" else {
-                        onFinish?(false)
-                        return
-                    }
-                    DispatchQueue.global().async {
-                        self.customGetToken(oauthToken: code, onFinish: onFinish)
-                    }
-                }
-                controller.navigationController?.pushViewController(codeView, animated: true)
-            }
-            else {
-                onFinish?(false)
-            }
-            
-            UIApplication.shared.open(authURL!)
+        if srcFileId.contains(" "), dstFileId.contains(" ") {
+            let scomp = srcFileId.components(separatedBy: " ")
+            let dcomp = dstFileId.components(separatedBy: " ")
+            return scomp[0] == dcomp[0]
         }
-    }
-    
-    func customGetToken(oauthToken: String, onFinish: ((Bool) -> Void)?) {
-        os_log("%{public}@", log: log, type: .debug, "getToken(google:\(storageName ?? ""))")
-        
-        guard let clientid = self.getKeyChain(key: "\(self.storageName ?? "")_clientid"), let secret = self.getKeyChain(key: "\(self.storageName ?? "")_clientsecret") else {
-            onFinish?(false)
-            return
+        if !srcFileId.contains(" "), !dstFileId.contains(" ") {
+            return true
         }
-
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let post = "code=\(oauthToken)&redirect_uri=urn:ietf:wg:oauth:2.0:oob&client_id=\(clientid)&client_secret=\(secret)&grant_type=authorization_code&code_verifier=\(code_verifier)"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(false)
-                return
-            }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let refreshToken = json["refresh_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let expires_in = json["expires_in"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                self.tokenLife = TimeInterval(expires_in)
-                self.saveToken(accessToken: accessToken, refreshToken: refreshToken)
-                onFinish?(true)
-            } catch let e {
-                print(e)
-                onFinish?(false)
-                return
-            }
-        }
-        task.resume()
-    }
-
-    override func refreshToken(onFinish: ((Bool) -> Void)?) {
-        guard let clientid = self.getKeyChain(key: "\(self.storageName ?? "")_clientid"), let secret = self.getKeyChain(key: "\(self.storageName ?? "")_clientsecret") else {
-            super.refreshToken(onFinish: onFinish)
-            return
-        }
-        
-        os_log("%{public}@", log: log, type: .debug, "refreshToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let post = "refresh_token=\(refreshToken)&client_id=\(clientid)&client_secret=\(secret)&grant_type=refresh_token"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data else {
-                onFinish?(true)
-                return
-            }
-            do {
-                let object = try JSONSerialization.jsonObject(with: data, options: [])
-                guard let json = object as? [String: Any] else {
-                    onFinish?(false)
-                    return
-                }
-                guard let accessToken = json["access_token"] as? String else {
-                    onFinish?(false)
-                    return
-                }
-                guard let expires_in = json["expires_in"] as? Int else {
-                    onFinish?(false)
-                    return
-                }
-                self.tokenLife = TimeInterval(expires_in)
-                self.saveToken(accessToken: accessToken, refreshToken: self.refreshToken)
-                onFinish?(true)
-            } catch let e {
-                print(e)
-                onFinish?(true)
-                return
-            }
-        }
-        task.resume()
-    }
-
-    override func refreshTokenBackground(session: URLSession, info: [String: Any], rToken: String, onFinish: ((String?)->Void)?) {
-        guard client_id != "" && client_secret != "" else {
-            super.refreshTokenBackground(session: session, info: info, rToken: rToken, onFinish: onFinish)
-            return
-        }
-        
-        os_log("%{public}@", log: log, type: .debug, "refreshToken(google:\(storageName ?? ""))")
-        
-        var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v4/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        
-        let post = "refresh_token=\(rToken)&client_id=\(client_id)&client_secret=\(client_secret)&grant_type=refresh_token"
-        let postData = post.data(using: .ascii, allowLossyConversion: false)!
-        let postLength = "\(postData.count)"
-        request.setValue(postLength, forHTTPHeaderField: "Content-Length")
-        request.httpBody = postData
-        
-        let downloadTask = session.downloadTask(with: request)
-        let taskid = (session.configuration.identifier ?? "") + ".\(downloadTask.taskIdentifier)"
-        taskQueue.async {
-            self.task_upload[taskid] = info
-            self.task_upload[taskid]?["refresh"] = rToken
-            self.onFinsh_upload[taskid] = onFinish
-            downloadTask.resume()
-        }
-    }
-}
-
-class ViewControllerGoogleCode: UIViewController, UITextFieldDelegate {
-    var textCode: UITextField!
-
-    var onCancel: (()->Void)!
-    var onFinish: ((String)->Void)!
-    var done: Bool = false
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        self.title = "Enter code"
-        
-        let stackView = UIStackView()
-        stackView.axis = .vertical
-        stackView.alignment = .center
-        stackView.spacing = 10
-        view.addSubview(stackView)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
-        
-        let stackView1 = UIStackView()
-        stackView1.axis = .horizontal
-        stackView1.alignment = .center
-        stackView1.spacing = 20
-        stackView.insertArrangedSubview(stackView1, at: 0)
-        stackView1.widthAnchor.constraint(lessThanOrEqualTo: view.layoutMarginsGuide.widthAnchor, multiplier: 1.0).isActive = true
-        
-        let label = UILabel()
-        label.text = "Code"
-        stackView1.insertArrangedSubview(label, at: 0)
-        
-        textCode = UITextField()
-        textCode.borderStyle = .roundedRect
-        textCode.delegate = self
-        textCode.clearButtonMode = .whileEditing
-        textCode.returnKeyType = .done
-        textCode.placeholder = "code"
-        stackView1.insertArrangedSubview(textCode, at: 1)
-        let widthConstraint = textCode.widthAnchor.constraint(greaterThanOrEqualToConstant: 200)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
-        
-        let stackView5 = UIStackView()
-        stackView5.axis = .horizontal
-        stackView5.alignment = .center
-        stackView5.spacing = 20
-        stackView.insertArrangedSubview(stackView5, at: 1)
-        
-        let button1 = UIButton(type: .system)
-        button1.setTitle("Done", for: .normal)
-        button1.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button1, at: 0)
-        
-        let button2 = UIButton(type: .system)
-        button2.setTitle("Cancel", for: .normal)
-        button2.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button2, at: 1)
-    }
-    
-    @objc func buttonEvent(_ sender: UIButton) {
-        if sender.currentTitle == "Done" {
-            done = true
-            onFinish(textCode.text ?? "")
-        }
-        else {
-            navigationController?.popViewController(animated: true)
-        }
-    }
-    
-    override func willMove(toParent parent: UIViewController?) {
-        if parent == nil && !done {
-            onCancel()
-        }
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        
-        done = true
-        onFinish(textCode.text ?? "")
-        return true
-    }
-    
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if textCode.isFirstResponder {
-            textCode.resignFirstResponder()
-        }
-    }
-
-}
-
-class ViewControllerGoogleCustom: UIViewController, UITextFieldDelegate, UIPickerViewDelegate, UIPickerViewDataSource {
-    var textClientId: UITextField!
-    var textSecret: UITextField!
-    var stackView: UIStackView!
-    var customizeId: Bool = false
-
-    var onCancel: (()->Void)!
-    var onFinish: ((String, String, String)->Void)!
-    var done: Bool = false
-    
-    let scopes = ["drive","drive.readonly","drive.file","drive.appfolder","drive.metadata.readonly"]
-    var scope = ""
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        self.title = "Google ClientID"
-        if #available(iOS 13.0, *) {
-            view.backgroundColor = .systemBackground
-        } else {
-            view.backgroundColor = .white
-        }
-        
-        stackView = UIStackView()
-        stackView.axis = .vertical
-        stackView.alignment = .center
-        stackView.spacing = 10
-        view.addSubview(stackView)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
-
-        let stackView3 = UIStackView()
-        stackView3.axis = .horizontal
-        stackView3.alignment = .center
-        stackView3.spacing = 20
-        stackView.insertArrangedSubview(stackView3, at: 0)
-        
-        let label3 = UILabel()
-        label3.text = "Customize client"
-        stackView3.insertArrangedSubview(label3, at: 0)
-        
-        let switchCustomize = UISwitch()
-        switchCustomize.addTarget(self, action: #selector(switchValueChanged), for: .valueChanged)
-        customizeId = switchCustomize.isOn
-        stackView3.insertArrangedSubview(switchCustomize, at: 1)
-
-        let stackView1 = UIStackView()
-        stackView1.axis = .horizontal
-        stackView1.alignment = .center
-        stackView1.spacing = 20
-        stackView.insertArrangedSubview(stackView1, at: 1)
-        stackView1.widthAnchor.constraint(lessThanOrEqualTo: view.layoutMarginsGuide.widthAnchor, multiplier: 1.0).isActive = true
-
-        let label = UILabel()
-        label.text = "ClientID"
-        stackView1.insertArrangedSubview(label, at: 0)
-        
-        textClientId = UITextField()
-        textClientId.borderStyle = .roundedRect
-        textClientId.delegate = self
-        textClientId.clearButtonMode = .whileEditing
-        textClientId.returnKeyType = .done
-        textClientId.placeholder = "clientID"
-        stackView1.insertArrangedSubview(textClientId, at: 1)
-        let widthConstraint = textClientId.widthAnchor.constraint(greaterThanOrEqualToConstant: 200)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
-
-        (stackView.arrangedSubviews[1]).isHidden = !switchCustomize.isOn
-
-        let stackView2 = UIStackView()
-        stackView2.axis = .horizontal
-        stackView2.alignment = .center
-        stackView2.spacing = 20
-        stackView.insertArrangedSubview(stackView2, at: 2)
-        stackView2.widthAnchor.constraint(lessThanOrEqualTo: view.layoutMarginsGuide.widthAnchor, multiplier: 1.0).isActive = true
-
-        let label2 = UILabel()
-        label2.text = "Secret"
-        stackView2.insertArrangedSubview(label2, at: 0)
-        
-        textSecret = UITextField()
-        textSecret.borderStyle = .roundedRect
-        textSecret.delegate = self
-        textSecret.clearButtonMode = .whileEditing
-        textSecret.returnKeyType = .done
-        textSecret.isSecureTextEntry = true
-        textSecret.placeholder = "ClientSecret"
-        stackView2.insertArrangedSubview(textSecret, at: 1)
-        let widthConstraint2 = textSecret.widthAnchor.constraint(greaterThanOrEqualToConstant: 200)
-        widthConstraint2.priority = .defaultHigh
-        widthConstraint2.isActive = true
-        
-        (stackView.arrangedSubviews[2]).isHidden = !switchCustomize.isOn
-
-        let scopePicker = UIPickerView()
-        scopePicker.dataSource = self
-        scopePicker.delegate = self
-        stackView.insertArrangedSubview(scopePicker, at: 3)
-
-        (stackView.arrangedSubviews[3]).isHidden = !switchCustomize.isOn
-
-        let stackView5 = UIStackView()
-        stackView5.axis = .horizontal
-        stackView5.alignment = .center
-        stackView5.spacing = 20
-        stackView.insertArrangedSubview(stackView5, at: 4)
-        
-        let button1 = UIButton(type: .system)
-        button1.setTitle("Next", for: .normal)
-        button1.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button1, at: 0)
-        
-        let button2 = UIButton(type: .system)
-        button2.setTitle("Cancel", for: .normal)
-        button2.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button2, at: 1)
-    }
-    
-    @objc func buttonEvent(_ sender: UIButton) {
-        if sender.currentTitle == "Next" {
-            done = true
-            if customizeId && scope != "" {
-                onFinish(textClientId.text ?? "", textSecret.text ?? "", "https://www.googleapis.com/auth/\(scope)")
-            }
-            else {
-                onFinish("", "", "")
-            }
-        }
-        else {
-            navigationController?.popViewController(animated: true)
-        }
-    }
-    
-    override func willMove(toParent parent: UIViewController?) {
-        if parent == nil && !done {
-            onCancel()
-        }
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        
-        done = true
-        if customizeId && scope != "" {
-            onFinish(textClientId.text ?? "", textSecret.text ?? "", "https://www.googleapis.com/auth/\(scope)")
-        }
-        else {
-            onFinish("", "", "")
-        }
-        return true
-    }
-    
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if textClientId.isFirstResponder {
-            textClientId.resignFirstResponder()
-        }
-        if textSecret.isFirstResponder {
-            textSecret.resignFirstResponder()
-        }
-    }
-    
-    @objc func switchValueChanged(aSwitch: UISwitch) {
-        (stackView.arrangedSubviews[1]).isHidden = !aSwitch.isOn
-        (stackView.arrangedSubviews[2]).isHidden = !aSwitch.isOn
-        (stackView.arrangedSubviews[3]).isHidden = !aSwitch.isOn
-        customizeId = aSwitch.isOn
-    }
-    
-    func numberOfComponents(in pickerView: UIPickerView) -> Int {
-        return 1
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        return scopes.count
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        return scopes[row]
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
-        scope = scopes[row]
-    }
-}
-
-@available(iOS 13.0, *)
-extension GoogleDriveStorage: ASWebAuthenticationPresentationContextProviding {
-    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return UIApplication.topViewController()!.view.window!
+        return false
     }
 }

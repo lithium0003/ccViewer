@@ -8,256 +8,67 @@
 
 import Foundation
 import CommonCrypto
+import SwiftUI
+import AuthenticationServices
+import UniformTypeIdentifiers
 
-class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate  {
-    var textPassword: UITextField!
-    var textSalt: UITextField!
-    var textSuffix: UITextField!
-    var stackView: UIStackView!
-    var switchObfuscation: UISwitch!
-    var switchHidename: UISwitch!
-    var filenameEncryption: Bool = false
-    var filenameObfuscation: Bool = false
+struct PasswordRcloneView: View {
+    let callback: (String, String, String, String, String) async -> Void
+    let onDismiss: () -> Void
+    @State var ok = false
 
-    var onCancel: (()->Void)!
-    var onFinish: ((String, String, String, Bool, Bool)->Void)!
-    var done: Bool = false
+    let filenameModes = ["standard", "obfuscation", "off"]
+    let encodrdingModes = ["base32", "base64", "base32768"]
+
+    @State var isPresented = false
+    @State var isAlertPresented = false
+    @State var isAlertPresented2 = false
+
+    @State var confPassword = ""
+    @State var box = Data()
+    @State var crypt_config = [String: [String: String]]()
     
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        self.title = "CryptRclone password"
-        if #available(iOS 13.0, *) {
-            view.backgroundColor = .systemBackground
-        } else {
-            view.backgroundColor = .white
-        }
+    @State var showPassword = false
+    @State var showSalt = false
 
-        stackView = UIStackView()
-        stackView.axis = .vertical
-        stackView.alignment = .center
-        stackView.spacing = 10
-        view.addSubview(stackView)
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
+    @State var password = ""
+    @State var passwordBitsStr = "128"
+    @State var passwordBits = 128
+    @State var salt = ""
+    @State var saltBitsStr = "128"
+    @State var saltBits = 128
+    @State var filenameEncryption = "standard"
+    @State var suffix = ".bin"
+    @State var filenameEncodingMode = "base32"
 
-        let stackView0 = UIStackView()
-        stackView0.axis = .horizontal
-        stackView0.alignment = .center
-        stackView0.spacing = 20
-        stackView.insertArrangedSubview(stackView0, at: 0)
-        
-        let button0 = UIButton(type: .system)
-        button0.setTitle("Load from rclone.conf", for: .normal)
-        button0.addTarget(self, action: #selector(buttonLoadEvent), for: .touchUpInside)
-        stackView0.insertArrangedSubview(button0, at: 0)
-
-        
-        let stackView1 = UIStackView()
-        stackView1.axis = .horizontal
-        stackView1.alignment = .center
-        stackView1.spacing = 20
-        stackView.insertArrangedSubview(stackView1, at: 1)
-        
-        let label = UILabel()
-        label.text = "Password"
-        stackView1.insertArrangedSubview(label, at: 0)
-        
-        textPassword = UITextField()
-        textPassword.borderStyle = .roundedRect
-        textPassword.delegate = self
-        textPassword.clearButtonMode = .whileEditing
-        textPassword.returnKeyType = .done
-        textPassword.isSecureTextEntry = true
-        textPassword.placeholder = "password"
-        stackView1.insertArrangedSubview(textPassword, at: 1)
-        let widthConstraint = textPassword.widthAnchor.constraint(equalToConstant: 200)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
-
-        let stackView2 = UIStackView()
-        stackView2.axis = .horizontal
-        stackView2.alignment = .center
-        stackView2.spacing = 20
-        stackView.insertArrangedSubview(stackView2, at: 2)
-        
-        let label2 = UILabel()
-        label2.text = "Salt"
-        stackView2.insertArrangedSubview(label2, at: 0)
-        
-        textSalt = UITextField()
-        textSalt.borderStyle = .roundedRect
-        textSalt.delegate = self
-        textSalt.clearButtonMode = .whileEditing
-        textSalt.returnKeyType = .done
-        textSalt.isSecureTextEntry = true
-        textSalt.placeholder = "salt"
-        stackView2.insertArrangedSubview(textSalt, at: 1)
-        let widthConstraint2 = textSalt.widthAnchor.constraint(equalToConstant: 200)
-        widthConstraint2.priority = .defaultHigh
-        widthConstraint2.isActive = true
-
-        let stackView3 = UIStackView()
-        stackView3.axis = .horizontal
-        stackView3.alignment = .center
-        stackView3.spacing = 20
-        stackView.insertArrangedSubview(stackView3, at: 3)
-        
-        let label3 = UILabel()
-        label3.text = "Encrypt filename"
-        stackView3.insertArrangedSubview(label3, at: 0)
-        
-        switchHidename = UISwitch()
-        switchHidename.addTarget(self, action: #selector(switchValueChanged), for: .valueChanged)
-        filenameEncryption = switchHidename.isOn
-        stackView3.insertArrangedSubview(switchHidename, at: 1)
-        
-        let stackView6 = UIStackView()
-        stackView6.axis = .horizontal
-        stackView6.alignment = .center
-        stackView6.spacing = 20
-        stackView.insertArrangedSubview(stackView6, at: 4)
-        
-        let label5 = UILabel()
-        label5.text = "Obfuscation mode"
-        stackView6.insertArrangedSubview(label5, at: 0)
-        
-        switchObfuscation = UISwitch()
-        switchObfuscation.addTarget(self, action: #selector(switchValueChanged2), for: .valueChanged)
-        filenameObfuscation = switchObfuscation.isOn
-        stackView6.insertArrangedSubview(switchObfuscation, at: 1)
-        
-        let stackView4 = UIStackView()
-        stackView4.axis = .horizontal
-        stackView4.alignment = .center
-        stackView4.spacing = 20
-        stackView.insertArrangedSubview(stackView4, at: 5)
-        
-        let label4 = UILabel()
-        label4.text = "Suffix"
-        stackView4.insertArrangedSubview(label4, at: 0)
-        
-        textSuffix = UITextField()
-        textSuffix.borderStyle = .roundedRect
-        textSuffix.delegate = self
-        textSuffix.clearButtonMode = .whileEditing
-        textSuffix.returnKeyType = .done
-        textSuffix.placeholder = "bin"
-        stackView4.insertArrangedSubview(textSuffix, at: 1)
-
-        (stackView.arrangedSubviews[4]).isHidden = !switchHidename.isOn
-        (stackView.arrangedSubviews[5]).isHidden = switchHidename.isOn
-        
-        let stackView5 = UIStackView()
-        stackView5.axis = .horizontal
-        stackView5.alignment = .center
-        stackView5.spacing = 20
-        stackView.insertArrangedSubview(stackView5, at: 6)
-        
-        let button1 = UIButton(type: .system)
-        button1.setTitle("Done", for: .normal)
-        button1.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button1, at: 0)
-        
-        let button2 = UIButton(type: .system)
-        button2.setTitle("Cancel", for: .normal)
-        button2.addTarget(self, action: #selector(buttonEvent), for: .touchUpInside)
-        stackView5.insertArrangedSubview(button2, at: 1)
-    }
-
-    @objc func buttonLoadEvent(_ sender: UIButton) {
-        let picker = UIDocumentPickerViewController(documentTypes: ["info.lithium03.mtype.conf"], in: .open)
-        picker.delegate = self
-        present(picker, animated: true, completion: nil)
-    }
-    
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        if let url = urls.first {
-            var conf = Data()
-            do {
-                guard CFURLStartAccessingSecurityScopedResource(url as CFURL) else {
-                    return
-                }
-                defer {
-                    CFURLStopAccessingSecurityScopedResource(url as CFURL)
-                }
-                guard let input = InputStream(url: url) else {
-                    return
-                }
-                input.open()
-                do {
-                    defer {
-                        input.close()
-                    }
-                    var buffer = [UInt8](repeating: 0, count: 1024)
-                    while input.hasBytesAvailable {
-                        let read = input.read(&buffer, maxLength: buffer.count)
-                        if read < 0 {
-                            //Stream error occured
-                            print(input.streamError!)
-                            return
-                        } else if read == 0 {
-                            //EOF
-                            break
-                        }
-                        conf.append(buffer, count: read)
-                    }
-                }
-            }
-            guard let confstr = String(bytes: conf, encoding: .utf8) else {
+    func processConf(url: URL) {
+        var confstr: String?
+        do {
+            guard url.startAccessingSecurityScopedResource() else {
                 return
             }
-            let conflines = confstr.components(separatedBy: .newlines)
-            if conflines.contains("RCLONE_ENCRYPT_V0:") {
-                let base64 = conflines.last!
-                guard let box = Data(base64Encoded: base64) else {
-                    return
-                }
-                guard box.count >= 24+Secretbox.Overhead else {
-                    return
-                }
-                
-                let alert = UIAlertController(title: "Encrypt config file",
-                                              message: "enter password",
-                                              preferredStyle: .alert)
-                let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
-                let defaultAction = UIAlertAction(title: "OK", style: .default) { action in
-                    if let password = alert.textFields?[0].text {
-                        let data = Array("[\(password)][rclone-config]".utf8)
-                        var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-                        CC_SHA256(data, CC_LONG(data.count), &configKey)
-
-                        let nonce = [UInt8](box.subdata(in: 0..<24))
-                        let key = Array(configKey[0..<32])
-                        guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
-                            return
-                        }
-                        guard let plain = String(bytes: out, encoding: .utf8) else {
-                            return
-                        }
-                        self.processConfigFile(conflines: plain.components(separatedBy: .newlines))
-                    }
-                }
-                
-                alert.addAction(cancelAction)
-                alert.addAction(defaultAction)
-                
-                alert.addTextField(configurationHandler: {(text:UITextField!) -> Void in
-                    text.placeholder = "password"
-                    let label = UILabel(frame: CGRect(x: 0, y: 0, width: 50, height: 30))
-                    label.text = "Pass"
-                    text.leftView = label
-                    text.leftViewMode = .always
-                    text.enablesReturnKeyAutomatically = true
-                    text.isSecureTextEntry = true
-                })
-                
-                present(alert, animated: true, completion: nil)
+            defer {
+                url.stopAccessingSecurityScopedResource()
+            }
+            confstr = try? String(contentsOf: url, encoding: .utf8)
+        }
+        guard let confstr else {
+            return
+        }
+        let conflines = confstr.components(separatedBy: .newlines)
+        if conflines.contains("RCLONE_ENCRYPT_V0:") {
+            let base64 = conflines.last!
+            guard let box = Data(base64Encoded: base64) else {
                 return
             }
-            processConfigFile(conflines: conflines)
+            guard box.count >= 24+Secretbox.Overhead else {
+                return
+            }
+            self.box = box
+            isAlertPresented.toggle()
+            return
         }
+        processConfigFile(conflines: conflines)
     }
     
     func processConfigFile(conflines: [String]) {
@@ -315,50 +126,22 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
                 if let p = confItems["password2"] {
                     password2 = p
                 }
+                crypt_config[confKey] = ["password": password, "password2": password2]
+                if let filename_encoding = confItems["filename_encoding"] {
+                    crypt_config[confKey]?["filename_encoding"] = filename_encoding
+                }
                 if let filename_encryption = confItems["filename_encryption"] {
-                    crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": filename_encryption]
+                    crypt_config[confKey]?["filename_encryption"] = filename_encryption
                 }
-                else {
-                    crypt_config[confKey] = ["password": password, "password2": password2, "filename_encryption": "standard"]
+                if let suffix = confItems["suffix"] {
+                    crypt_config[confKey]?["suffix"] = suffix
                 }
             }
         }
-        
-        let alert = UIAlertController(title: "Load from rclone.conf", message: "select crypt item name", preferredStyle:  .alert)
-        
-        var alertItems = [UIAlertAction]()
-        for confKey in crypt_config.keys.sorted() {
-            let confItems = crypt_config[confKey]!
-            let action = UIAlertAction(title: confKey, style: .default) { act in
-                self.textPassword.text = self.reveal(ciphertext: confItems["password"])
-                self.textSalt.text = self.reveal(ciphertext: confItems["password2"])
-                switch confItems["filename_encryption"] {
-                case "standard":
-                    self.filenameEncryption = true
-                    self.filenameObfuscation = false
-                case "obfuscate":
-                    self.filenameEncryption = true
-                    self.filenameObfuscation = true
-                case "off":
-                    self.filenameEncryption = false
-                    self.filenameObfuscation = false
-                default:
-                    break
-                }
-                self.switchObfuscation.isOn = self.filenameObfuscation
-                self.switchHidename.isOn = self.filenameEncryption
-                (self.stackView.arrangedSubviews[4]).isHidden = !self.switchHidename.isOn
-                (self.stackView.arrangedSubviews[5]).isHidden = self.switchHidename.isOn
-            }
-            alert.addAction(action)
-            alertItems.append(action)
-        }
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
-        alert.addAction(cancelAction)
-        
-        present(alert, animated: true, completion: nil)
+        self.crypt_config = crypt_config
+        isAlertPresented2.toggle()
     }
-    
+
     func reveal(ciphertext: String?) -> String? {
         guard let ciphertext = ciphertext else {
             return nil
@@ -390,64 +173,247 @@ class ViewControllerPasswordRclone: UIViewController, UITextFieldDelegate, UIDoc
         }
         let buffer = cipher.subdata(in: 16..<cipher.count)
         let iv = cipher.subdata(in: 0..<16)
-        guard let aes = AES_CTR(key: key, nonce: [UInt8](iv)) else {
-            return nil
-        }
-        guard let plain = aes.encrypt(plaintext: [UInt8](buffer)) else {
+        guard let plain = try? AesCtr.compute(key: key, iv: [UInt8](iv), data: [UInt8](buffer)) else {
             return ciphertext
         }
-        //print(plain)
         return String(bytes: plain, encoding: .utf8)
     }
-    
-    @objc func buttonEvent(_ sender: UIButton) {
-        if sender.currentTitle == "Done" {
-            done = true
-            onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption, filenameObfuscation)
-        }
-        else {
-            navigationController?.popViewController(animated: true)
-        }
-    }
-    
-    override func willMove(toParent parent: UIViewController?) {
-        if parent == nil && !done {
-            onCancel()
-        }
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
-        
-        done = true
-        onFinish(textPassword.text ?? "", textSalt.text ?? "", textSuffix.text ?? "", filenameEncryption, filenameObfuscation)
-        return true
-    }
-    
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if textPassword.isFirstResponder {
-            textPassword.resignFirstResponder()
-        }
-        if textSalt.isFirstResponder {
-            textSalt.resignFirstResponder()
-        }
-        if textSuffix.isFirstResponder {
-            textSuffix.resignFirstResponder()
-        }
-    }
-    
-    @objc func switchValueChanged(aSwitch: UISwitch) {
-        (stackView.arrangedSubviews[4]).isHidden = !aSwitch.isOn
-        (stackView.arrangedSubviews[5]).isHidden = aSwitch.isOn
-        filenameEncryption = aSwitch.isOn
-    }
 
-    @objc func switchValueChanged2(aSwitch: UISwitch) {
-        filenameObfuscation = aSwitch.isOn
+    var body: some View {
+        ZStack {
+            Form {
+                Text("CryptRclone configuration")
+                Button("Load config from file") {
+                    isPresented.toggle()
+                }
+                .buttonStyle(.borderedProminent)
+                Section("Password") {
+                    HStack {
+                        if showPassword {
+                            TextField("password", text: $password)
+                        }
+                        else {
+                            SecureField("password", text: $password)
+                        }
+                        Button {
+                            showPassword.toggle()
+                        } label: {
+                            if showPassword {
+                                Image(systemName: "eye.slash")
+                            }
+                            else {
+                                Image(systemName: "eye")
+                                    .tint(.gray)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    HStack {
+                        Text("Random bits")
+                        TextField("", text: $passwordBitsStr)
+                            .frame(maxWidth: 100)
+                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                passwordBits = Int(passwordBitsStr) ?? passwordBits
+                                if passwordBits < 64 {
+                                    passwordBits = 64
+                                }
+                                if passwordBits > 1024 {
+                                    passwordBits = 1024
+                                }
+                                passwordBitsStr = String(passwordBits)
+                            }
+                        Spacer()
+                        Button("Random generate") {
+                            passwordBits = Int(passwordBitsStr) ?? passwordBits
+                            if passwordBits < 64 {
+                                passwordBits = 64
+                            }
+                            if passwordBits > 1024 {
+                                passwordBits = 1024
+                            }
+                            passwordBitsStr = String(passwordBits)
+
+                            var count = passwordBits / 8
+                            if passwordBits % 8 != 0 {
+                                count += 1
+                            }
+                            var data = Data(count: count)
+                            let status = data.withUnsafeMutableBytes { body in
+                                SecRandomCopyBytes(kSecRandomDefault, count, body.baseAddress!)
+                            }
+                            if status == errSecSuccess {
+                                password = data.base64EncodedString().replacing("+", with: "-").replacing("/", with: "_").replacing("=", with: "")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                Section("Password2") {
+                    HStack {
+                        if showSalt {
+                            TextField("salt", text: $salt)
+                        }
+                        else {
+                            SecureField("salt", text: $salt)
+                        }
+                        Button {
+                            showSalt.toggle()
+                        } label: {
+                            if showSalt {
+                                Image(systemName: "eye.slash")
+                            }
+                            else {
+                                Image(systemName: "eye")
+                                    .tint(.gray)
+
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    HStack {
+                        Text("Random bits")
+                        TextField("", text: $saltBitsStr)
+                            .frame(maxWidth: 100)
+                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                saltBits = Int(saltBitsStr) ?? saltBits
+                                if saltBits < 64 {
+                                    saltBits = 64
+                                }
+                                if saltBits > 1024 {
+                                    saltBits = 1024
+                                }
+                                saltBitsStr = String(saltBits)
+                            }
+                        Spacer()
+                        Button("Random generate") {
+                            saltBits = Int(saltBitsStr) ?? saltBits
+                            if saltBits < 64 {
+                                saltBits = 64
+                            }
+                            if saltBits > 1024 {
+                                saltBits = 1024
+                            }
+                            saltBitsStr = String(saltBits)
+
+                            var count = saltBits / 8
+                            if saltBits % 8 != 0 {
+                                count += 1
+                            }
+                            var data = Data(count: count)
+                            let status = data.withUnsafeMutableBytes { body in
+                                SecRandomCopyBytes(kSecRandomDefault, count, body.baseAddress!)
+                            }
+                            if status == errSecSuccess {
+                                salt = data.base64EncodedString().replacing("+", with: "-").replacing("/", with: "_").replacing("=", with: "")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                Section("Encrypt filename") {
+                    Picker("Filename encrypt mode", selection: $filenameEncryption) {
+                        ForEach(filenameModes, id: \.self) { str in
+                            Text(str)
+                        }
+                    }
+                    HStack {
+                        Text("Filename suffix")
+                        Spacer()
+                        TextField("suffix", text: $suffix)
+                            .frame(maxWidth: 100)
+                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .disabled(filenameEncryption != "off")
+                    Picker("Filename encoding", selection: $filenameEncodingMode) {
+                        ForEach(encodrdingModes, id: \.self) { str in
+                            Text(str)
+                        }
+                    }
+                    .disabled(filenameEncryption != "standard")
+                }
+                Button("Select root folder") {
+                    ok = true
+                    Task {
+                        await callback(password, salt, filenameEncryption, suffix, filenameEncodingMode)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .disabled(ok)
+
+            if ok {
+                ProgressView()
+                    .padding(30)
+                    .background {
+                        Color(uiColor: .systemBackground)
+                            .opacity(0.9)
+                    }
+                    .scaleEffect(3)
+                    .cornerRadius(10)
+            }
+        }
+        .alert("Encrypt config file", isPresented: $isAlertPresented) {
+            SecureField("password", text: $confPassword)
+
+            Button("Cancel", role: .cancel) {
+                isAlertPresented = false
+            }
+            Button("OK", role: .confirm) {
+                isAlertPresented = false
+                Task {
+                    await Task.yield()
+                    let data = Array("[\(confPassword)][rclone-config]".utf8)
+                    var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+                    CC_SHA256(data, CC_LONG(data.count), &configKey)
+
+                    let nonce = [UInt8](box.subdata(in: 0..<24))
+                    let key = Array(configKey[0..<32])
+                    guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
+                        return
+                    }
+                    guard let plain = String(bytes: out, encoding: .utf8) else {
+                        return
+                    }
+                    processConfigFile(conflines: plain.components(separatedBy: .newlines))
+                }
+            }
+        }
+        .alert("Encrypt config file", isPresented: $isAlertPresented2) {
+            ForEach(crypt_config.keys.sorted(), id: \.self) { name in
+                if let confItems = crypt_config[name] {
+                    Button(name, role: .confirm) {
+                        isAlertPresented2 = false
+                        password = reveal(ciphertext: confItems["password"] ?? "") ?? ""
+                        salt = reveal(ciphertext: confItems["password2"] ?? "") ?? ""
+                        filenameEncryption = confItems["filename_encryption"] ?? filenameModes[0]
+                        suffix = confItems["suffix"] ?? ".bin"
+                        filenameEncodingMode = confItems["filename_encoding"] ?? "base32"
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                isAlertPresented2 = false
+            }
+        }
+        .fileImporter(isPresented: $isPresented, allowedContentTypes: [UTType(filenameExtension: "conf")!]) { result in
+            switch result {
+            case .success(let url):
+                processConf(url: url)
+            case .failure(let error):
+                print(error)
+            }
+        }
+        .onDisappear {
+            if ok { return }
+            onDismiss()
+        }
     }
 }
-
-
 
 public class CryptRclone: ChildStorage {
     
@@ -464,7 +430,7 @@ public class CryptRclone: ChildStorage {
     let blockDataSize: Int64 = 64 * 1024
     let chunkSize: Int64 = 16 + 64 * 1024
     let defaultSalt = Data.init([0xA8, 0x0D, 0xF4, 0x3A, 0x8F, 0xBD, 0x03, 0x08, 0xA7, 0xCA, 0xB8, 0x3E, 0x58, 0x1F, 0x86, 0xB1])
-    let defaultSuffix = "bin"
+    let defaultSuffix = ".bin"
 
     var dataKey = [UInt8](repeating: 0, count: 32)
     var nameKey = [UInt8](repeating: 0, count: 32)
@@ -473,12 +439,23 @@ public class CryptRclone: ChildStorage {
     let encodeMap = Array("0123456789ABCDEFGHIJKLMNOPQRSTUV")
     let decodeMap: [Character: Int]
     
+    enum NameEncryptionMode {
+        case standard
+        case obfuscated
+        case off
+    }
+    enum NameEncodeMode {
+        case base32
+        case base64
+        case base32768
+    }
+
     var name_aes: AES_EME?
-    var name_crypt: Bool = true
-    var name_obfuscation: Bool = false
-    var name_suffix: String = ""
+    var name_cryptmode = NameEncryptionMode.standard
+    var name_encodemode = NameEncodeMode.base32
+    var name_suffix: String = ".bin"
     
-    override public init(name: String) {
+    override public init(name: String) async {
         var m: [Character: Int] = [:]
         encodeMap.enumerated().forEach { i, c in
             m[c] = i
@@ -486,95 +463,101 @@ public class CryptRclone: ChildStorage {
         m["="] = 0
         decodeMap = m
 
-        super.init(name: name)
+        await super.init(name: name)
         service = CloudFactory.getServiceName(service: .CryptRclone)
         storageName = name
-        if self.getKeyChain(key: "\(self.storageName ?? "")_password") != nil && self.getKeyChain(key: "\(self.storageName ?? "")_salt") != nil {
-            generateKey()
+        if await getKeyChain(key: "\(storageName ?? "")_password") != nil, await getKeyChain(key: "\(storageName ?? "")_salt") != nil {
+            await generateKey()
         }
-        if let b = getKeyChain(key: "\(self.storageName ?? "")_cryptname"), b == "true" {
-            name_crypt = true
+    }
+
+    public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
+        let authRet = await withCheckedContinuation { authContinuation in
+            Task {
+                let presentRet = await withCheckedContinuation { continuation in
+                    callback(PasswordRcloneView(callback: { password, salt, filenameEncryption, suffix, filenameEncodingMode in
+                        if await super.auth(callback: callback, webAuthenticationSession: webAuthenticationSession, selectItem: selectItem) {
+                            
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_password", value: password)
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_salt", value: salt)
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_suffix", value: suffix)
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_namecryptmode", value: filenameEncryption)
+                            let _ = await self.setKeyChain(key: "\(self.storageName ?? "")_nameencode", value: filenameEncodingMode)
+                            await self.generateKey()
+                            authContinuation.resume(returning: true)
+                        }
+                        else {
+                            authContinuation.resume(returning: false)
+                        }
+                    }, onDismiss: {
+                        authContinuation.resume(returning: false)
+                    }), continuation)
+                }
+                guard presentRet else {
+                    authContinuation.resume(returning: false)
+                    return
+                }
+            }
+        }
+        return authRet
+    }
+
+    override public func logout() async {
+        if let name = storageName {
+            let _ = await delKeyChain(key: "\(name)_password")
+            let _ = await delKeyChain(key: "\(name)_salt")
+            let _ = await delKeyChain(key: "\(name)_suffix")
+            let _ = await delKeyChain(key: "\(name)_cryptname")
+            let _ = await delKeyChain(key: "\(name)_obfuscation")
+            let _ = await delKeyChain(key: "\(name)_namecryptmode")
+            let _ = await delKeyChain(key: "\(name)_nameencode")
+        }
+        await super.logout()
+    }
+    
+    @concurrent
+    func generateKey() async {
+        if let b = await getKeyChain(key: "\(storageName ?? "")_cryptname"), b == "true" {
+            name_cryptmode = .standard
         }
         else {
-            name_crypt = false
+            name_cryptmode = .off
         }
-        if let b = getKeyChain(key: "\(self.storageName ?? "")_obfuscation"), b == "true" {
-            name_obfuscation = true
+        if let b = await getKeyChain(key: "\(storageName ?? "")_obfuscation"), b == "true" {
+            name_cryptmode = .obfuscated
         }
-        else {
-            name_obfuscation = false
-        }
-        if let s = getKeyChain(key: "\(self.storageName ?? "")_suffix"), s != "" {
+        if let s = await getKeyChain(key: "\(storageName ?? "")_suffix"), s != "" {
             name_suffix = "."+s
         }
         else {
-            name_suffix = "."+defaultSuffix
+            name_suffix = defaultSuffix
         }
-    }
-    
-    override public func auth(onFinish: ((Bool) -> Void)?) -> Void {
-        super.auth() { success in
-            if success {
-                if self.getKeyChain(key: "\(self.storageName ?? "")_password") != nil && self.getKeyChain(key: "\(self.storageName ?? "")_salt") != nil {
-                    DispatchQueue.global().async {
-                        self.generateKey()
-                        onFinish?(true)
-                    }
-                    return
-                }
-                DispatchQueue.main.async {
-                    if let controller = UIApplication.topViewController() {
-                        let passwordView = ViewControllerPasswordRclone()
-                        passwordView.onCancel = {
-                            onFinish?(false)
-                        }
-                        passwordView.onFinish = { pass, salt, suffix, cfname, ofname in
-                            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_password", value: pass)
-                            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_salt", value: salt)
-                            let _ = self.setKeyChain(key: "\(self.storageName ?? "")_suffix", value: suffix)
-                            if cfname {
-                                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_cryptname", value: "true")
-                            }
-                            if ofname {
-                                let _ = self.setKeyChain(key: "\(self.storageName ?? "")_obfuscation", value: "true")
-                            }
-                            self.name_crypt = cfname
-                            self.name_obfuscation = ofname
-                            self.name_suffix = suffix != "" ? suffix : self.defaultSuffix
-
-                            DispatchQueue.global().async {
-                                self.generateKey()
-                                onFinish?(true)
-                            }
-                        }
-                        controller.navigationController?.pushViewController(passwordView, animated: true)
-                    }
-                    else {
-                        onFinish?(false)
-                    }
-                }
+        if let s = await getKeyChain(key: "\(storageName ?? "")_namecryptmode"), s != "" {
+            if s == "standard" {
+                name_cryptmode = .standard
             }
-            else {
-                onFinish?(success)
+            else if s == "obfuscation" {
+                name_cryptmode = .obfuscated
+            }
+            else if s == "off" {
+                name_cryptmode = .off
             }
         }
-    }
-
-    override public func logout() {
-        if let name = storageName {
-            let _ = delKeyChain(key: "\(name)_password")
-            let _ = delKeyChain(key: "\(name)_salt")
-            let _ = delKeyChain(key: "\(name)_suffix")
-            let _ = delKeyChain(key: "\(name)_cryptname")
-            let _ = delKeyChain(key: "\(name)_obfuscation")
+        if let s = await getKeyChain(key: "\(storageName ?? "")_nameencode"), s != "" {
+            if s == "base32" {
+                name_encodemode = .base32
+            }
+            else if s == "base64" {
+                name_encodemode = .base64
+            }
+            else if s == "base32768" {
+                name_encodemode = .base32768
+            }
         }
-        super.logout()
-    }
-    
-    func generateKey() {
-        let password = getKeyChain(key: "\(storageName ?? "")_password") ?? ""
+
+        let password = await getKeyChain(key: "\(storageName ?? "")_password") ?? ""
         let salt: Data
-        if let saltstr = getKeyChain(key: "\(storageName ?? "")_salt"), saltstr != "" {
+        if let saltstr = await getKeyChain(key: "\(storageName ?? "")_salt"), saltstr != "" {
             salt = saltstr.data(using: .utf8)!
         }
         else {
@@ -582,29 +565,26 @@ public class CryptRclone: ChildStorage {
         }
         
         let keysize = dataKey.count + nameKey.count + nameTweak.count
-        DispatchQueue.global().async {
-            var key = [UInt8](repeating: 0, count: keysize)
-            if password != "" {
-                key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .utf8)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
-            }
-            self.dataKey = Array(key[0..<32])
-            self.nameKey = Array(key[32..<64])
-            self.nameTweak = Array(key[64..<80])
-            
-            self.name_aes = AES_EME(key: self.nameKey, IV: self.nameTweak)
+        var key = [UInt8](repeating: 0, count: keysize)
+        if password != "" {
+            key = SCrypt.ComputeDerivedKey(key: [UInt8](password.data(using: .utf8)!), salt: [UInt8](salt), cost: 16384, blockSize: 8, derivedKeyLength: keysize)
         }
+        dataKey = Array(key[0..<32])
+        nameKey = Array(key[32..<64])
+        nameTweak = Array(key[64..<80])
+        
+        name_aes = AES_EME(key: self.nameKey, IV: self.nameTweak)
     }
     
     override func ConvertDecryptName(name: String) -> String {
-        return DecryptName(ciphertext: name) ?? name
-    }
+        DecryptName(ciphertext: name) ?? name    }
     
     override func ConvertDecryptSize(size: Int64) -> Int64 {
-        return CalcDecryptedSize(crypt_size: size)
+        CalcDecryptedSize(crypt_size: size)
     }
 
     override func ConvertEncryptName(name: String, folder: Bool) -> String {
-        if folder && !name_crypt {
+        if folder && name_cryptmode == .off {
             return name
         }
         return EncryptName(plain: name) ?? name
@@ -613,8 +593,105 @@ public class CryptRclone: ChildStorage {
     override func ConvertEncryptSize(size: Int64) -> Int64 {
         return CalcEncryptedSize(org_size: size)
     }
+
+    struct Base32768 {
+        let blockBit = 5
+        private let safeAlphabet = "ƀɀɠʀҠԀڀڠݠހ߀ကႠᄀᄠᅀᆀᇠሀሠበዠጠᎠᏀᐠᑀᑠᒀᒠᓀᓠᔀᔠᕀᕠᖀᖠᗀᗠᘀᘠᙀᚠᛀកᠠᡀᣀᦀ᧠ᨠᯀᰀᴀ⇠⋀⍀⍠⎀⎠⏀␀─┠╀╠▀■◀◠☀☠♀♠⚀⚠⛀⛠✀✠❀➀➠⠀⠠⡀⡠⢀⢠⣀⣠⤀⤠⥀⥠⦠⨠⩀⪀⪠⫠⬀⬠⭀ⰀⲀⲠⳀⴀⵀ⺠⻀㇀㐀㐠㑀㑠㒀㒠㓀㓠㔀㔠㕀㕠㖀㖠㗀㗠㘀㘠㙀㙠㚀㚠㛀㛠㜀㜠㝀㝠㞀㞠㟀㟠㠀㠠㡀㡠㢀㢠㣀㣠㤀㤠㥀㥠㦀㦠㧀㧠㨀㨠㩀㩠㪀㪠㫀㫠㬀㬠㭀㭠㮀㮠㯀㯠㰀㰠㱀㱠㲀㲠㳀㳠㴀㴠㵀㵠㶀㶠㷀㷠㸀㸠㹀㹠㺀㺠㻀㻠㼀㼠㽀㽠㾀㾠㿀㿠䀀䀠䁀䁠䂀䂠䃀䃠䄀䄠䅀䅠䆀䆠䇀䇠䈀䈠䉀䉠䊀䊠䋀䋠䌀䌠䍀䍠䎀䎠䏀䏠䐀䐠䑀䑠䒀䒠䓀䓠䔀䔠䕀䕠䖀䖠䗀䗠䘀䘠䙀䙠䚀䚠䛀䛠䜀䜠䝀䝠䞀䞠䟀䟠䠀䠠䡀䡠䢀䢠䣀䣠䤀䤠䥀䥠䦀䦠䧀䧠䨀䨠䩀䩠䪀䪠䫀䫠䬀䬠䭀䭠䮀䮠䯀䯠䰀䰠䱀䱠䲀䲠䳀䳠䴀䴠䵀䵠䶀䷀䷠一丠乀习亀亠什仠伀传佀你侀侠俀俠倀倠偀偠傀傠僀僠儀儠兀兠冀冠净几刀删剀剠劀加勀勠匀匠區占厀厠叀叠吀吠呀呠咀咠哀哠唀唠啀啠喀喠嗀嗠嘀嘠噀噠嚀嚠囀因圀圠址坠垀垠埀埠堀堠塀塠墀墠壀壠夀夠奀奠妀妠姀姠娀娠婀婠媀媠嫀嫠嬀嬠孀孠宀宠寀寠尀尠局屠岀岠峀峠崀崠嵀嵠嶀嶠巀巠帀帠幀幠庀庠廀廠开张彀彠往徠忀忠怀怠恀恠悀悠惀惠愀愠慀慠憀憠懀懠戀戠所扠技抠拀拠挀挠捀捠掀掠揀揠搀搠摀摠撀撠擀擠攀攠敀敠斀斠旀无昀映晀晠暀暠曀曠最朠杀杠枀枠柀柠栀栠桀桠梀梠检棠椀椠楀楠榀榠槀槠樀樠橀橠檀檠櫀櫠欀欠歀歠殀殠毀毠氀氠汀池沀沠泀泠洀洠浀浠涀涠淀淠渀渠湀湠満溠滀滠漀漠潀潠澀澠激濠瀀瀠灀灠炀炠烀烠焀焠煀煠熀熠燀燠爀爠牀牠犀犠狀狠猀猠獀獠玀玠珀珠琀琠瑀瑠璀璠瓀瓠甀甠畀畠疀疠痀痠瘀瘠癀癠皀皠盀盠眀眠着睠瞀瞠矀矠砀砠础硠碀碠磀磠礀礠祀祠禀禠秀秠稀稠穀穠窀窠竀章笀笠筀筠简箠節篠簀簠籀籠粀粠糀糠紀素絀絠綀綠緀締縀縠繀繠纀纠绀绠缀缠罀罠羀羠翀翠耀耠聀聠肀肠胀胠脀脠腀腠膀膠臀臠舀舠艀艠芀芠苀苠茀茠荀荠莀莠菀菠萀萠葀葠蒀蒠蓀蓠蔀蔠蕀蕠薀薠藀藠蘀蘠虀虠蚀蚠蛀蛠蜀蜠蝀蝠螀螠蟀蟠蠀蠠血衠袀袠裀裠褀褠襀襠覀覠觀觠言訠詀詠誀誠諀諠謀謠譀譠讀讠诀诠谀谠豀豠貀負賀賠贀贠赀赠趀趠跀跠踀踠蹀蹠躀躠軀軠輀輠轀轠辀辠迀迠退造遀遠邀邠郀郠鄀鄠酀酠醀醠釀釠鈀鈠鉀鉠銀銠鋀鋠錀錠鍀鍠鎀鎠鏀鏠鐀鐠鑀鑠钀钠铀铠销锠镀镠門閠闀闠阀阠陀陠隀隠雀雠需霠靀靠鞀鞠韀韠頀頠顀顠颀颠飀飠餀餠饀饠馀馠駀駠騀騠驀驠骀骠髀髠鬀鬠魀魠鮀鮠鯀鯠鰀鰠鱀鱠鲀鲠鳀鳠鴀鴠鵀鵠鶀鶠鷀鷠鸀鸠鹀鹠麀麠黀黠鼀鼠齀齠龀龠ꀀꀠꁀꁠꂀꂠꃀꃠꄀꄠꅀꅠꆀꆠꇀꇠꈀꈠꉀꉠꊀꊠꋀꋠꌀꌠꍀꍠꎀꎠꏀꏠꐀꐠꑀꑠ꒠ꔀꔠꕀꕠꖀꖠꗀꗠꙀꚠꛀ꜀꜠ꝀꞀꡀ"
+
+        let encodeA: [UInt16]
+        let encodeB: [UInt16]
+        let decodeMap: [UInt16]
+        let splitter: UInt16
+        
+        init() {
+            let encode = safeAlphabet.unicodeScalars.map { r in
+                UInt16(r.value)
+            }.sorted()
+            splitter = encode[4]
+            encodeA = Array(encode[4...])
+            encodeB = Array(encode[0..<4])
+            var decodeMap = [UInt16](repeating: 0xFFFD, count: 2048)
+            for i in 0..<encodeA.count {
+                let idx = Int(encodeA[i] >> blockBit)
+                if decodeMap[idx] != 0xFFFD {
+                    fatalError("encoding alphabet have repeating character")
+                }
+                decodeMap[idx] = UInt16(i) << blockBit
+            }
+            for i in 0..<encodeB.count {
+                let idx = Int(encodeB[i] >> blockBit)
+                if decodeMap[idx] != 0xFFFD {
+                    fatalError("encoding alphabet have repeating character")
+                }
+                decodeMap[idx] = UInt16(i) << blockBit
+            }
+            self.decodeMap = decodeMap
+        }
+    }
+    let base32768 = Base32768()
+
+    func EncodeBase32768(input: [UInt8]) -> String {
+        func encodedLen(_ n: Int) -> Int {
+            (8*n + 14) / 15 * 2
+        }
+        
+        func encode15(_ src: UInt16) -> UInt16 {
+            let src = src & 0x7FFF
+            var dst = base32768.encodeA[Int(src>>base32768.blockBit)]
+            dst |= UInt16(src & (1<<base32768.blockBit - 1))
+            return dst
+        }
+
+        func encode7(_ src: UInt8) -> UInt16 {
+            let src = src & 0x7F
+            var dst = base32768.encodeB[Int(src>>base32768.blockBit)]
+            dst |= UInt16(src & (1<<base32768.blockBit - 1))
+            return dst
+        }
+        
+        func encodeUint16(_ src: [UInt8]) -> [UInt16] {
+            var dst = [UInt16]()
+            var left: UInt8 = 0
+            var leftn = 0
+            var i = 0
+            while i < src.count {
+                var chunk: UInt16 = 0 // Chunk contains 15 bits
+                chunk = UInt16(left) << (15 - leftn)
+                chunk |= UInt16(src[i+0]) << (7 - leftn)
+                if leftn < 7 && src.count > i+1 {
+                    chunk |= UInt16(src[i+1]) >> (1 + leftn)
+                    left = src[i+1] & (1<<(1+leftn) - 1)
+                    leftn += 1
+                    i += 2 // 2 bytes taken
+                } else {
+                    chunk |= 1<<(7-leftn) - 1 // Pad with 1s
+                    left = 0
+                    leftn = 0
+                    i += 1 // 1 byte taken
+                }
+                dst.append(encode15(chunk))
+            }
+            // Remaining
+            if leftn > 0 {
+                left = left << (7 - leftn)
+                left |= 1<<(7-leftn) - 1 // Pad with 1s
+                dst.append(encode7(left))
+            }
+            return dst
+        }
+
+        let buf = encodeUint16(input).map { Character(UnicodeScalar($0)!) }
+        return String(buf)
+    }
     
-    func EncodeFileName(input: [UInt8]) -> String {
+    func EncodeBase64(input: [UInt8]) -> String {
+        if input.isEmpty {
+            return ""
+        }
+        return Data(input).base64EncodedString().replacing("+", with: "-").replacing("/", with: "_").replacing("=", with: "")
+    }
+
+    func EncodeBase32(input: [UInt8]) -> String {
         let len = input.count
         if (len == 0) {
             return ""
@@ -645,7 +722,7 @@ public class CryptRclone: ChildStorage {
             }
             if r > 0 {
                 b[1] |= (input[offset] << 2) & 0x1f
-                b[0] = input[offset] >> 3 & 0x1f
+                b[0] = (input[offset] >> 3) & 0x1f
             }
             var outchars = b.map { encodeMap[Int($0)] }
             if r < 5 {
@@ -669,8 +746,64 @@ public class CryptRclone: ChildStorage {
         }
         return out.replacingOccurrences(of: "=", with: "").lowercased()
     }
+
+    func DecodeBase32768(input: String) -> Data? {
+        func decode(_ src: UInt16) -> (UInt16, Bool, Bool) {
+            let isTrailing = src < base32768.splitter
+            var dst = base32768.decodeMap[Int(src>>base32768.blockBit)]
+            if dst == 0xFFFD {
+                return (dst, isTrailing, false)
+            }
+            dst |= src & (1<<base32768.blockBit - 1)
+            return (dst, isTrailing, true)
+        }
+
+        func decodeUint16(_ src: [UInt16]) -> Data? {
+            var dst = Data()
+            var left: UInt8 = 0
+            var leftn: Int = 0
+            for chunk in src {
+                let (d, trailing, success) = decode(chunk)
+                guard success else {
+                    return nil
+                }
+                if trailing {
+                    // Left one byte
+                    if leftn > 0 {
+                        let buf = left<<(8-leftn) | UInt8((d >> (leftn-1)) & 0xff)
+                        dst.append(buf)
+                    }
+                    return dst
+                }
+                // Read 15 bits
+                if leftn > 0 {
+                    let buf0 = (left<<(8-leftn)) | UInt8(d>>(7+leftn))
+                    let buf1 = UInt8((d >> (leftn - 1)) & 0xff)
+                    left = UInt8(d & (1<<(leftn-1) - 1))
+                    leftn -= 1
+                    dst.append(buf0)
+                    dst.append(buf1)
+                } else {
+                    let buf = UInt8(d >> 7)
+                    left = UInt8(d & 0x7F)
+                    leftn = 7
+                    dst.append(buf)
+                }
+            }
+            return dst
+        }
+        return decodeUint16(Array(input.utf16))
+    }
+
+    func DecodeBase64(input: String) -> Data? {
+        let len = input.count
+        let padlen = ((len / 4) + 1) * 4 - len
+        var inchar = Array(input)
+        inchar.append(contentsOf: [Character](repeating: "=", count: padlen))
+        return Data(base64Encoded: String(inchar).replacing("-", with: "+").replacing("_", with: "/"))
+    }
     
-    func DecodeFileName(input: String) -> Data? {
+    func DecodeBase32(input: String) -> Data? {
         let len = input.count
         let padlen = ((len / 8) + 1) * 8 - len
         if padlen == 7 || padlen == 5 || padlen == 2 {
@@ -720,7 +853,7 @@ public class CryptRclone: ChildStorage {
         if plain == "" {
             return ""
         }
-        if name_obfuscation {
+        if name_cryptmode == .obfuscated {
             var dir: UInt32 = 0
             for i in plain {
                 dir += i.unicodeScalars.first!.value
@@ -783,7 +916,7 @@ public class CryptRclone: ChildStorage {
             }
             return crypted
         }
-        else if name_crypt {
+        else if name_cryptmode == .standard {
             guard var input = plain.data(using: .utf8) else {
                 return nil
             }
@@ -795,7 +928,14 @@ public class CryptRclone: ChildStorage {
             guard let output = name_aes?.encode(input: input) else {
                 return nil
             }
-            return EncodeFileName(input: [UInt8](output))
+            switch name_encodemode {
+            case .base32:
+                return EncodeBase32(input: [UInt8](output))
+            case .base64:
+                return EncodeBase64(input: [UInt8](output))
+            case .base32768:
+                return EncodeBase32768(input: [UInt8](output))
+            }
         }
         else {
             return plain + name_suffix
@@ -807,7 +947,7 @@ public class CryptRclone: ChildStorage {
             return ""
         }
         
-        if name_obfuscation {
+        if name_cryptmode == .obfuscated {
             guard let range = ciphertext.range(of: ".") else {
                 return nil
             }
@@ -879,8 +1019,17 @@ public class CryptRclone: ChildStorage {
             }
             return plain
         }
-        else if name_crypt {
-            guard let rawcipher = DecodeFileName(input: ciphertext) else {
+        else if name_cryptmode == .standard {
+            let rawcipher: Data?
+            switch name_encodemode {
+            case .base32:
+                rawcipher = DecodeBase32(input: ciphertext)
+            case .base64:
+                rawcipher = DecodeBase64(input: ciphertext)
+            case .base32768:
+                rawcipher = DecodeBase32768(input: ciphertext)
+            }
+            guard let rawcipher else {
                 return nil
             }
             guard rawcipher.count > 0 && rawcipher.count % (128 / 8) == 0 else {
@@ -936,12 +1085,12 @@ public class CryptRclone: ChildStorage {
         return chunk_num * blockDataSize + last_chunk_size - blockHeaderSize
     }
     
-    public override func getRaw(fileId: String) -> RemoteItem? {
-        return CryptRcloneRemoteItem(storage: storageName ?? "", id: fileId)
+    public override func getRaw(fileId: String) async -> RemoteItem? {
+        return await CryptRcloneRemoteItem(storage: storageName ?? "", id: fileId)
     }
     
-    public override func getRaw(path: String) -> RemoteItem? {
-        return CryptRcloneRemoteItem(path: path)
+    public override func getRaw(path: String) async -> RemoteItem? {
+        return await CryptRcloneRemoteItem(path: path)
     }
     
     override func processFile(target: URL) -> URL? {
@@ -1026,16 +1175,16 @@ public class CryptRclone: ChildStorage {
 public class CryptRcloneRemoteItem: RemoteItem {
     let remoteStorage: CryptRclone
     
-    override init?(storage: String, id: String) {
-        guard let s = CloudFactory.shared[storage] as? CryptRclone else {
+    override init?(storage: String, id: String) async {
+        guard let s = await CloudFactory.shared.storageList.get(storage) as? CryptRclone else {
             return nil
         }
         remoteStorage = s
-        super.init(storage: storage, id: id)
+        await super.init(storage: storage, id: id)
     }
     
-    public override func open() -> RemoteStream {
-        return RemoteCryptRcloneStream(remote: self)
+    public override func open() async -> RemoteStream {
+        return await RemoteCryptRcloneStream(remote: self)
     }
 }
 
@@ -1046,35 +1195,28 @@ public class RemoteCryptRcloneStream: SlotStream {
     var nonce = [UInt8](repeating: 0, count: 24)
     let key: [UInt8]
 
-    init(remote: CryptRcloneRemoteItem) {
+    init(remote: CryptRcloneRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
         CryptedLength = remote.remoteStorage.CalcEncryptedSize(org_size: OrignalLength)
         key = remote.remoteStorage.dataKey
-        super.init(size: OrignalLength)
+        await super.init(size: OrignalLength)
     }
     
-    override func firstFill() {
-        fillHeader()
-        super.firstFill()
-    }
-    
-    func fillHeader() {
-        init_group.enter()
-        remote.read(start: 0, length: remote.remoteStorage.fileHeaderSize) { data in
-            if let data = data {
-                if !self.remote.remoteStorage.fileMagic.elementsEqual(data.subdata(in: 0..<self.remote.remoteStorage.fileMagic.count)) {
-                    print("error on header check")
-                    self.error = true
-                }
-                self.nonce.replaceSubrange(0..<self.nonce.count, with: data.subdata(in: self.remote.remoteStorage.fileMagic.count..<data.count))
-            }
-            else {
-                print("error on header null")
-                self.error = true
-            }
-            self.init_group.leave()
+    override func fillHeader() async {
+        guard let data = try? await remote.read(start: 0, length: remote.remoteStorage.fileHeaderSize) else {
+            print("error on header null")
+            error = true
+            await super.fillHeader()
+            return
         }
+        if !remote.remoteStorage.fileMagic.elementsEqual(data.subdata(in: 0..<remote.remoteStorage.fileMagic.count)) {
+            print("error on header check")
+            await super.fillHeader()
+            error = true
+        }
+        nonce.replaceSubrange(0..<nonce.count, with: data.subdata(in: remote.remoteStorage.fileMagic.count..<data.count))
+        await super.fillHeader()
     }
     
     func addNonce(pos: Int64)->[UInt8] {
@@ -1095,31 +1237,21 @@ public class RemoteCryptRcloneStream: SlotStream {
         return nonce_count
     }
     
-    override func subFillBuffer(pos1: Int64, onFinish: @escaping ()->Void) {
-        guard init_group.wait(timeout: DispatchTime.now()+120) == DispatchTimeoutResult.success else {
-            self.error = true
-            onFinish()
+    override func subFillBuffer(pos: ClosedRange<Int64>) async {
+        guard await initialized.wait(timeout: .seconds(10)) == .success else {
+            error = true
             return
         }
+
         let chunksize = remote.remoteStorage.chunkSize
         let orgBlocksize = remote.remoteStorage.blockDataSize
         let headersize = Int64(remote.remoteStorage.fileHeaderSize)
-        let group = DispatchGroup()
-        group.enter()
-        defer {
-            group.leave()
-        }
-        DispatchQueue.global().async {
-            group.notify(queue: .global()) {
-                onFinish()
-            }
-        }
-        if !dataAvailable(pos: pos1) {
-            guard pos1 >= 0 && pos1 < size else {
+        if await !buffer.dataAvailable(pos: pos) {
+            guard pos.lowerBound >= 0 && pos.upperBound < size else {
                 return
             }
-            let len = (pos1 + bufSize < size) ? bufSize : size - pos1
-            let slot1 = pos1 / orgBlocksize
+            let len = min(size-1, pos.upperBound) - pos.lowerBound + 1
+            let slot1 = pos.lowerBound / orgBlocksize
             let pos2 = slot1 * chunksize + headersize
             var clen = len / orgBlocksize * chunksize
             if len % orgBlocksize != 0 {
@@ -1134,40 +1266,29 @@ public class RemoteCryptRcloneStream: SlotStream {
             guard clen >= 0 && clen < CryptedLength else {
                 return
             }
-            group.enter()
-            remote.read(start: pos2, length: clen) { data in
-                defer {
-                    group.leave()
-                }
-                if let data = data {
-                    DispatchQueue.global().async {
-                        var slot = slot1
-                        var plainBlock = Data()
-                        for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                            autoreleasepool {
-                                let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                                let chunk = data.subdata(in: start..<end)
-                                guard let plain = Secretbox.open(box: chunk, nonce: self.addNonce(pos: slot), key: self.key) else {
-                                    self.error = true
-                                    return
-                                }
-                                plainBlock.append(plain)
-                                slot += 1
-                            }
-                            guard !self.error else {
-                                return
-                            }
-                        }
-                        self.queue_buf.async {
-                            self.buffer[pos1] = plainBlock
-                        }
+            guard let data = try? await remote.read(start: pos2, length: clen) else {
+                print("error on readFile")
+                error = true
+                return
+            }
+            var slot = slot1
+            var plainBlock = Data()
+            for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
+                autoreleasepool {
+                    let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
+                    let chunk = data.subdata(in: start..<end)
+                    guard let plain = Secretbox.open(box: chunk, nonce: addNonce(pos: slot), key: key) else {
+                        error = true
+                        return
                     }
+                    plainBlock.append(plain)
+                    slot += 1
                 }
-                else {
-                    print("error on readFile")
-                    self.error = true
+                guard !error else {
+                    return
                 }
             }
+            await buffer.store(pos: pos.lowerBound, data: plainBlock)
         }
     }
 }
@@ -1442,7 +1563,7 @@ class AES_EME {
 
 class Poly1305 {
     static let TagSize = 16
-
+    
     class func poly1305(tag: inout [UInt8], msg: [UInt8], key: [UInt8]) {
         poly1305(tag: &tag[0..<tag.count], msg: msg[0..<msg.count], key: key)
     }
@@ -1482,13 +1603,13 @@ class Poly1305 {
             // h += msg
             msg.withUnsafeBytes { mp in
                 let msg_p = mp.baseAddress!
-                h0 += (msg_p+offset).load(as: UInt32.self) & 0x3ffffff
-                h1 += ((msg_p+offset+3).load(as: UInt32.self) >> 2) & 0x3ffffff
-                h2 += ((msg_p+offset+6).load(as: UInt32.self) >> 4) & 0x3ffffff
-                h3 += ((msg_p+offset+9).load(as: UInt32.self) >> 6) & 0x3ffffff
-                h4 += ((msg_p+offset+12).load(as: UInt32.self) >> 8) | (1 << 24)
+                h0 += (msg_p+offset).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
+                h1 += ((msg_p+offset+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
+                h2 += ((msg_p+offset+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
+                h3 += ((msg_p+offset+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
+                h4 += ((msg_p+offset+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) | (1 << 24)
             }
-            
+
             // h *= r
             let d0 = ((UInt64)(h0) * r0) + ((UInt64)(h1) * R4) + ((UInt64)(h2) * R3) + ((UInt64)(h3) * R2) + ((UInt64)(h4) * R1)
             let d1 = (d0 >> 26) + ((UInt64)(h0) * r1) + ((UInt64)(h1) * r0) + ((UInt64)(h2) * R4) + ((UInt64)(h3) * R3) + ((UInt64)(h4) * R2)
@@ -1517,13 +1638,13 @@ class Poly1305 {
             // h += msg
             block.withUnsafeBytes { u in
                 let up = u.baseAddress!
-                h0 += up.load(as: UInt32.self) & 0x3ffffff
-                h1 += ((up+3).load(as: UInt32.self) >> 2) & 0x3ffffff
-                h2 += ((up+6).load(as: UInt32.self) >> 4) & 0x3ffffff
-                h3 += ((up+9).load(as: UInt32.self) >> 6) & 0x3ffffff
-                h4 += (up+12).load(as: UInt32.self) >> 8
+                h0 += (up).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
+                h1 += ((up+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
+                h2 += ((up+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
+                h3 += ((up+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
+                h4 += ((up+12).assumingMemoryBound(to: UInt32.self).pointee >> 8)
             }
-            
+
             // h *= r
             let d0 = ((UInt64)(h0) * r0) + ((UInt64)(h1) * R4) + ((UInt64)(h2) * R3) + ((UInt64)(h3) * R2) + ((UInt64)(h4) * R1)
             let d1 = (d0 >> 26) + ((UInt64)(h0) * r1) + ((UInt64)(h1) * r0) + ((UInt64)(h2) * R4) + ((UInt64)(h3) * R3) + ((UInt64)(h4) * R2)
@@ -2276,7 +2397,7 @@ class SCrypt {
         let Nmask = N - 1
         let Bs = 16 * 2 * r
         
-        var v = (0..<Int(N)).map { _ in UnsafeMutableBufferPointer<UInt32>.allocate(capacity: Bs) }
+        let v = (0..<Int(N)).map { _ in UnsafeMutableBufferPointer<UInt32>.allocate(capacity: Bs) }
         let x = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: Bs)
         let sc1 = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: 16)
         let scx = UnsafeMutableBufferPointer<UInt32>.allocate(capacity: 16)

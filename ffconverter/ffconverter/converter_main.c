@@ -16,18 +16,21 @@ extern AVPacket flush_pkt;
 extern AVPacket eof_pkt;
 extern AVPacket abort_pkt;
 
-static const char *FLUSH_STR = "FLUSH";
-static const char *EOF_STR = "EOF";
-static const char *ABORT_STR = "ABORT";
+const char *FLUSH_STR = "FLUSH";
+const char *EOF_STR = "EOF";
+const char *ABORT_STR = "ABORT";
 
 void *makeconvert_arg(char *name,
                       void *object,
                       double start,
                       double duration,
+                      int arib_convert_text,
+                      void(*wait_to_start)(void *opaque),
+                      void(*set_duration)(void *opaque, double duration),
                       int(*read_packet)(void *opaque, unsigned char *buf, int buf_size),
                       long long(*seek)(void *opaque, long long offset, int whence),
                       void(*cancel)(void *opaque),
-                      void(*encode)(void *opaque, double pts, int key, unsigned char *data, int linesize, int height),
+                      void(*encode)(void *opaque, double pts, int key, unsigned char **data, int *linesize, int height),
                       void(*encode_sound)(void *opaque, double pts, unsigned char *data, int size, int ch),
                       void(*encode_text)(void *opaque, double pts_s, double pts_e, const char *data, int ass, int ch),
                       void(*finish)(void *opaque),
@@ -39,6 +42,9 @@ void *makeconvert_arg(char *name,
     param->stream = object;
     param->start = start;
     param->duration = duration;
+    param->arib_convert_text = arib_convert_text;
+    param->wait_to_start = wait_to_start;
+    param->set_duration = set_duration;
     param->read_packet = read_packet;
     param->seek = seek;
     param->cancel = cancel;
@@ -56,12 +62,9 @@ int run_play(void *arg)
     struct convert_param *param = (struct convert_param *)arg;
     
     setParam(param);
-    
-    av_init_packet(&flush_pkt);
+
     av_packet_from_data(&flush_pkt, (uint8_t *)FLUSH_STR, (int)strlen(FLUSH_STR));
-    av_init_packet(&eof_pkt);
     av_packet_from_data(&eof_pkt, (uint8_t *)EOF_STR, (int)strlen(EOF_STR));
-    av_init_packet(&abort_pkt);
     av_packet_from_data(&abort_pkt, (uint8_t *)ABORT_STR, (int)strlen(ABORT_STR));
     
     createParseThread(param);

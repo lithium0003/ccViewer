@@ -7,15 +7,31 @@
 //
 
 import Foundation
+import BackgroundTasks
 
 class HTTPserver {
     let baseUrl: URL
     let port: UInt16
     let sockfd: Int32
     var isRunning = true
-    var connfds = [Int32]()
+    actor Connections {
+        var connfds = [Int32]()
+        
+        func add(_ fd: Int32) {
+            connfds.append(fd)
+        }
+        
+        func remove(_ fd: Int32) {
+            connfds.removeAll { $0 == fd }
+        }
+    }
+    var connections = Connections()
     
     init?(baseUrl: URL, port: UInt16) {
+        let bundleId = Bundle.main.bundleIdentifier!
+        let taskName = UUID().uuidString
+        let taskIdentifier = "\(bundleId).server.\(taskName)"
+
         signal(SIGPIPE) { s in print("signal SIGPIPE") }
         
         var hints = addrinfo()
@@ -58,30 +74,128 @@ class HTTPserver {
         }
         
         listen(sockfd,5)
+
+        if !ProcessInfo.processInfo.isiOSAppOnMac {
+            
+            let request = BGContinuedProcessingTaskRequest(
+                identifier: taskIdentifier,
+                title: "Local server for cast",
+                subtitle: "wait fot start...",
+            )
+            if BGTaskScheduler.supportedResources.contains(.gpu) {
+                request.requiredResources = .gpu
+            }
+            request.strategy = .fail
+            
+            let success = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
+                guard let task = task as? BGContinuedProcessingTask else { return }
+                var wasExpired = false
+                // Check the expiration handler to confirm job completion.
+                task.expirationHandler = {
+                    wasExpired = true
+                }
+                
+                Task { @MainActor in
+                    UIApplication.shared.isIdleTimerDisabled = true
+                }
+                defer {
+                    Task { @MainActor in
+                        UIApplication.shared.isIdleTimerDisabled = false
+                    }
+                }
+                
+                let progress = task.progress
+                progress.totalUnitCount = 600
+                
+                Thread.detachNewThread { [self] in
+                    while isRunning, !progress.isFinished, !wasExpired {
+                        var cli_addr = sockaddr()
+                        var clilen = socklen_t()
+                        let newsockfd = accept(sockfd, &cli_addr, &clilen)
+                        
+                        guard newsockfd >= 0 else {
+                            perror("ERROR on accept")
+                            return
+                        }
+                        
+                        Task {
+                            await connections.add(newsockfd)
+                        }
+                        
+                        Thread.detachNewThread { [self] in
+                            Task {
+                                await processConnection(connSockfd: newsockfd)
+                            }
+                        }
+                    }
+                    progress.completedUnitCount = progress.totalUnitCount
+                }
+                
+                // Update progress.
+                while self.isRunning, !progress.isFinished, !wasExpired {
+                    progress.completedUnitCount += 1
+                    
+                    // Update task for displayed progress.
+                    task.updateTitle(task.title, subtitle: "Casting \(progress.completedUnitCount / 10)sec")
+                    Thread.sleep(forTimeInterval: 0.1)
+                    
+                    if progress.completedUnitCount > progress.totalUnitCount / 2 {
+                        progress.totalUnitCount += 600
+                    }
+                }
+                
+                task.setTaskCompleted(success: true)
+                Task {
+                    await Converter.Stop()
+                }
+            }
+            
+            guard success else {
+                fatalError("Failed to register task with identifier: \(taskIdentifier)")
+            }
+            
+            // Submit the task request.
+            do {
+                try BGTaskScheduler.shared.submit(request)
+                return
+            } catch {
+                print("Failed to submit request: \(error)")
+            }
+        }
         
-        let queue = DispatchQueue.init(label: "server", qos: .userInitiated)
-        let queue2 = DispatchQueue.init(label: "connection", qos: .userInitiated, attributes: .concurrent)
-        queue.async {
-            while self.isRunning {
+        Thread.detachNewThread { [self] in
+            Task { @MainActor in
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
+            defer {
+                Task { @MainActor in
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+            }
+            while isRunning {
                 var cli_addr = sockaddr()
                 var clilen = socklen_t()
-                let newsockfd = accept(self.sockfd, &cli_addr, &clilen)
+                let newsockfd = accept(sockfd, &cli_addr, &clilen)
                 
                 guard newsockfd >= 0 else {
                     perror("ERROR on accept")
                     return
                 }
                 
-                self.connfds += [newsockfd]
+                Task {
+                    await connections.add(newsockfd)
+                }
                 
-                queue2.async {
-                    self.processConnection(connSockfd: newsockfd)
+                Thread.detachNewThread { [self] in
+                    Task {
+                        await processConnection(connSockfd: newsockfd)
+                    }
                 }
             }
         }
     }
     
-    func processConnection(connSockfd: Int32) {
+    func processConnection(connSockfd: Int32) async {
         var request = [String]()
         var tmpBuffer = [UInt8]()
         var requestDone = false
@@ -115,7 +229,7 @@ class HTTPserver {
             }
             
             if requestDone && request.count > 0 {
-                let ok = parseRequest(request: request) { response in
+                let ok = await parseRequest(request: request) { response in
                     //print(String(bytes: response, encoding: .utf8) ?? "")
                     let reslen = response.count
                     //print("reslen ", reslen)
@@ -134,10 +248,10 @@ class HTTPserver {
             }
         }
         close(connSockfd)
-        connfds = connfds.filter { $0 != connSockfd }
+        await connections.remove(connSockfd)
     }
     
-    func parseRequest(request: [String], writer: ([UInt8])->Bool) -> Bool {
+    func parseRequest(request: [String], writer: ([UInt8])->Bool) async -> Bool {
         print(request)
         let errorRes = Array("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: Close\r\n\r\n".utf8)
         let notImpl = Array("HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\nConnection: Close\r\n\r\n".utf8)
@@ -177,7 +291,7 @@ class HTTPserver {
                                 "Access-Control-Allow-Headers: *",
                                 "Access-Control-Expose-Headers: *"]
                     .joined(separator: "\r\n") + "\r\n"
-            case "webvtt":
+            case "vtt":
                 contentType = "text/vtt"
                 appendHeader = ["Access-Control-Allow-Origin: *",
                                 "Access-Control-Allow-Method: GET",
@@ -205,16 +319,19 @@ class HTTPserver {
             if let segment = Int(reqfile.suffix(11).prefix(8)) {
                 let randID = String(reqfile.prefix(36))
                 print(randID, segment)
-                Converter.touch(randID: randID, segment: segment)
+                await Converter.touch(randID: randID, segment: segment)
             }
-            
-            guard let attr = try? FileManager.default.attributesOfItem(atPath: target.path) else {
+
+            guard let attr = try? FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false)) else {
                 let _ = writer(notFound)
                 return false
             }
-            guard let filedate = attr[.modificationDate] as? Date else {
-                let _ = writer(notFound)
-                return false
+            let fileDate: Date
+            if let filedate = attr[.modificationDate] as? Date {
+                fileDate = filedate
+            }
+            else {
+                fileDate = Date()
             }
             
             let dateFormat = DateFormatter()
@@ -224,9 +341,8 @@ class HTTPserver {
             var header = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: \(contentType)",
-//                "Connection: Close",
                 "Transfer-Encoding: chunked",
-                "Date: \(dateFormat.string(from: reqfile == "stream.m3u8" ? Date() : filedate))"
+                "Date: \(dateFormat.string(from: fileDate))"
                 ].joined(separator: "\r\n") + "\r\n"
             if let appendHeader = appendHeader {
                 header += appendHeader
@@ -296,8 +412,11 @@ class HTTPserver {
         if isRunning {
             isRunning = false
             close(sockfd)
-            for fd in connfds {
-                close(fd)
+            Task {
+                for fd in await connections.connfds {
+                    close(fd)
+                    await connections.remove(fd)
+                }
             }
         }
     }
@@ -329,6 +448,9 @@ class HTTPserver {
                                 &hostname, socklen_t(hostname.count),
                                 nil, socklen_t(0), NI_NUMERICHOST)
                     address = String(cString: hostname)
+                    if let address, !address.hasPrefix("fe80") {
+                        break
+                    }
                 }
             }
         }

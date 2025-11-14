@@ -1,0 +1,102 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "30AC58E7",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "12.99",
+      "familyShareable" : false,
+      "internalID" : "1459006923",
+      "localizations" : [
+        {
+          "description" : "treat developer to a dinner",
+          "displayName" : "dinner",
+          "locale" : "en_US"
+        },
+        {
+          "description" : "作者にごはんをおごる",
+          "displayName" : "ごはん",
+          "locale" : "ja"
+        }
+      ],
+      "productID" : "info.lithium03.ccViewer.dinner",
+      "referenceName" : "ごはんをおごる",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "1459006871",
+      "localizations" : [
+        {
+          "description" : "作者に生搾りオレンジジュースをおごる",
+          "displayName" : "生搾りオレンジジュース",
+          "locale" : "ja"
+        },
+        {
+          "description" : "give a fresh orange juice to developer",
+          "displayName" : "fresh orange juice",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "info.lithium03.ccViewer.orange",
+      "referenceName" : "オレンジジュースをおごる",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "1459006877",
+      "localizations" : [
+        {
+          "description" : "give a coffee to developer",
+          "displayName" : "coffee",
+          "locale" : "en_US"
+        },
+        {
+          "description" : "作者にコーヒーをおごる",
+          "displayName" : "コーヒー",
+          "locale" : "ja"
+        }
+      ],
+      "productID" : "info.lithium03.ccViewer.coffee",
+      "referenceName" : "コーヒーをおごる",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "1458528598",
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_developerTeamID" : "7A9X38B4YU",
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 784791884.462062,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

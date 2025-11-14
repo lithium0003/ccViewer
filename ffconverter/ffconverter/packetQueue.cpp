@@ -17,7 +17,7 @@ extern AVPacket flush_pkt;
 extern AVPacket eof_pkt;
 extern AVPacket abort_pkt;
 
-PacketQueue::PacketQueue(Converter *parent) : first_pkt(NULL), last_pkt(NULL)
+PacketQueue::PacketQueue(Converter *parent)
 {
     this->parent = parent;
 }
@@ -29,36 +29,19 @@ PacketQueue::~PacketQueue()
 
 void PacketQueue::AbortQueue()
 {
-    AVPacketList *pktabort;
-    pktabort = (AVPacketList *)av_mallocz(sizeof(AVPacketList));
-    if (!pktabort)
-        return;
-    pktabort->pkt = abort_pkt;
-    pktabort->next = NULL;
-    
+    aborted = true;
     {
         std::lock_guard<std::mutex> lk(mutex);
-        
-        AVPacketList *pkt1;
-        for (auto pkt = first_pkt; pkt != NULL; pkt = pkt1) {
-            pkt1 = pkt->next;
-            if ((pkt->pkt.data != flush_pkt.data) &&
-                (pkt->pkt.data != eof_pkt.data) &&
-                (pkt->pkt.data != abort_pkt.data)) {
-                
-                av_packet_unref(&pkt->pkt);
-            }
-            av_free(pkt);
+
+        while(!queue.empty()) {
+            auto pkt = queue.front();
+            queue.pop_front();
+            av_packet_unref(pkt);
+            av_packet_free(&pkt);
         }
-        last_pkt = NULL;
-        first_pkt = NULL;
-        nb_packets = 0;
-        size = 0;
-        
-        first_pkt = pktabort;
-        last_pkt = pktabort;
-        nb_packets++;
-        size += pktabort->pkt.size;
+
+        queue.push_back(av_packet_clone(&abort_pkt));
+        queue.shrink_to_fit();
     }
     cond.notify_one();
 
@@ -67,24 +50,10 @@ void PacketQueue::AbortQueue()
 
 int PacketQueue::putEOF()
 {
-    AVPacketList *pkt1;
-    
-    pkt1 = (AVPacketList *)av_mallocz(sizeof(AVPacketList));
-    if (!pkt1)
-        return -1;
-    pkt1->pkt = eof_pkt;
-    pkt1->next = NULL;
-    
     {
         std::lock_guard<std::mutex> lk(mutex);
-        
-        if (!last_pkt)
-            first_pkt = pkt1;
-        else
-            last_pkt->next = pkt1;
-        last_pkt = pkt1;
-        nb_packets++;
-        size += pkt1->pkt.size;
+
+        queue.push_back(av_packet_clone(&eof_pkt));
     }
     cond.notify_one();
 
@@ -93,25 +62,14 @@ int PacketQueue::putEOF()
 
 int PacketQueue::put(AVPacket *pkt)
 {
-    AVPacketList *pkt1;
-    
-    pkt1 = (AVPacketList *)av_mallocz(sizeof(AVPacketList));
-    if (!pkt1)
+    if(aborted) {
         return -1;
+    }
 
-    pkt1->pkt = *pkt;
-    pkt1->next = NULL;
-    
     {
         std::lock_guard<std::mutex> lk(mutex);
-        
-        if (!last_pkt)
-            first_pkt = pkt1;
-        else
-            last_pkt->next = pkt1;
-        last_pkt = pkt1;
-        nb_packets++;
-        size += pkt1->pkt.size;
+
+        queue.push_back(av_packet_clone(pkt));
     }
     cond.notify_one();
 
@@ -120,7 +78,6 @@ int PacketQueue::put(AVPacket *pkt)
 
 int PacketQueue::get(AVPacket *pkt, int block)
 {
-    AVPacketList *pkt1;
     int ret;
     
     std::unique_lock<std::mutex> lk(mutex);
@@ -132,15 +89,11 @@ int PacketQueue::get(AVPacket *pkt, int block)
             break;
         }
         
-        pkt1 = first_pkt;
-        if (pkt1) {
-            first_pkt = pkt1->next;
-            if (!first_pkt)
-                last_pkt = NULL;
-            nb_packets--;
-            size -= pkt1->pkt.size;
-            *pkt = pkt1->pkt;
-            av_free(pkt1);
+        if(!queue.empty()) {
+            av_packet_move_ref(pkt, queue.front());
+            av_packet_unref(queue.front());
+            av_packet_free(&queue.front());
+            queue.pop_front();
             ret = 1;
             break;
         }
@@ -149,45 +102,27 @@ int PacketQueue::get(AVPacket *pkt, int block)
             break;
         }
         else {
-            cond.wait(lk, [this] { return parent->IsQuit() || nb_packets > 0; });
+            cond.wait(lk, [this] { return parent->IsQuit() || !queue.empty(); });
         }
     }
+    queue.shrink_to_fit();
     return ret;
 }
 
 void PacketQueue::flush()
 {
-    AVPacketList *pktflush;
-    
-    pktflush = (AVPacketList *)av_mallocz(sizeof(AVPacketList));
-    if (!pktflush)
-        return;
-    pktflush->pkt = flush_pkt;
-    pktflush->next = NULL;
-    
     {
         std::lock_guard<std::mutex> lk(mutex);
 
-        AVPacketList *pkt1;
-        for (auto pkt = first_pkt; pkt != NULL; pkt = pkt1) {
-            pkt1 = pkt->next;
-            if ((pkt->pkt.data != flush_pkt.data) &&
-                (pkt->pkt.data != eof_pkt.data) &&
-                (pkt->pkt.data != abort_pkt.data)) {
-                
-                av_packet_unref(&pkt->pkt);
-            }
-            av_free(pkt);
+        while(!queue.empty()) {
+            auto pkt = queue.front();
+            queue.pop_front();
+            av_packet_unref(pkt);
+            av_packet_free(&pkt);
         }
-        last_pkt = NULL;
-        first_pkt = NULL;
-        nb_packets = 0;
-        size = 0;
-        
-        first_pkt = pktflush;
-        last_pkt = pktflush;
-        nb_packets++;
-        size += pktflush->pkt.size;
+
+        queue.push_back(av_packet_clone(&flush_pkt));
+        queue.shrink_to_fit();
     }
     cond.notify_one();
 
@@ -196,54 +131,57 @@ void PacketQueue::flush()
 
 void PacketQueue::clear()
 {
-    AVPacketList *pkt1;
-    
     std::lock_guard<std::mutex> lk(mutex);
 
-    for (auto pkt = first_pkt; pkt != NULL; pkt = pkt1) {
-        pkt1 = pkt->next;
-        if ((pkt->pkt.data != flush_pkt.data) &&
-            (pkt->pkt.data != eof_pkt.data) &&
-            (pkt->pkt.data != abort_pkt.data)) {
-            
-            av_packet_unref(&pkt->pkt);
-        }
-        av_free(pkt);
+    while(!queue.empty()) {
+        auto pkt = queue.front();
+        queue.pop_front();
+        av_packet_unref(pkt);
+        av_packet_free(&pkt);
     }
-    last_pkt = NULL;
-    first_pkt = NULL;
-    nb_packets = 0;
-    size = 0;
+    queue.shrink_to_fit();
+    aborted = false;
 }
 
-//****************************************************************
+size_t PacketQueue::size()
+{
+    return queue.size();
+}
+
+//********************************************************
 
 VideoPicture::~VideoPicture()
 {
-    this->Free();
+    this->free();
 }
 
 bool VideoPicture::Allocate(int width, int height)
 {
-    Free();
-    if (av_image_alloc(bmp.data, bmp.linesize, width, height, AV_PIX_FMT_YUV420P, 8) < 0) return false;
+    free();
+    if (av_image_alloc(bmp.data, bmp.linesize, width, height, AV_PIX_FMT_YUV420P, 16) < 0)
+        return false;
     this->width = width;
     this->height = height;
-    this->allocated = true;
+    allocated = true;
     return true;
 }
 
-void VideoPicture::Free()
+void VideoPicture::free()
 {
-    if (allocated) {
-        this->allocated = false;
-        av_freep(&bmp.data[0]);
-        av_freep(&bmp);
-        height = width = 0;
-    }
+    av_freep(&bmp.data[0]);
+    av_frame_unref(&bmp);
+    allocated = false;
+    height = width = 0;
 }
 
-//**************************************************************
+//**************************************************************************
+SubtitlePicture::~SubtitlePicture()
+{
+    avsubtitle_free(&sub);
+}
+
+
+//**************************************************************************
 
 SubtitlePictureQueue::SubtitlePictureQueue(Converter *parent)
 {
@@ -253,20 +191,19 @@ SubtitlePictureQueue::SubtitlePictureQueue(Converter *parent)
 SubtitlePictureQueue::~SubtitlePictureQueue()
 {
     clear();
-    this->parent = NULL;
 }
 
 void SubtitlePictureQueue::clear()
 {
     std::lock_guard<std::mutex> lk(mutex);
-    while (!queue.empty())
-        queue.pop();
+    queue.clear();
+    queue.shrink_to_fit();
 }
 
 void SubtitlePictureQueue::put(std::shared_ptr<SubtitlePicture> Pic)
 {
     std::lock_guard<std::mutex> lk(mutex);
-    queue.push(Pic);
+    queue.push_back(std::move(Pic));
     cond.notify_one();
 }
 
@@ -293,6 +230,32 @@ int SubtitlePictureQueue::peek(std::shared_ptr<SubtitlePicture> &Pic)
     return ret;
 }
 
+int SubtitlePictureQueue::peek2(std::shared_ptr<SubtitlePicture> &Pic)
+{
+    int ret;
+    std::unique_lock<std::mutex> lk(mutex);
+    while (true) {
+        if (parent->IsQuit()) {
+            ret = -1;
+            break;
+        }
+        if (queue.size() > 1) {
+            auto p1 = queue.front();
+            queue.pop_front();
+            Pic = queue.front();
+            queue.push_front(p1);
+            ret = 0;
+            break;
+        }
+        else {
+            ret = 1;
+            break;
+        }
+        //cond.wait(lk, [this] { return parent->IsQuit() || !queue.empty(); });
+    }
+    return ret;
+}
+
 int SubtitlePictureQueue::get(std::shared_ptr<SubtitlePicture> &Pic)
 {
     int ret;
@@ -303,8 +266,8 @@ int SubtitlePictureQueue::get(std::shared_ptr<SubtitlePicture> &Pic)
             break;
         }
         if (!queue.empty()) {
-            Pic = queue.front();
-            queue.pop();
+            Pic = std::move(queue.front());
+            queue.pop_front();
             ret = 0;
             break;
         }
@@ -314,5 +277,6 @@ int SubtitlePictureQueue::get(std::shared_ptr<SubtitlePicture> &Pic)
         }
         //cond.wait(lk, [this] { return parent->IsQuit() || !queue.empty(); });
     }
+    queue.shrink_to_fit();
     return ret;
 }
