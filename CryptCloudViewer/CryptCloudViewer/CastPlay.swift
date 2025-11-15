@@ -25,7 +25,39 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         }
 
         var items: [RemoteItem] = []
+        var durations: [String: (Double, String, String, String)] = [:]
         var currentIdx = -1
+
+        func playDone(url: URL, sec: Double) async {
+            let randID = url.deletingLastPathComponent().lastPathComponent
+            let duration: Double
+            let storage: String
+            let id: String
+            let parent: String
+            if let (duration1, storage1, id1, parent1) = durations[randID] {
+                duration = duration1
+                storage = storage1
+                id = id1
+                parent = parent1
+            }
+            else if let item = await Converter.baseItem(randID: randID) {
+                let duration1 = await Converter.duration(randID: randID)
+                duration = duration1
+                storage = item.storage
+                id = item.id
+                parent = item.parent
+                if duration > 0 {
+                    durations[randID] = (duration, storage, id, parent)
+                }
+            }
+            else {
+                return
+            }
+            if duration > 0 {
+                print("set sec", sec, duration, sec / duration)
+                await CloudFactory.shared.data.setMark(storage: storage, targetID: id, parentID: parent, position: sec / duration)
+            }
+        }
         
         func done() async {
             if currentIdx < 1 { return }
@@ -70,11 +102,16 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
     var timer: Timer?
     
     func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
-        if !waiting, mediaStatus?.nextQueueItem == nil, mediaStatus?.streamPosition ?? 0 > 0 {
-            print("queue has not next item")
-            waiting = true
+        if let url = mediaStatus?.mediaInformation?.contentURL, let sec = mediaStatus?.streamPosition, sec > 0 {
             Task {
-                await playNext(client)
+                await prop.playDone(url: url, sec: sec)
+            }
+            if !waiting, mediaStatus?.nextQueueItem == nil {
+                print("queue has not next item")
+                waiting = true
+                Task {
+                    await playNext(client)
+                }
             }
         }
     }

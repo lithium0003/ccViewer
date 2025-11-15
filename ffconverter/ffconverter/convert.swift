@@ -89,7 +89,7 @@ public class Converter {
         guard let c = converter else {
             return
         }
-        guard let r = await c.args.get_running(item: randID) else {
+        guard let r = await c.args.get_running(randID: randID) else {
             return
         }
         await c.args.set_lasttouch(item: randID, t: Date())
@@ -98,14 +98,24 @@ public class Converter {
         }
     }
     
-    public class func duration(item: String) async -> Double {
+    public class func duration(randID: String) async -> Double {
         guard let c = converter else {
             return 0
         }
-        guard let r = await c.args.get_running(item: item) else {
+        guard let r = await c.args.get_running(randID: randID) else {
             return 0
         }
         return r.mediaDuration
+    }
+    
+    public class func baseItem(randID: String) async -> RemoteItem? {
+        guard let c = converter else {
+            return nil
+        }
+        guard let r = await c.args.get_running(randID: randID) else {
+            return nil
+        }
+        return r.remote
     }
 }
 
@@ -122,8 +132,8 @@ class convert {
         private var items: [String: String] = [:]
         private var lasttouch: [String: Date] = [:]
 
-        func get_running(item: String) -> StreamBridgeConvert? {
-            running[item]
+        func get_running(randID: String) -> StreamBridgeConvert? {
+            running[randID]
         }
 
         func set_running(randID: String, bridge: StreamBridgeConvert, urlout: URL) {

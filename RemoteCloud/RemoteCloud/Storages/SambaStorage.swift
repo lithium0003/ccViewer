@@ -98,7 +98,52 @@ public class SambaStorage: NetworkStorage {
         let size: UInt64
     }
 
-    actor SessionManager {
+    actor SessionList {
+        var sessions: [UUID: Session] = [:]
+        var availableIdx: Set<UUID> = []
+        var fileSemaphore: [String: Semaphore] = [:]
+
+        var count: Int {
+            sessions.count
+        }
+        
+        func addSession(_ session: Session) {
+            let id = UUID()
+            sessions[id] = session
+            availableIdx.insert(id)
+        }
+        
+        func popSession() -> (UUID, Session)? {
+            guard let id = availableIdx.popFirst(), let session = sessions[id] else {
+                return nil
+            }
+            return (id, session)
+        }
+        
+        func returnSession(_ id: UUID) {
+            availableIdx.insert(id)
+        }
+        
+        func removeSession(_ id: UUID) {
+            sessions.removeValue(forKey: id)
+        }
+        
+        func getFileSemaphore(forPath path: String) -> Semaphore {
+            if let sema = fileSemaphore[path] {
+                return sema
+            } else {
+                let sema = Semaphore(value: 1)
+                fileSemaphore[path] = sema
+                return sema
+            }
+        }
+    }
+    
+    class SessionManager {
+        let host: String
+        let username: String
+        let password: String
+        let sessionList = SessionList()
         let calendar = Calendar(identifier: .gregorian)
         lazy var time1601: Date = {
             var comps = DateComponents()
@@ -107,64 +152,54 @@ public class SambaStorage: NetworkStorage {
             comps.day = 1
             return calendar.date(from: comps)!
         }()
-
-        var sessions: [Session] = []
-        var availableIdx: Set<Int> = []
-        var fileSemaphore: [String: Semaphore] = [:]
         
-        func connect(host: String, username: String, password: String) async throws {
-            if sessions.count >= 5 {
+        init(host: String, username: String, password: String) {
+            self.host = host
+            self.username = username
+            self.password = password
+        }
+        
+        func connect() async throws {
+            if await sessionList.count >= 5 {
                 return
             }
-            for i in sessions.count..<5 {
+            while await sessionList.count < 5 {
                 let session = Session(host: host)
                 try await session.connect()
                 try await session.negotiate()
                 
                 try await session.sessionSetup(username: username, password: password)
-                sessions.append(session)
-                availableIdx.insert(i)
-            }
-        }
-
-        func reconnect(host: String, username: String, password: String) async throws {
-            if sessions.isEmpty {
-                try await connect(host: host, username: username, password: password)
-                return
-            }
-            for i in 0..<sessions.count {
-                do {
-                    try await sessions[i].echo()
-                }
-                catch {
-                    print(error)
-                    sessions[i].disconnect()
-
-                    let session = Session(host: host)
-                    try await session.connect()
-                    try await session.negotiate()
-                    
-                    try await session.sessionSetup(username: username, password: password)
-                    sessions[i] = session
-                }
+                await sessionList.addSession(session)
             }
         }
         
         func disconnect() async {
-            for session in sessions {
+            while let (idx, session) = await sessionList.popSession() {
                 session.disconnect()
+                await sessionList.removeSession(idx)
             }
-            sessions.removeAll()
-            availableIdx.removeAll()
         }
 
         func runSession<T>(_ callback: (Session) async throws -> T) async throws -> T {
-            if let idx = availableIdx.first {
-                availableIdx.remove(idx)
-                defer {
-                    availableIdx.insert(idx)
+            for _ in 0..<5 {
+                try await connect()
+                if let (idx, session) = await sessionList.popSession() {
+                    do {
+                        try await session.echo()
+                    }
+                    catch {
+                        print(error)
+                        session.disconnect()
+                        await sessionList.removeSession(idx)
+                        continue
+                    }
+                    defer {
+                        Task {
+                            await sessionList.returnSession(idx)
+                        }
+                    }
+                    return try await callback(session)
                 }
-                return try await callback(sessions[idx])
             }
             throw NSError(domain: "SambaStorage", code: -1, userInfo: nil)
         }
@@ -189,14 +224,12 @@ public class SambaStorage: NetworkStorage {
         }
 
         func read(share: String, path: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
-            if !fileSemaphore.keys.contains("\(share)/\(path)") {
-                fileSemaphore["\(share)/\(path)"] = Semaphore(value: 1)
-            }
             return try await runSession { session in
-                await fileSemaphore["\(share)/\(path)"]?.wait()
+                let sem = await sessionList.getFileSemaphore(forPath: "\(share)/\(path)")
+                await sem.wait()
                 defer {
                     Task {
-                        await fileSemaphore["\(share)/\(path)"]?.signal()
+                        await sem.signal()
                     }
                 }
                 if let prevTree = session.connectedTree, prevTree != share {
@@ -370,7 +403,7 @@ public class SambaStorage: NetworkStorage {
             }
         }
     }
-    let sessionManager = SessionManager()
+    var sessionManager: SessionManager!
         
     let uploadSemaphore = Semaphore(value: 5)
 
@@ -467,23 +500,19 @@ public class SambaStorage: NetworkStorage {
     }
 
     override func checkToken() async -> Bool {
-        do {
-            try await sessionManager.reconnect(host: accessHost(), username: accessUsername(), password: accessPassword())
-        }
-        catch {
-            print(error)
-            await disconnect()
-            return false
+        if sessionManager == nil {
+            sessionManager = await SessionManager(host: accessHost(), username: accessUsername(), password: accessPassword())
         }
         return true
     }
     
     func connect() async throws {
-        try await sessionManager.connect(host: accessHost(), username: accessUsername(), password: accessPassword())
+        sessionManager = await SessionManager(host: accessHost(), username: accessUsername(), password: accessPassword())
+        try await sessionManager.connect()
     }
     
     func disconnect() async {
-        await sessionManager.disconnect()
+        await sessionManager?.disconnect()
     }
 
     func storeRootItems(shareNames: [String], context: NSManagedObjectContext) {
@@ -557,7 +586,6 @@ public class SambaStorage: NetworkStorage {
                 if fileId == "" {
                     do {
                         let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                        try await connect()
                         let shares = try await sessionManager.enumShareAll()
                         storeRootItems(shareNames: shares.filter({ $0.name != "IPC$" }).map({ $0.name }), context: backgroundContext)
                         await backgroundContext.perform {
@@ -572,7 +600,6 @@ public class SambaStorage: NetworkStorage {
                 else if let share = fileId.components(separatedBy: "/").first {
                     let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        try await connect()
                         let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
                         let files = try await sessionManager.queryDirectory(share: share, path: path)
                         for item in files.filter({ $0.fileName != "." && $0.fileName != ".." && !$0.fileName.hasPrefix("._") }) {
@@ -645,7 +672,6 @@ public class SambaStorage: NetworkStorage {
                 if let share = parentId.components(separatedBy: "/").first {
                     let path = parentId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        try await connect()
                         return try await sessionManager.createDirectory(share: share, path: path, newname: newname)
                     }
                     catch {
@@ -670,7 +696,6 @@ public class SambaStorage: NetworkStorage {
                 if let share = fileId.components(separatedBy: "/").first {
                     let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        try await connect()
                         if await getRaw(fileId: fileId)?.isFolder ?? false {
                             return try await sessionManager.delete(share: share, path: path, directory: true)
                         }
@@ -707,7 +732,6 @@ public class SambaStorage: NetworkStorage {
                     pathComponents.append(newname)
                     let newPath = pathComponents.dropFirst().joined(separator: "/")
                     do {
-                        try await connect()
                         let newid = try await sessionManager.move(share: share, fromPath: path, toPath: newPath)
                         await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                         return newid
@@ -739,7 +763,6 @@ public class SambaStorage: NetworkStorage {
                     do {
                         let fromPath = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                         let toPath = toParentId.components(separatedBy: "/").dropFirst().joined(separator: "/") + "/\(name)"
-                        try await connect()
                         let newid = try await sessionManager.move(share: share, fromPath: fromPath, toPath: toPath)
                         await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                         return newid
@@ -766,7 +789,6 @@ public class SambaStorage: NetworkStorage {
                 if let share = fileId.components(separatedBy: "/").first {
                     let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        try await connect()
                         return try await sessionManager.changetime(share: share, path: path, time: newdate)
                     }
                     catch {
@@ -795,7 +817,6 @@ public class SambaStorage: NetworkStorage {
 
                 if let share = parentId.components(separatedBy: "/").first {
                     let path = parentId.components(separatedBy: "/").dropFirst().joined(separator: "/")
-                    try await connect()
                     do {
                         if try await sessionManager.write(share: share, path: "\(path)/\(uploadname)", url: target, progress: progress) {
                             return "\(parentId)/\(uploadname)"

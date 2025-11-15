@@ -199,6 +199,11 @@ class CustomPlayer: NSObject {
     
     @objc func didPlayToEndTime(_ notification: Notification) {
         print("didPlayToEndTime")
+        if let asset = player.currentItem?.asset as? AVURLAsset, let delegate = customDelegate[asset.url]?.last, let item = delegate.item {
+            Task {
+                await CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
+            }
+        }
         if player.items().count == 1, loop {
             playIndex = Array(0..<playItems.count)
             if shuffle {

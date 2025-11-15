@@ -365,6 +365,13 @@ struct ItemsUIView: View {
             print(newPhase)
             isCasting = Converter.IsCasting()
         }
+        .onChange(of: isCasting) {
+            if !isCasting {
+                Task {
+                    await reload()
+                }
+            }
+        }
         .onAppear() {
             isLoading = true
             Task {
