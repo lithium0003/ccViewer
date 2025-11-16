@@ -448,12 +448,18 @@ public class SlotStream: RemoteStream {
             group.addTask { [self] in
                 let pos1 = Int64(0)
                 let pos2 = Int64(min(size-1, SlotStream.bufSize - 1))
+                guard pos1 <= pos2 else {
+                    return
+                }
                 await subFillBuffer(pos: pos1...pos2)
             }
             group.addTask { [self] in
                 let slot = (size - SlotStream.bufSize) / SlotStream.bufSize
                 let pos1 = slot * SlotStream.bufSize
                 let pos2 = min(size-1, (slot+1) * SlotStream.bufSize - 1)
+                guard pos1 <= pos2 else {
+                    return
+                }
                 await subFillBuffer(pos: pos1...pos2)
             }
         }
@@ -483,6 +489,9 @@ public class SlotStream: RemoteStream {
     
     func subRead(position : Int64, length: Int) async throws -> Data? {
         if position >= size {
+            return nil
+        }
+        if size <= 0 {
             return nil
         }
         let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
@@ -560,6 +569,7 @@ public class RemoteNetworkStream: SlotStream {
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
+        guard pos.lowerBound >= 0 else { return }
         if await !buffer.dataAvailable(pos: pos), isLive {
             let len = min(size-1, pos.upperBound) - max(0, pos.lowerBound) + 1
             let data = try? await remote.remoteStorage.readFile(fileId: remote.id, start: pos.lowerBound, length: len)
