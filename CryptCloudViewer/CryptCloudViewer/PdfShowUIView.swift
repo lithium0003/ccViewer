@@ -50,6 +50,7 @@ struct PdfShowUIView: View {
     let storage: String
     let fileid: String
     @State var title = ""
+    @State var progStr = ""
     @State var remoteItem: RemoteItem?
     @State var remoteData: RemoteStream?
     @State var document: PDFDocument?
@@ -69,7 +70,13 @@ struct PdfShowUIView: View {
             }
         }
     }
-    
+    var formatter2: ByteCountFormatter {
+        let formatter2 = ByteCountFormatter()
+        formatter2.allowedUnits = [.useAll]
+        formatter2.countStyle = .file
+        return formatter2
+    }
+
     func find(text: String) {
         let selections = model.pdfView?.document?.findString(text, withOptions: .caseInsensitive)
         model.pdfView?.highlightedSelections = selections
@@ -197,14 +204,18 @@ struct PdfShowUIView: View {
             pdfView
 
             if isLoading {
-                ProgressView()
+                VStack {
+                    ProgressView()
                     .padding(30)
-                    .background {
-                        Color(uiColor: .systemBackground)
-                            .opacity(0.9)
-                    }
                     .scaleEffect(3)
-                    .cornerRadius(10)
+
+                    Text(verbatim: progStr)
+                }
+                .background {
+                    Color(uiColor: .systemBackground)
+                        .opacity(0.9)
+                }
+                .cornerRadius(10)
             }
         }
         .navigationTitle(title)
@@ -217,9 +228,17 @@ struct PdfShowUIView: View {
             remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
             guard let remoteItem else { return }
             title = remoteItem.name
+            let total = remoteItem.size
             remoteData = await remoteItem.open()
             if let remoteData {
-                guard let docData = try? await remoteData.read() else {
+                guard let docData = try? await remoteData.read(onProgress: { p in
+                    if total > 0 {
+                        progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
+                    }
+                    else {
+                        progStr = "\(formatter2.string(fromByteCount: Int64(p)))"
+                    }
+                }) else {
                     return
                 }
                 if docData.count != remoteData.size {

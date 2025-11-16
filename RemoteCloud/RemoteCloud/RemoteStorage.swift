@@ -297,6 +297,7 @@ public class CloudFactory {
     }
     
     public let data = dataItems()
+    public let mark = PlayMark()
     public let cache = FileCache()
     
     public func getShowList() async -> [String] {
@@ -728,10 +729,10 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
 
     public func list(fileId: String) async {
         if fileId == "" {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            await deleteChild(parent: fileId, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let context = CloudFactory.shared.data.viewContext
+            await deleteChild(parent: fileId, context: context)
+            await context.perform {
+                try? context.save()
             }
             await listChildren()
         }
@@ -739,11 +740,11 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             var path = ""
             var isFoler = false
             let storage = storageName ?? ""
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            await backgroundContext.perform {
+            let context = CloudFactory.shared.data.viewContext
+            await context.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest) {
+                if let result = try? context.fetch(fetchRequest) {
                     if let items = result as? [RemoteData] {
                         path = items.first?.path ?? ""
                         isFoler = items.first?.folder ?? false
@@ -754,11 +755,11 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
                 return
             }
             if path != "" {
-                await deleteChild(parent: fileId, context: backgroundContext)
+                await deleteChild(parent: fileId, context: context)
             }
-            await backgroundContext.perform {
+            await context.perform {
                 if path != "" {
-                    try? backgroundContext.save()
+                    try? context.save()
                 }
             }
             await listChildren(fileId: fileId, path: path)
@@ -774,19 +775,19 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             await list(path: parentPath)
             
             var ids: [String] = []
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            await backgroundContext.perform {
+            let context = CloudFactory.shared.data.viewContext
+            await context.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "path == %@", path)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
                     ids = items.filter { $0.id != nil && $0.folder }.map { $0.id! }
                 }
             }
             for id in ids {
-                await deleteChild(parent: id, context: backgroundContext)
+                await deleteChild(parent: id, context: context)
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await context.perform {
+                try? context.save()
             }
 
             for id in ids {
@@ -802,7 +803,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         }
         else{
             var path = ""
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            let viewContext = CloudFactory.shared.data.viewContext
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")

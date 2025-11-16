@@ -693,7 +693,7 @@ public class Cryptomator: ChildStorage {
             return
         }
         let items = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))])
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         for item in items {
             if item.name == "dirid.c9r" {
             }
@@ -730,10 +730,10 @@ public class Cryptomator: ChildStorage {
                         return
                     }
 
-                    storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: backgroundContext)
+                    storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: viewContext)
                 }
                 else if let contentItem = subitems.first(where: { $0.name == "contents.c9r" }) {
-                    storeItem(parentId: fileId, item: contentItem, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
+                    storeItem(parentId: fileId, item: contentItem, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: viewContext)
                 }
             }
             else if item.name.hasSuffix(normal_ext) {
@@ -759,16 +759,16 @@ public class Cryptomator: ChildStorage {
                             return
                         }
 
-                        storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: backgroundContext)
+                        storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: viewContext)
                     }
                 }
                 else {
-                    storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: backgroundContext)
+                    storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: viewContext)
                 }
             }
         }
-        await backgroundContext.perform {
-            try? backgroundContext.save()
+        await viewContext.perform {
+            try? viewContext.save()
         }
     }
     
@@ -943,7 +943,7 @@ public class Cryptomator: ChildStorage {
             return nil
         }
 
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         // if needed filename shorten
         if encFilename.count > shorteningThreshold {
             let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
@@ -966,16 +966,16 @@ public class Cryptomator: ChildStorage {
             guard (try? await s.upload(parentId: dirItem.id, uploadname: "name.c9s", target: target2)) != nil else {
                 return nil
             }
-            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             let newid = "\(parentDirId)/\(dirItem.name)/\(newDirId)"
             let storage = storageName ?? ""
-            return await backgroundContext.perform {
+            return await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
                     return newitem.id
                 }
                 return nil
@@ -988,16 +988,16 @@ public class Cryptomator: ChildStorage {
             guard (try? await s.upload(parentId: dirItem.id, uploadname: "dir.c9r", target: target)) != nil else {
                 return nil
             }
-            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             let newid = "\(parentDirId)/\(dirItem.name)/\(newDirId)"
             let storage = storageName ?? ""
-            return await backgroundContext.perform {
+            return await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
                     return newitem.id
                 }
                 return nil
@@ -1041,16 +1041,16 @@ public class Cryptomator: ChildStorage {
             }
         }
 
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         let storage = storageName ?? ""
-        await backgroundContext.perform {
+        await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                 for item in items {
-                    backgroundContext.delete(item)
+                    viewContext.delete(item)
                 }
-                try? backgroundContext.save()
+                try? viewContext.save()
             }
         }
         return true
@@ -1058,7 +1058,7 @@ public class Cryptomator: ChildStorage {
     
     @MainActor
     func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
@@ -1244,18 +1244,18 @@ public class Cryptomator: ChildStorage {
                 }
             }
         }
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         let storage = storageName ?? ""
-        await backgroundContext.perform {
+        await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                 for item in items {
-                    backgroundContext.delete(item)
+                    viewContext.delete(item)
                 }
             }
             
-            let newitem = RemoteData(context: backgroundContext)
+            let newitem = RemoteData(context: viewContext)
             newitem.storage = storage
             newitem.id = retId
             newitem.name = newname
@@ -1271,7 +1271,7 @@ public class Cryptomator: ChildStorage {
             newitem.parent = parentId
             newitem.path = "\(parentPath)/\(newname)"
             
-            try? backgroundContext.save()
+            try? viewContext.save()
         }
         return retId
     }
@@ -1345,15 +1345,15 @@ public class Cryptomator: ChildStorage {
             }
         }
 
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         let baseRootStorage = baseRootStorage
         let storage = storageName ?? ""
-        await backgroundContext.perform {
+        await viewContext.perform {
             var newcdate: Date? = nil
             var newmdate: Date? = nil
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseRootStorage)
-            if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                 if let baseItem = items.first {
                     newcdate = baseItem.cdate
                     newmdate = baseItem.mdate
@@ -1362,11 +1362,11 @@ public class Cryptomator: ChildStorage {
 
             let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest2), let items1 = result as? [RemoteData] {
+            if let result = try? viewContext.fetch(fetchRequest2), let items1 = result as? [RemoteData] {
                 if let pitem = items1.first {
                     pitem.cdate = newcdate
                     pitem.mdate = newmdate
-                    try? backgroundContext.save()
+                    try? viewContext.save()
                 }
             }
         }
@@ -1377,7 +1377,7 @@ public class Cryptomator: ChildStorage {
     func getOrgName(fileId: String) async -> String? {
         var orgname: String? = nil
 
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storageName ?? "")
         if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
@@ -1515,17 +1515,17 @@ public class Cryptomator: ChildStorage {
         }
 
         // register record
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        let viewContext = CloudFactory.shared.data.viewContext
         let storage = storageName ?? ""
-        return await backgroundContext.perform {
+        return await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                 if let item = items.first {
                     item.id = newid
                     item.parent = toParentId
                     item.path = "\(toParentPath)/\(item.name ?? "")"
-                    try? backgroundContext.save()
+                    try? viewContext.save()
                     return newid
                 }
             }
@@ -1597,16 +1597,16 @@ public class Cryptomator: ChildStorage {
             }
 
             // register record
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             let storage = storageName ?? ""
             let baseStorage = baseRootStorage
             let convertDecryptSize = {
                 self.ConvertDecryptSize(size: $0)
             }
-            return await backgroundContext.perform {
+            return await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newContentId, baseStorage)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                     if let item = items.first {
                         let newid = "\(parentDirId)/\(encFilename)"
                         let newname = uploadname
@@ -1614,7 +1614,7 @@ public class Cryptomator: ChildStorage {
                         let newmdate = item.mdate
                         let newsize = convertDecryptSize(item.size)
                         
-                        let newitem = RemoteData(context: backgroundContext)
+                        let newitem = RemoteData(context: viewContext)
                         newitem.storage = storage
                         newitem.id = newid
                         newitem.name = newname
@@ -1634,7 +1634,7 @@ public class Cryptomator: ChildStorage {
                         else {
                             newitem.path = "\(parentPath)/\(newname)"
                         }
-                        try? backgroundContext.save()
+                        try? viewContext.save()
                         return newid
                     }
                 }
@@ -1651,16 +1651,16 @@ public class Cryptomator: ChildStorage {
             }
 
             // register record
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext 
             let storage = storageName ?? ""
             let baseStorage = baseRootStorage
             let convertDecryptSize = {
                 self.ConvertDecryptSize(size: $0)
             }
-            return await backgroundContext.perform {
+            return await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                     if let item = items.first {
                         let newid = "\(parentDirId)/\(encFilename)"
                         let newname = uploadname
@@ -1668,7 +1668,7 @@ public class Cryptomator: ChildStorage {
                         let newmdate = item.mdate
                         let newsize = convertDecryptSize(item.size)
                         
-                        let newitem = RemoteData(context: backgroundContext)
+                        let newitem = RemoteData(context: viewContext)
                         newitem.storage = storage
                         newitem.id = newid
                         newitem.name = newname
@@ -1688,7 +1688,7 @@ public class Cryptomator: ChildStorage {
                         else {
                             newitem.path = "\(parentPath)/\(newname)"
                         }
-                        try? backgroundContext.save()
+                        try? viewContext.save()
                         return newid
                     }
                 }

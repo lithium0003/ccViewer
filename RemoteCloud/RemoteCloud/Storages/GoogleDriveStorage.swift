@@ -392,34 +392,33 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             let fixFileId = (fileId == "") ? rootName : fileId
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
             if let items = result {
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                
+                let viewContext = CloudFactory.shared.data.viewContext                
                 for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
                 }
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
             }
             return
         }
         if fileId == "" {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            storeRootItems(context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let viewContext = CloudFactory.shared.data.viewContext
+            storeRootItems(context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             return
         }
         if fileId == "teamdrives" {
             let result = await listTeamdrives(q: "", pageToken: "")
             if let items = result {
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
-                    storeTeamDriveItem(item: item, context: backgroundContext)
+                    storeTeamDriveItem(item: item, context: viewContext)
                 }
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
             }
             return
@@ -431,12 +430,12 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             let fixFileId = comp[1]
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId)
             if let items = result {
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: backgroundContext)
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: viewContext)
                 }
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
             }
         }
@@ -444,12 +443,12 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             let fixFileId = (fileId == "mydrive") ? rootName : fileId
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
             if let items = result {
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
+                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
                 }
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
             }
         }
@@ -536,10 +535,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     throw RetryError.Retry
                 }
                 
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                storeTeamDriveItem(item: json, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                storeTeamDriveItem(item: json, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return id
             })
@@ -647,7 +646,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     print(e)
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let teamID: String?
                 if fileId.contains(" ") {
                     let comp = fileId.components(separatedBy: " ")
@@ -656,9 +655,9 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 else {
                     teamID = nil
                 }
-                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return true
             })
@@ -760,7 +759,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 }
 
                 if toParentId != "" {
-                    let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                    let viewContext = CloudFactory.shared.data.viewContext
                     
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storageName ?? "")
@@ -862,10 +861,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard await deleteDrive(driveId: driveId) else {
                     return false
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                deleteChildRecursive(parent: driveId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                deleteChildRecursive(parent: driveId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return true
             }
@@ -874,10 +873,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         guard let id = await updateFile(fileId: fileId, metadata: json) else {
             return false
         }
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-        deleteChildRecursive(parent: id, context: backgroundContext)
-        await backgroundContext.perform {
-            try? backgroundContext.save()
+        let viewContext = CloudFactory.shared.data.viewContext
+        deleteChildRecursive(parent: id, context: viewContext)
+        await viewContext.perform {
+            try? viewContext.save()
         }
         await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
         return true
@@ -910,10 +909,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                storeTeamDriveItem(item: json, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                storeTeamDriveItem(item: json, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return id
             })
@@ -973,7 +972,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
     
     @MainActor
     func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")

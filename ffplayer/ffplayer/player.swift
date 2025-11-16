@@ -617,7 +617,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             await setupArtwork(idx)
 
             var partial_start = Double.nan
-            if !playlist, let p = await CloudFactory.shared.data.getMark(storage: remotes[idx].storage, targetID: remotes[idx].id) {
+            if !playlist, let p = await CloudFactory.shared.mark.getMark(storage: remotes[idx].storage, targetID: remotes[idx].id) {
                 if remotes.count > 1 {
                     if p < 0 || p >= 1 {
                         curIdx += 1
@@ -682,14 +682,14 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                                 curIdx += 1
                                 if ret >= 0 && !playlist {
                                     Task {
-                                        await CloudFactory.shared.data.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: playPos / mediaDuration)
+                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: playPos / mediaDuration)
                                     }
                                 }
                             }
                             else {
                                 if ret >= 0 && !playlist {
                                     Task {
-                                        await CloudFactory.shared.data.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
+                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
                                     }
                                 }
                             }

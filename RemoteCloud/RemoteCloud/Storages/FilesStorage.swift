@@ -160,22 +160,22 @@ public class FilesStorage: RemoteStorageBase  {
                         return
                     }
                     
-                    let backgroudContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    let viewContext = CloudFactory.shared.data.viewContext
                     Task {
-                        await backgroudContext.perform {
+                        await viewContext.perform {
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-                            if let result = try? backgroudContext.fetch(fetchRequest) {
+                            if let result = try? viewContext.fetch(fetchRequest) {
                                 for object in result {
-                                    backgroudContext.delete(object as! NSManagedObject)
+                                    viewContext.delete(object as! NSManagedObject)
                                 }
                             }
                         }
                         for fileURL in fileURLs {
-                            await storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: backgroudContext)
+                            await storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: viewContext)
                         }
-                        await backgroudContext.perform {
-                            try? backgroudContext.save()
+                        await viewContext.perform {
+                            try? viewContext.save()
                         }
                         continuation.resume()
                     }
@@ -417,11 +417,11 @@ public class FilesStorage: RemoteStorageBase  {
                         defer { url.stopAccessingSecurityScopedResource() }
                         
                         try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        let viewContext = CloudFactory.shared.data.viewContext
                         Task {
-                            await storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                            await backgroundContext.perform {
-                                try? backgroundContext.save()
+                            await storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                            await viewContext.perform {
+                                try? viewContext.save()
                             }
                             let id = await getIdFromURL(url: targetURL)
                             continuation.resume(returning: id)
@@ -491,7 +491,7 @@ public class FilesStorage: RemoteStorageBase  {
                     if toParentId != "" {
                         targetURL = url.appendingPathComponent(toParentId, isDirectory: true)
                         Task { @MainActor in
-                            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+                            let viewContext = CloudFactory.shared.data.viewContext
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
                             if let result = try? viewContext.fetch(fetchRequest) {
@@ -501,13 +501,13 @@ public class FilesStorage: RemoteStorageBase  {
                             }
                         }
                     }
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    backgroundContext.perform {
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    viewContext.perform {
                         let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                         fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                        if let result = try? backgroundContext.fetch(fetchRequest2) {
+                        if let result = try? viewContext.fetch(fetchRequest2) {
                             for object in result {
-                                backgroundContext.delete(object as! NSManagedObject)
+                                viewContext.delete(object as! NSManagedObject)
                             }
                         }
                     }
@@ -518,9 +518,9 @@ public class FilesStorage: RemoteStorageBase  {
                     do {
                         try FileManager.default.moveItem(at: fromURL, to: targetURL)
                         Task {
-                            await self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: backgroundContext)
-                            await backgroundContext.perform {
-                                try? backgroundContext.save()
+                            await self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: viewContext)
+                            await viewContext.perform {
+                                try? viewContext.save()
                             }
                             let id = await self.getIdFromURL(url: targetURL)
                             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
@@ -586,22 +586,22 @@ public class FilesStorage: RemoteStorageBase  {
                     
                     do {
                         try FileManager.default.removeItem(at: targetURL)
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                        backgroundContext.perform {
+                        let viewContext = CloudFactory.shared.data.viewContext
+                        viewContext.perform {
                             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                            if let result = try? backgroundContext.fetch(fetchRequest) {
+                            if let result = try? viewContext.fetch(fetchRequest) {
                                 for object in result {
-                                    backgroundContext.delete(object as! NSManagedObject)
+                                    viewContext.delete(object as! NSManagedObject)
                                 }
                             }
                         }
-                        self.deleteChildRecursive(parent: fileId, context: backgroundContext)
+                        self.deleteChildRecursive(parent: fileId, context: viewContext)
                         Task {
                             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                         }
-                        backgroundContext.perform {
-                            try? backgroundContext.save()
+                        viewContext.perform {
+                            try? viewContext.save()
                             continuation.resume(returning: true)
                         }
                     }
@@ -666,24 +666,24 @@ public class FilesStorage: RemoteStorageBase  {
                         try FileManager.default.moveItem(at: fromURL, to: newURL)
                         var parentPath: String?
                         var parentId: String?
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                        backgroundContext.perform {
+                        let viewContext = CloudFactory.shared.data.viewContext
+                        viewContext.perform {
                             let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                             fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                            if let result = try? backgroundContext.fetch(fetchRequest2) as? [RemoteData] {
+                            if let result = try? viewContext.fetch(fetchRequest2) as? [RemoteData] {
                                 for object in result {
                                     parentPath = object.path
                                     let component = parentPath?.components(separatedBy: "/")
                                     parentPath = component?.dropLast().joined(separator: "/")
                                     parentId = object.parent
-                                    backgroundContext.delete(object)
+                                    viewContext.delete(object)
                                 }
                             }
                         }
                         Task {
-                            await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                            await backgroundContext.perform {
-                                try? backgroundContext.save()
+                            await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                            await viewContext.perform {
+                                try? viewContext.save()
                             }
                             let id = await self.getIdFromURL(url: newURL)
                             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
@@ -749,11 +749,11 @@ public class FilesStorage: RemoteStorageBase  {
                     
                     do {
                         try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path(percentEncoded: false))
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        let viewContext = CloudFactory.shared.data.viewContext
                         Task {
-                            await self.storeItem(item: targetURL, context: backgroundContext)
-                            await backgroundContext.perform {
-                                try? backgroundContext.save()
+                            await self.storeItem(item: targetURL, context: viewContext)
+                            await viewContext.perform {
+                                try? viewContext.save()
                             }
                             let id = await getIdFromURL(url: targetURL)
                             continuation.resume(returning: id)
@@ -775,7 +775,7 @@ public class FilesStorage: RemoteStorageBase  {
 
     @MainActor
     func getParentPath(parentId: String) -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
@@ -847,11 +847,11 @@ public class FilesStorage: RemoteStorageBase  {
 
                     try FileManager.default.moveItem(at: target, to: newURL)
                     
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                    let viewContext = CloudFactory.shared.data.viewContext
                     Task {
-                        await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                        await backgroundContext.perform {
-                            try? backgroundContext.save()
+                        await self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                        await viewContext.perform {
+                            try? viewContext.save()
                         }
                         let id = await self.getIdFromURL(url: newURL)
                         continuation.resume(returning: id)

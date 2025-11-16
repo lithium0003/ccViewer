@@ -267,12 +267,12 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return
         }
         if let items = await listFolder(folderId: folderId) {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             for item in items {
-                storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
+                storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
     }
@@ -399,10 +399,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
 
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-        storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-        await backgroundContext.perform {
-            try? backgroundContext.save()
+        let viewContext = CloudFactory.shared.data.viewContext
+        storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+        await viewContext.perform {
+            try? viewContext.save()
         }
         return newid
     }
@@ -471,20 +471,20 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             guard await deletefile(fileId: id) else {
                 return false
             }
-            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             let storage = storageName ?? ""
-            await backgroundCountext.perform {
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? backgroundCountext.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        backgroundCountext.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
             }
-            deleteChildRecursive(parent: fileId, context: backgroundCountext)
-            await backgroundCountext.perform {
-                try? backgroundCountext.save()
+            deleteChildRecursive(parent: fileId, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             return true
         }
@@ -493,20 +493,20 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             guard await deletefolderrecursive(folderId: id) else {
                 return false
             }
-            let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             let storage = storageName ?? ""
-            await backgroundCountext.perform {
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? backgroundCountext.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        backgroundCountext.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
             }
-            deleteChildRecursive(parent: fileId, context: backgroundCountext)
-            await backgroundCountext.perform {
-                try? backgroundCountext.save()
+            deleteChildRecursive(parent: fileId, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             return true
@@ -604,10 +604,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             guard let metadata = await renamefile(fileId: id, toName: newname), let newid = metadata["id"] as? String else {
                 return nil
             }
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            storeItem(item: metadata, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let viewContext = CloudFactory.shared.data.viewContext
+            storeItem(item: metadata, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             return newid
         }
@@ -616,10 +616,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             guard let metadata = await renamefolder(folderId: id, toName: newname), let newid = metadata["id"] as? String else {
                 return nil
             }
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            storeItem(item: metadata, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let viewContext = CloudFactory.shared.data.viewContext
+            storeItem(item: metadata, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             return newid
@@ -629,7 +629,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
 
     @MainActor
     func getParentPath(parentId: String) -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
@@ -661,10 +661,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             if toParentId != "" {
                 toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
             }
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let viewContext = CloudFactory.shared.data.viewContext
+            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             return newid
         }
@@ -677,10 +677,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             if toParentId != "" {
                 toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
             }
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            let viewContext = CloudFactory.shared.data.viewContext
+            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
+            await viewContext.perform {
+                try? viewContext.save()
             }
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             return newid
@@ -801,10 +801,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                     print(object)
                     throw RetryError.Retry
                 }
-                let backgroundCountext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: backgroundCountext)
-                await backgroundCountext.perform {
-                    try? backgroundCountext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 try await progress?(Int64(fileSize2), Int64(fileSize2))
                 return newid

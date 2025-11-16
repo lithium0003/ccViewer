@@ -201,7 +201,7 @@ class CustomPlayer: NSObject {
         print("didPlayToEndTime")
         if let asset = player.currentItem?.asset as? AVURLAsset, let delegate = customDelegate[asset.url]?.last, let item = delegate.item {
             Task {
-                await CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
+                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
             }
         }
         if player.items().count == 1, loop {

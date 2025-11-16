@@ -289,13 +289,13 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
     
     override func listChildren(fileId: String, path: String) async {
         if let items = await listFiles(itemId: fileId, nextLink: "") {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             
             for item in items {
-                storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
+                storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
     }
@@ -392,20 +392,20 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return id
             })
@@ -437,20 +437,20 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     print(String(data: data, encoding: .utf8) ?? "")
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                deleteChildRecursive(parent: fileId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                deleteChildRecursive(parent: fileId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                 return true
@@ -485,10 +485,10 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     print(e)
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return true
             })
@@ -592,7 +592,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
         else {
             var toParentPath = ""
-            let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+            let viewContext = CloudFactory.shared.data.viewContext
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
@@ -616,7 +616,7 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
 
     @MainActor
     func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
@@ -736,10 +736,10 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
                             throw RetryError.Retry
                         }
                         print(id)
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                        storeItem(item: object, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                        await backgroundContext.perform {
-                            try? backgroundContext.save()
+                        let viewContext = CloudFactory.shared.data.viewContext
+                        storeItem(item: object, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                        await viewContext.perform {
+                            try? viewContext.save()
                             print("done")
                         }
                         try await progress?(Int64(fileSize), Int64(fileSize))

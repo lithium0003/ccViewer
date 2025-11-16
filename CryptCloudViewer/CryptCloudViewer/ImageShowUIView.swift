@@ -11,6 +11,7 @@ import RemoteCloud
 struct ImageShowUIView: View {
     let storage: String
     let fileid: String
+    @State var progStr = ""
     @State var remoteItem: RemoteItem?
     @State var image: UIImage?
     @State var isLoading = false
@@ -38,6 +39,13 @@ struct ImageShowUIView: View {
     @State private var currentOffset: CGPoint = .zero
     @State private var hideHeader = false
     @State private var loadingTask: Task<Void, Error>?
+
+    var formatter2: ByteCountFormatter {
+        let formatter2 = ByteCountFormatter()
+        formatter2.allowedUnits = [.useAll]
+        formatter2.countStyle = .file
+        return formatter2
+    }
 
     struct OffsetPreferenceKey: PreferenceKey {
         static var defaultValue = CGFloat.zero
@@ -146,16 +154,20 @@ struct ImageShowUIView: View {
         ZStack {
             imageView
                 .ignoresSafeArea()
-            
+
             if isLoading {
-                ProgressView()
-                    .padding(30)
-                    .background {
-                        Color(uiColor: .systemBackground)
-                            .opacity(0.9)
-                    }
-                    .scaleEffect(3)
-                    .cornerRadius(10)
+                VStack {
+                    ProgressView()
+                        .padding(30)
+                        .scaleEffect(3)
+                    
+                    Text(verbatim: progStr)
+                }
+                .background {
+                    Color(uiColor: .systemBackground)
+                        .opacity(0.9)
+                }
+                .cornerRadius(10)
             }
         }
         .toolbar {
@@ -194,12 +206,20 @@ struct ImageShowUIView: View {
                 }
                 remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
                 guard let remoteItem else { return }
+                let total = remoteItem.size
                 do {
                     let remoteData = await remoteItem.open()
                     defer {
                         remoteData.isLive = false
                     }
-                    let data = try? await remoteData.read()
+                    let data = try? await remoteData.read(onProgress: { p in
+                        if total > 0 {
+                            progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
+                        }
+                        else {
+                            progStr = "\(formatter2.string(fromByteCount: Int64(p)))"
+                        }
+                    })
                     if let data, let im = UIImage(data: data) {
                         images.append(im)
                         imageIdx = 0
@@ -293,7 +313,7 @@ struct ImageShowUIView: View {
                                 count += 1
                             }
                         }
-                        while count > 1 {
+                        while count > 3 {
                             if let next = await group0.next(), let (i, im) = next {
                                 ret[i] = im
                                 images = ret.sorted(by: { $0.key < $1.key }).map(\.value)

@@ -99,7 +99,7 @@ struct ItemsUIView: View {
     }
 
     func getMarks() async {
-        itemMark = await CloudFactory.shared.data.getMark(storage: storage, targetIDs: items.map({ $0.id ?? "" }), parentID: fileid)
+        itemMark = await CloudFactory.shared.mark.getMark(storage: storage, targetIDs: items.map({ $0.id ?? "" }), parentID: fileid)
     }
     
     func reload(_ force: Bool = false) async {
@@ -232,10 +232,10 @@ struct ItemsUIView: View {
                                     Button {
                                         Task {
                                             if itemMark[item.id ?? ""] != nil  {
-                                                await CloudFactory.shared.data.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: nil)
+                                                await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: nil)
                                             }
                                             else {
-                                                await CloudFactory.shared.data.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: 1.0)
+                                                await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: 1.0)
                                             }
                                             try? await Task.sleep(for: .seconds(1))
                                             await getMarks()

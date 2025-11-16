@@ -585,11 +585,11 @@ public class SambaStorage: NetworkStorage {
             return try await callWithRetry(action: { [self] in
                 if fileId == "" {
                     do {
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        let viewContext = CloudFactory.shared.data.viewContext
                         let shares = try await sessionManager.enumShareAll()
-                        storeRootItems(shareNames: shares.filter({ $0.name != "IPC$" }).map({ $0.name }), context: backgroundContext)
-                        await backgroundContext.perform {
-                            try? backgroundContext.save()
+                        storeRootItems(shareNames: shares.filter({ $0.name != "IPC$" }).map({ $0.name }), context: viewContext)
+                        await viewContext.perform {
+                            try? viewContext.save()
                         }
                     }
                     catch {
@@ -600,13 +600,13 @@ public class SambaStorage: NetworkStorage {
                 else if let share = fileId.components(separatedBy: "/").first {
                     let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                        let viewContext = CloudFactory.shared.data.viewContext
                         let files = try await sessionManager.queryDirectory(share: share, path: path)
                         for item in files.filter({ $0.fileName != "." && $0.fileName != ".." && !$0.fileName.hasPrefix("._") }) {
-                            storeItem(item: item, path: fileId, context: backgroundContext)
+                            storeItem(item: item, path: fileId, context: viewContext)
                         }
-                        await backgroundContext.perform {
-                            try? backgroundContext.save()
+                        await viewContext.perform {
+                            try? viewContext.save()
                         }
                     }
                     catch {

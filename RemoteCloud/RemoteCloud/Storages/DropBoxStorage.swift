@@ -293,13 +293,12 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
     override func listChildren(fileId: String, path: String) async {
         let result = await listFolder(path: fileId)
         if let items = result {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-            
+            let viewContext = CloudFactory.shared.data.viewContext            
             for item in items {
-                storeItem(item: item, parentFileId: fileId, context: backgroundContext)
+                storeItem(item: item, parentFileId: fileId, context: viewContext)
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
     }
@@ -375,10 +374,10 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                     print(e)
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                storeItem(item: json, parentFileId: parentId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                let viewContext = CloudFactory.shared.data.viewContext
+                storeItem(item: json, parentFileId: parentId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return true
             })
@@ -461,20 +460,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = metadata["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                deleteChildRecursive(parent: id, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                deleteChildRecursive(parent: id, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return true
             })
@@ -491,7 +490,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
     @MainActor
     override func renameItem(fileId: String, newname: String) async -> String? {
         var parentId: String? = nil
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
@@ -548,20 +547,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = metadata["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                storeItem(item: metadata, parentFileId: parentId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                storeItem(item: metadata, parentFileId: parentId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return id
             })
@@ -578,7 +577,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         }
         var orgname: String? = nil
         
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
@@ -635,20 +634,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = metadata["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                storeItem(item: metadata, parentFileId: toParentId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                storeItem(item: metadata, parentFileId: toParentId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 return id
             })
@@ -674,7 +673,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         os_log("%{public}@", log: log, type: .debug, "uploadFile(dropbox:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         var parentPath = ""
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
@@ -735,20 +734,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                let viewContext = CloudFactory.shared.data.viewContext
                 let storage = storageName ?? ""
-                await backgroundContext.perform {
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                storeItem(item: json, parentFileId: parentId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                storeItem(item: json, parentFileId: parentId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                     print("done")
                 }
                 try await progress?(Int64(fileSize), Int64(fileSize))
@@ -856,20 +855,20 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                                 print(object)
                                 throw RetryError.Retry
                             }
-                            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+                            let viewContext = CloudFactory.shared.data.viewContext
                             let storage = storageName ?? ""
-                            await backgroundContext.perform {
+                            await viewContext.perform {
                                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-                                if let result = try? backgroundContext.fetch(fetchRequest) {
+                                if let result = try? viewContext.fetch(fetchRequest) {
                                     for object in result {
-                                        backgroundContext.delete(object as! NSManagedObject)
+                                        viewContext.delete(object as! NSManagedObject)
                                     }
                                 }
                             }
-                            storeItem(item: object, parentFileId: parentId, context: backgroundContext)
-                            await backgroundContext.perform {
-                                try? backgroundContext.save()
+                            storeItem(item: object, parentFileId: parentId, context: viewContext)
+                            await viewContext.perform {
+                                try? viewContext.save()
                                 print("done")
                             }
                             try await progress?(Int64(fileSize), Int64(fileSize))

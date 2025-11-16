@@ -641,7 +641,7 @@ struct EditItemsUIView: View {
                                             guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
                                                 return
                                             }
-                                            await CloudFactory.shared.data.setMark(storage: item.storage, targetID: item.id, parentID: item.path, position: nil)
+                                            await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.path, position: nil)
                                         }
                                     }
                                 }

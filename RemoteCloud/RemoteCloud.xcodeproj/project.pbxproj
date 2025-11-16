@@ -19,7 +19,6 @@
 		3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C94F223495E600481DB5 /* RemoteStorage.swift */; };
 		3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C950223495E600481DB5 /* GoogleDriveStorage.swift */; };
 		3CA2C95B2234E6F600481DB5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3CA2C95A2234E6F600481DB5 /* Assets.xcassets */; };
-		3CA2C95E2235569800481DB5 /* cloud.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C95C2235569800481DB5 /* cloud.xcdatamodeld */; };
 		3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CA2C95F22355A0300481DB5 /* RemoteItem.swift */; };
 		3CF14614223B29360025081A /* CryptRclone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF14613223B29360025081A /* CryptRclone.swift */; };
 		3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3ABABA2272C707002A8D16 /* Secret.swift */; };
@@ -27,7 +26,6 @@
 		3F92E7052336BFBA00D1FF9B /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F92E7042336BFBA00D1FF9B /* Media.xcassets */; };
 		3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F987DEB2277608A0020A796 /* Cryptomator.swift */; };
 		3FA46CE223849615007ACC82 /* FileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE123849615007ACC82 /* FileCache.swift */; };
-		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
 		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
 		3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE215872394F39300CD2A19 /* FilesStorage.swift */; };
 		BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */; };
@@ -38,6 +36,10 @@
 		BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */ = {isa = PBXBuildFile; productRef = BE186E582E9A4A82002F6CC8 /* SMBClient */; };
 		BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D012EAFB806006DF15C /* GoogleSignIn */; };
 		BE2D3D042EAFB806006DF15C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D032EAFB806006DF15C /* GoogleSignInSwift */; };
+		BEEF7BFC2ECA735C000F6F3E /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7BFA2ECA735C000F6F3E /* cache.xcdatamodeld */; };
+		BEEF7BFF2ECA74B5000F6F3E /* playmark.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7BFD2ECA74B5000F6F3E /* playmark.xcdatamodeld */; };
+		BEEF7C012ECA7544000F6F3E /* PlayMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7C002ECA7544000F6F3E /* PlayMark.swift */; };
+		BEEF7C042ECA7670000F6F3E /* remote.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7C022ECA7670000F6F3E /* remote.xcdatamodeld */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,7 +57,6 @@
 		3CA2C94F223495E600481DB5 /* RemoteStorage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RemoteStorage.swift; sourceTree = "<group>"; };
 		3CA2C950223495E600481DB5 /* GoogleDriveStorage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GoogleDriveStorage.swift; sourceTree = "<group>"; };
 		3CA2C95A2234E6F600481DB5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		3CA2C95D2235569800481DB5 /* cloud.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cloud.xcdatamodel; sourceTree = "<group>"; };
 		3CA2C95F22355A0300481DB5 /* RemoteItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteItem.swift; sourceTree = "<group>"; };
 		3CF14613223B29360025081A /* CryptRclone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptRclone.swift; sourceTree = "<group>"; };
 		3F3ABABA2272C707002A8D16 /* Secret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secret.swift; sourceTree = "<group>"; };
@@ -63,7 +64,6 @@
 		3F92E7042336BFBA00D1FF9B /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		3F987DEB2277608A0020A796 /* Cryptomator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cryptomator.swift; sourceTree = "<group>"; };
 		3FA46CE123849615007ACC82 /* FileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCache.swift; sourceTree = "<group>"; };
-		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
 		3FE215872394F39300CD2A19 /* FilesStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesStorage.swift; sourceTree = "<group>"; };
 		BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessArchive.swift; sourceTree = "<group>"; };
@@ -71,6 +71,10 @@
 		BE0C16B92EC89E1400C78FEC /* archive_entry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive_entry.h; sourceTree = "<group>"; };
 		BE0C16C52EC8A0BC00C78FEC /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = usr/lib/libarchive.tbd; sourceTree = SDKROOT; };
 		BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SambaStorage.swift; sourceTree = "<group>"; };
+		BEEF7BFB2ECA735C000F6F3E /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
+		BEEF7BFE2ECA74B5000F6F3E /* playmark.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = playmark.xcdatamodel; sourceTree = "<group>"; };
+		BEEF7C002ECA7544000F6F3E /* PlayMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMark.swift; sourceTree = "<group>"; };
+		BEEF7C032ECA7670000F6F3E /* remote.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = remote.xcdatamodel; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -120,18 +124,20 @@
 				BE0C16B92EC89E1400C78FEC /* archive_entry.h */,
 				3CA2C95A2234E6F600481DB5 /* Assets.xcassets */,
 				3C0654A222384CD0003BD932 /* ChildStorage.swift */,
-				3CA2C95C2235569800481DB5 /* cloud.xcdatamodeld */,
+				BEEF7C022ECA7670000F6F3E /* remote.xcdatamodeld */,
+				BEEF7BFD2ECA74B5000F6F3E /* playmark.xcdatamodeld */,
 				3CA2C9322234952800481DB5 /* Info.plist */,
 				3C0654A42238D66D003BD932 /* NetworkStorage.swift */,
 				3CA2C9312234952800481DB5 /* RemoteCloud.h */,
 				3CA2C95F22355A0300481DB5 /* RemoteItem.swift */,
+				BEEF7C002ECA7544000F6F3E /* PlayMark.swift */,
 				3CA2C94F223495E600481DB5 /* RemoteStorage.swift */,
 				3CF14612223B28F50025081A /* Storages */,
 				3C14C450225CE17C0044E4A7 /* SubItem */,
 				3F3ABABA2272C707002A8D16 /* Secret.swift */,
 				3F92E7042336BFBA00D1FF9B /* Media.xcassets */,
 				3FA46CE123849615007ACC82 /* FileCache.swift */,
-				3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */,
+				BEEF7BFA2ECA735C000F6F3E /* cache.xcdatamodeld */,
 			);
 			path = RemoteCloud;
 			sourceTree = "<group>";
@@ -251,13 +257,15 @@
 			files = (
 				3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */,
 				3F987DEC2277608A0020A796 /* Cryptomator.swift in Sources */,
-				3CA2C95E2235569800481DB5 /* cloud.xcdatamodeld in Sources */,
 				3F3ABABB2272C707002A8D16 /* Secret.swift in Sources */,
 				BE186E512E99FAF5002F6CC8 /* SambaStorage.swift in Sources */,
 				3CF14614223B29360025081A /* CryptRclone.swift in Sources */,
 				3FA46CE223849615007ACC82 /* FileCache.swift in Sources */,
+				BEEF7C042ECA7670000F6F3E /* remote.xcdatamodeld in Sources */,
+				BEEF7BFC2ECA735C000F6F3E /* cache.xcdatamodeld in Sources */,
 				3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */,
 				3C14C452225CE19E0044E4A7 /* CueSheet.swift in Sources */,
+				BEEF7C012ECA7544000F6F3E /* PlayMark.swift in Sources */,
 				3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */,
 				3C0654A122384BED003BD932 /* CryptCarotDAV.swift in Sources */,
 				3C40091E22413C340028A45A /* DropBoxStorage.swift in Sources */,
@@ -265,11 +273,11 @@
 				3C0654A52238D66D003BD932 /* NetworkStorage.swift in Sources */,
 				3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */,
 				3C0654A322384CD0003BD932 /* ChildStorage.swift in Sources */,
+				BEEF7BFF2ECA74B5000F6F3E /* playmark.xcdatamodeld in Sources */,
 				BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */,
 				3C14C44F225C69410044E4A7 /* SubItem.swift in Sources */,
 				3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */,
 				3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */,
-				3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */,
 				3C400922224190920028A45A /* OneDriveStorage.swift in Sources */,
 			);
 		};
@@ -537,23 +545,33 @@
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCVersionGroup section */
-		3CA2C95C2235569800481DB5 /* cloud.xcdatamodeld */ = {
+		BEEF7BFA2ECA735C000F6F3E /* cache.xcdatamodeld */ = {
 			isa = XCVersionGroup;
 			children = (
-				3CA2C95D2235569800481DB5 /* cloud.xcdatamodel */,
+				BEEF7BFB2ECA735C000F6F3E /* cache.xcdatamodel */,
 			);
-			currentVersion = 3CA2C95D2235569800481DB5 /* cloud.xcdatamodel */;
-			path = cloud.xcdatamodeld;
+			currentVersion = BEEF7BFB2ECA735C000F6F3E /* cache.xcdatamodel */;
+			path = cache.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
 		};
-		3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */ = {
+		BEEF7BFD2ECA74B5000F6F3E /* playmark.xcdatamodeld */ = {
 			isa = XCVersionGroup;
 			children = (
-				3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */,
+				BEEF7BFE2ECA74B5000F6F3E /* playmark.xcdatamodel */,
 			);
-			currentVersion = 3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */;
-			path = cache.xcdatamodeld;
+			currentVersion = BEEF7BFE2ECA74B5000F6F3E /* playmark.xcdatamodel */;
+			path = playmark.xcdatamodeld;
+			sourceTree = "<group>";
+			versionGroupType = wrapper.xcdatamodel;
+		};
+		BEEF7C022ECA7670000F6F3E /* remote.xcdatamodeld */ = {
+			isa = XCVersionGroup;
+			children = (
+				BEEF7C032ECA7670000F6F3E /* remote.xcdatamodel */,
+			);
+			currentVersion = BEEF7C032ECA7670000F6F3E /* remote.xcdatamodel */;
+			path = remote.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;
 		};

@@ -58,7 +58,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct CryptCloudViewerApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
+    @State var showInitAlert = false
+    
     func initParams() {
         if UserDefaults.standard.integer(forKey: "playSkipForwardSec") == 0 {
             UserDefaults.standard.set(15, forKey: "playSkipForwardSec")
@@ -79,6 +80,27 @@ struct CryptCloudViewerApp: App {
             UserDefaults.standard.set(true, forKey: "cloudPlaylist")
             UserDefaults.standard.set(true, forKey: "PDF_continuous")
         }
+
+        if UserDefaults.standard.bool(forKey: "tutorial"), UserDefaults.standard.integer(forKey: "previousBuildNo") < 99 {
+            showInitAlert = true
+        }
+    }
+    
+    func deletePreviousData() async {
+        await CloudFactory.shared.removeAllAuth()
+        UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
+        await CloudFactory.shared.cache.deleteAllCache()
+        await CloudFactory.shared.initializeDatabase()
+
+        let buildNum = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") ?? 0
+        UserDefaults.standard.set(buildNum, forKey: "previousBuildNo")
+        
+        initParams()
+    }
+    
+    func cancelDelete() {
+        let buildNum = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") ?? 0
+        UserDefaults.standard.set(buildNum, forKey: "previousBuildNo")
     }
     
     var body: some Scene {
@@ -124,6 +146,19 @@ struct CryptCloudViewerApp: App {
                     if GIDSignIn.sharedInstance.handle(url) {
                         return
                     }
+                }
+                .alert("Break changed version", isPresented: $showInitAlert) {
+                    Button(role: .destructive) {
+                        Task {
+                            await deletePreviousData()
+                        }
+                    }
+                    
+                    Button(role: .cancel) {
+                        cancelDelete()
+                    }
+                } message: {
+                    Text("This version is not compatible with the previous version. We recommend to delete all previos data and re-login all storages. Do you want to erease all app data?")
                 }
         }
     }

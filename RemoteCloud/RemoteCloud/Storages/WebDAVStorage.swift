@@ -489,12 +489,12 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
 
     override func listChildren(fileId: String, path: String) async {
         if let items = await listFolder(path: fileId) {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             for item in items {
-                await storeItem(item: item, parentFileId: fileId, parentPath: path, context: backgroundContext)
+                await storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
     }
@@ -809,10 +809,10 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     return nil
                 }
                 if let item = result.first, let id = item["href"] as? String {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    await backgroundContext.perform {
-                        try? backgroundContext.save()
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                    await viewContext.perform {
+                        try? viewContext.save()
                     }
                     return id
                 }
@@ -873,19 +873,19 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     print(response)
                     throw RetryError.Retry
                 }
-                let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                await backgroundContext.perform {
+                let viewContext = CloudFactory.shared.data.viewContext
+                await viewContext.perform {
                     let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                     fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? backgroundContext.fetch(fetchRequest) {
+                    if let result = try? viewContext.fetch(fetchRequest) {
                         for object in result {
-                            backgroundContext.delete(object as! NSManagedObject)
+                            viewContext.delete(object as! NSManagedObject)
                         }
                     }
                 }
-                deleteChildRecursive(parent: fileId, context: backgroundContext)
-                await backgroundContext.perform {
-                    try? backgroundContext.save()
+                deleteChildRecursive(parent: fileId, context: viewContext)
+                await viewContext.perform {
+                    try? viewContext.save()
                 }
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                 return true
@@ -976,11 +976,11 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     var prevParent: String?
                     var prevPath: String?
 
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    await backgroundContext.perform {
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    await viewContext.perform {
                         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                        if let result = try? backgroundContext.fetch(fetchRequest) {
+                        if let result = try? viewContext.fetch(fetchRequest) {
                             for object in result {
                                 if let item = object as? RemoteData {
                                     prevPath = item.path
@@ -988,14 +988,14 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                                     prevPath = component?.dropLast().joined(separator: "/")
                                     prevParent = item.parent
                                 }
-                                backgroundContext.delete(object as! NSManagedObject)
+                                viewContext.delete(object as! NSManagedObject)
                             }
                         }
                     }
-                    deleteChildRecursive(parent: fileId, context: backgroundContext)
-                    await storeItem(item: item, parentFileId: prevParent, parentPath: prevPath, context: backgroundContext)
-                    await backgroundContext.perform {
-                        try? backgroundContext.save()
+                    deleteChildRecursive(parent: fileId, context: viewContext)
+                    await storeItem(item: item, parentFileId: prevParent, parentPath: prevPath, context: viewContext)
+                    await viewContext.perform {
+                        try? viewContext.save()
                     }
                     await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                     return id
@@ -1012,7 +1012,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
 
     @MainActor
     func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.persistentContainer.viewContext
+        let viewContext = CloudFactory.shared.data.viewContext
         
         let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
@@ -1134,11 +1134,11 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     return nil
                 }
                 if let item = result.first, let id = item["href"] as? String {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    deleteChildRecursive(parent: fileId, context: backgroundContext)
-                    await storeItem(item: item, parentFileId: toParentId, parentPath: toParentPath, context: backgroundContext)
-                    await backgroundContext.perform {
-                        try? backgroundContext.save()
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    deleteChildRecursive(parent: fileId, context: viewContext)
+                    await storeItem(item: item, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
+                    await viewContext.perform {
+                        try? viewContext.save()
                     }
                     await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                     return id
@@ -1317,10 +1317,10 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     return nil
                 }
                 if let item = result3.first, let id = item["href"] as? String {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    await storeItem(item: item, parentFileId: nil, parentPath: nil, context: backgroundContext)
-                    await backgroundContext.perform {
-                        try? backgroundContext.save()
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    await storeItem(item: item, parentFileId: nil, parentPath: nil, context: viewContext)
+                    await viewContext.perform {
+                        try? viewContext.save()
                     }
                     return id
                 }
@@ -1415,10 +1415,10 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     return nil
                 }
                 if let item = result.first, let id = item["href"] as? String {
-                    let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: backgroundContext)
-                    await backgroundContext.perform {
-                        try? backgroundContext.save()
+                    let viewContext = CloudFactory.shared.data.viewContext
+                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                    await viewContext.perform {
+                        try? viewContext.save()
                     }
                     try await progress?(Int64(fileSize), Int64(fileSize))
                     return id

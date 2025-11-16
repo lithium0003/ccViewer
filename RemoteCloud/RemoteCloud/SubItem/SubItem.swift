@@ -49,24 +49,24 @@ extension RemoteStorageBase: RemoteSubItem {
         }
         let itemid = item.id
         let storage = storageName ?? ""
-        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
-        await backgroundContext.perform {
+        let viewContext = CloudFactory.shared.data.viewContext
+        await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest) {
+            if let result = try? viewContext.fetch(fetchRequest) {
                 for object in result {
-                    backgroundContext.delete(object as! NSManagedObject)
+                    viewContext.delete(object as! NSManagedObject)
                 }
             }
             fetchRequest.predicate = NSPredicate(format: "subid == %@ && storage == %@", itemid, storage)
-            if let result = try? backgroundContext.fetch(fetchRequest) {
+            if let result = try? viewContext.fetch(fetchRequest) {
                 for object in result {
-                    backgroundContext.delete(object as! NSManagedObject)
+                    viewContext.delete(object as! NSManagedObject)
                 }
             }
         }
-        await backgroundContext.perform {
-            try? backgroundContext.save()
+        await viewContext.perform {
+            try? viewContext.save()
         }
     }
     
@@ -78,24 +78,24 @@ extension RemoteStorageBase: RemoteSubItem {
             let itemid = item.id
             let mDate = item.mDate
             let storage = storageName ?? ""
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             var pass = false
-            await backgroundContext.perform {
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
                     for subItem in items {
                         pass = mDate == subItem.parentDate
                     }
                 }
             }
             if pass { return }
-            await backgroundContext.perform {
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        backgroundContext.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
             }
@@ -112,7 +112,7 @@ extension RemoteStorageBase: RemoteSubItem {
                     parent = item.id
                 }
                 
-                let newitem = RemoteData(context: backgroundContext)
+                let newitem = RemoteData(context: viewContext)
                 newitem.storage = self.storageName
                 newitem.id = id
                 newitem.name = name
@@ -127,20 +127,20 @@ extension RemoteStorageBase: RemoteSubItem {
                 newitem.path = item.path + "/\(subItem)"
                 newitem.subid = item.id
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
         else if item.ext.lowercased() == "cue" {
-            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            let viewContext = CloudFactory.shared.data.viewContext
             let itemid = item.id
             let storage = storageName ?? ""
-            await backgroundContext.perform {
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
-                if let result = try? backgroundContext.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        backgroundContext.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
             }
@@ -155,11 +155,11 @@ extension RemoteStorageBase: RemoteSubItem {
                 return
             }
             let itemparent = item.parent
-            let wavId = await backgroundContext.perform { () -> String? in
+            let wavId = await viewContext.perform { () -> String? in
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name == %@", itemparent, storage, wavname)
                 
-                guard let result = try? backgroundContext.fetch(fetchRequest) as? [RemoteData], let wavdata = result.first else {
+                guard let result = try? viewContext.fetch(fetchRequest) as? [RemoteData], let wavdata = result.first else {
                     return nil
                 }
                 return wavdata.id
@@ -207,7 +207,7 @@ extension RemoteStorageBase: RemoteSubItem {
                 sec -= min * 60
                 let infostr = String(format: "%02d:%02d.%03d", min, sec, msec)
                 
-                let newitem = RemoteData(context: backgroundContext)
+                let newitem = RemoteData(context: viewContext)
                 newitem.storage = self.storageName
                 newitem.id = id
                 newitem.name = name
@@ -224,8 +224,8 @@ extension RemoteStorageBase: RemoteSubItem {
                 newitem.subid = wavId
                 newitem.subinfo = infostr
             }
-            await backgroundContext.perform {
-                try? backgroundContext.save()
+            await viewContext.perform {
+                try? viewContext.save()
             }
         }
     }

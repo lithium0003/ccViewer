@@ -55,7 +55,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             }
             if duration > 0, await !CastConverter.shared.playlist {
                 print("set sec", sec, duration, sec / duration)
-                await CloudFactory.shared.data.setMark(storage: storage, targetID: id, parentID: parent, position: sec / duration)
+                await CloudFactory.shared.mark.setMark(storage: storage, targetID: id, parentID: parent, position: sec / duration)
             }
         }
         
