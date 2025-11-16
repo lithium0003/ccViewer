@@ -102,7 +102,7 @@ public class CueSheetStream: SlotStream {
         
         wavOffset = wavfile.wavOffset + Int(remote.substart) * bytesPerFrame
     }
-    
+
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
             error = true
@@ -138,7 +138,6 @@ public class CueSheetStream: SlotStream {
             }
         }
     }
-
 }
 
 class RemoteWaveFile {

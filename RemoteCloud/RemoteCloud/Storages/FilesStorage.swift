@@ -11,7 +11,7 @@ import CoreData
 import os.log
 import UIKit
 import CoreServices
-import UniformTypeIdentifiers
+internal import UniformTypeIdentifiers
 import SwiftUI
 import AuthenticationServices
 
@@ -219,7 +219,7 @@ public class FilesStorage: RemoteStorageBase  {
         }
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
         let storage = storageName ?? ""
-        await context.perform {
+        context.performAndWait {
             var prevParent: String?
             var prevPath: String?
             
@@ -326,21 +326,13 @@ public class FilesStorage: RemoteStorageBase  {
                         let hFile = try FileHandle(forReadingFrom: targetURL)
                         defer {
                             do {
-                                if #available(iOS 13.0, *) {
-                                    try hFile.close()
-                                } else {
-                                    hFile.closeFile()
-                                }
+                                try hFile.close()
                             }
                             catch {
                                 print(error)
                             }
                         }
-                        if #available(iOS 13.0, *) {
-                            try hFile.seek(toOffset: UInt64(reqOffset))
-                        } else {
-                            hFile.seek(toFileOffset: UInt64(reqOffset))
-                        }
+                        try hFile.seek(toOffset: UInt64(reqOffset))
                         if let size = length {
                             ret = hFile.readData(ofLength: Int(size))
                         }

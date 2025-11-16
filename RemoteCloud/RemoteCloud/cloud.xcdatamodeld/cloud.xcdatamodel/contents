@@ -1,38 +1,34 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="14490.98" systemVersion="18E226" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24411" systemVersion="25B78" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
     <entity name="Mark" representedClassName="Mark" syncable="YES" codeGenerationType="class">
-        <attribute name="id" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="parent" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="position" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="storage" optional="YES" attributeType="String" syncable="YES"/>
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="parent" optional="YES" attributeType="String"/>
+        <attribute name="position" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="storage" optional="YES" attributeType="String"/>
     </entity>
     <entity name="PlayList" representedClassName="PlayList" syncable="YES" codeGenerationType="class">
-        <attribute name="folder" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="id" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="index" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="serial" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="storage" optional="YES" attributeType="String" syncable="YES"/>
+        <attribute name="folder" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="index" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="serial" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="storage" optional="YES" attributeType="String"/>
     </entity>
     <entity name="RemoteData" representedClassName="RemoteData" syncable="YES" codeGenerationType="class">
-        <attribute name="cdate" optional="YES" attributeType="Date" usesScalarValueType="NO" syncable="YES"/>
-        <attribute name="ext" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="folder" optional="YES" attributeType="Boolean" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="hashstr" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="id" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="mdate" optional="YES" attributeType="Date" usesScalarValueType="NO" syncable="YES"/>
-        <attribute name="name" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="parent" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="path" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="size" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="storage" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="subend" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES" syncable="YES"/>
-        <attribute name="subid" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="subinfo" optional="YES" attributeType="String" syncable="YES"/>
-        <attribute name="substart" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES" syncable="YES"/>
+        <attribute name="cdate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="ext" optional="YES" attributeType="String"/>
+        <attribute name="folder" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="hashstr" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="mdate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="parent" optional="YES" attributeType="String"/>
+        <attribute name="parentDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="path" optional="YES" attributeType="String"/>
+        <attribute name="size" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="storage" optional="YES" attributeType="String"/>
+        <attribute name="subend" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="subid" optional="YES" attributeType="String"/>
+        <attribute name="subinfo" optional="YES" attributeType="String"/>
+        <attribute name="substart" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
     </entity>
-    <elements>
-        <element name="Mark" positionX="-63" positionY="54" width="128" height="105"/>
-        <element name="PlayList" positionX="-63" positionY="99" width="128" height="120"/>
-        <element name="RemoteData" positionX="-63" positionY="-18" width="128" height="270"/>
-    </elements>
 </model>

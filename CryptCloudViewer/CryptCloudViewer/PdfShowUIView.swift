@@ -49,6 +49,7 @@ struct PDFViewRepresentable: UIViewRepresentable {
 struct PdfShowUIView: View {
     let storage: String
     let fileid: String
+    @State var title = ""
     @State var remoteItem: RemoteItem?
     @State var remoteData: RemoteStream?
     @State var document: PDFDocument?
@@ -206,6 +207,7 @@ struct PdfShowUIView: View {
                     .cornerRadius(10)
             }
         }
+        .navigationTitle(title)
         .task {
             isLoading = true
             defer {
@@ -214,9 +216,10 @@ struct PdfShowUIView: View {
             await Task.yield()
             remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
             guard let remoteItem else { return }
+            title = remoteItem.name
             remoteData = await remoteItem.open()
             if let remoteData {
-                guard let docData = try? await remoteData.read(position: 0, length: Int(remoteData.size)) else {
+                guard let docData = try? await remoteData.read() else {
                     return
                 }
                 if docData.count != remoteData.size {

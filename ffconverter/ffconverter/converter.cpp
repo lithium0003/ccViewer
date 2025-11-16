@@ -328,7 +328,6 @@ void decode_thread(struct convert_param *stream)
     }
     else {
         std::shared_ptr<Converter::VideoStreamInfo> info(new Converter::VideoStreamInfo(converter));
-        info->video_clock_start = 0;
         info->video_start_pts = 0;
         info->video_eof = true;
         converter->video_info.push_back(info);
@@ -610,8 +609,17 @@ void video_dummy_thread(Converter *is)
     int64_t count = 0;
 
     av_log(NULL, AV_LOG_INFO, "video_thread %d read loop\n", index);
+    is->video_info[index]->video_clock_start = 0;
     while (true) {
         if (is->IsQuit()) break;
+        if(!__builtin_isfinite(is->audio_info[index]->audio_last_pts)) {
+            av_usleep(1000);
+            continue;
+        }
+        if(pts - 1 > is->audio_info[index]->audio_last_pts) {
+            av_usleep(100);
+            continue;
+        }
 
         int key = 1;
         if (pts > is->media_duration) {
@@ -1327,7 +1335,6 @@ quit_audio:
     av_log(NULL, AV_LOG_INFO, "audio_thread loop %d end\n", index);
     delete [] silence_buf;
     av_log(NULL, AV_LOG_INFO, "audio_thread %d end\n", index);
-    is->audio_info[index]->audio_fin = true;
     return;
 }
 

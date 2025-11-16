@@ -62,7 +62,7 @@ public class LocalStorage: RemoteStorageBase {
         }
         let id = getIdFromURL(url: item)
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
-        context.perform {
+        context.performAndWait {
             var prevParent: String?
             var prevPath: String?
             

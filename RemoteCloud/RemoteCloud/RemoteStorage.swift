@@ -73,6 +73,7 @@ public class RemoteItem {
     public let size: Int64
     public let path: String
     public let parent: String
+    public let parentDate: Date?
     public let isFolder: Bool
     public let mDate: Date?
     public let cDate: Date?
@@ -94,6 +95,7 @@ public class RemoteItem {
             self.size = 0
             self.path = "\(storage):/"
             self.parent = ""
+            self.parentDate = nil
             self.isFolder = true
             self.mDate = nil
             self.cDate = nil
@@ -121,6 +123,7 @@ public class RemoteItem {
             }
             self.isFolder = origin.folder
             self.parent = parent
+            self.parentDate = origin.parentDate
             self.mDate = origin.mdate
             self.cDate = origin.cdate
             self.substart = origin.substart
@@ -188,7 +191,7 @@ public class RemoteStream {
         self.size = size
     }
     
-    public func read(position: Int64, length: Int, onProgress: ((Int) async throws ->Void)? = nil) async throws -> Data? {
+    public func read(position: Int64 = 0, length: Int = -1, onProgress: ((Int) async throws ->Void)? = nil) async throws -> Data? {
         return nil
     }
     
@@ -591,7 +594,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     
     public var rootName: String = ""
     
-    public func read(fileId: String, start: Int64?, length: Int64?) async throws -> Data? {
+    public func read(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
         try await readFile(fileId: fileId, start: start, length: length)
     }
     
@@ -620,7 +623,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     }
 
     public func get(fileId: String) async -> RemoteItem? {
-        await fileId.contains("\t") ? getsubitem(fileId: fileId) : getRaw(fileId: fileId)
+        await fileId.contains("\t") ? getSubitem(fileId: fileId) : getRaw(fileId: fileId)
     }
     
     public func get(path: String) async -> RemoteItem? {

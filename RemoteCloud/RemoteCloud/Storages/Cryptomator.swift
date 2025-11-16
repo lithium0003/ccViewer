@@ -597,7 +597,7 @@ public class Cryptomator: ChildStorage {
         guard let vaultItem else {
             return nil
         }
-        guard let token = try? await vaultItem.read(start: 0, length: vaultItem.size) else {
+        guard let token = try? await vaultItem.read() else {
             return nil
         }
 
@@ -616,7 +616,7 @@ public class Cryptomator: ChildStorage {
         guard let masterItem else {
             return nil
         }
-        guard let masterkeyContent = try? await masterItem.read(start: 0, length: masterItem.size) else {
+        guard let masterkeyContent = try? await masterItem.read() else {
             return nil
         }
 
@@ -648,7 +648,7 @@ public class Cryptomator: ChildStorage {
     func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, context: NSManagedObjectContext) {
         os_log("%{public}@", log: log, type: .debug, "storeItem(cryptomator:\(storageName ?? "")) \(name)")
         
-        context.perform {
+        context.performAndWait {
             let newid = "\(dirId)/\(deflatedName)"
             let newname = name
             let newcdate = item.cDate
@@ -704,7 +704,7 @@ public class Cryptomator: ChildStorage {
                     continue
                 }
 
-                guard let namedata = try? await nameitem.read(start: 0, length: nameitem.size) else {
+                guard let namedata = try? await nameitem.read() else {
                     continue
                 }
                 guard let orgname = String(bytes: namedata, encoding: .utf8) else {
@@ -716,7 +716,7 @@ public class Cryptomator: ChildStorage {
                 }
 
                 if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }) {
-                    guard let dirdata = try? await diridItem.read(start: 0, length: diridItem.size) else {
+                    guard let dirdata = try? await diridItem.read() else {
                         continue
                     }
                     guard let subdirId = String(bytes: dirdata, encoding: .utf8) else {
@@ -744,7 +744,7 @@ public class Cryptomator: ChildStorage {
                     let subitems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), item.name])
 
                     if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }) {
-                        guard let dirdata = try? await diridItem.read(start: 0, length: diridItem.size) else {
+                        guard let dirdata = try? await diridItem.read() else {
                             continue
                         }
                         guard let subdirId = String(bytes: dirdata, encoding: .utf8) else {

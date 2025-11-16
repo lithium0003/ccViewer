@@ -30,6 +30,10 @@
 		3FA46CE5238496B7007ACC82 /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE3238496B7007ACC82 /* cache.xcdatamodeld */; };
 		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
 		3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE215872394F39300CD2A19 /* FilesStorage.swift */; };
+		BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */; };
+		BE0C16BA2EC89E1400C78FEC /* archive_entry.h in Headers */ = {isa = PBXBuildFile; fileRef = BE0C16B92EC89E1400C78FEC /* archive_entry.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BE0C16BB2EC89E1400C78FEC /* archive.h in Headers */ = {isa = PBXBuildFile; fileRef = BE0C16B82EC89E1400C78FEC /* archive.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BE0C16C62EC8A0C300C78FEC /* libarchive.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0C16C52EC8A0BC00C78FEC /* libarchive.tbd */; };
 		BE186E512E99FAF5002F6CC8 /* SambaStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */; };
 		BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */ = {isa = PBXBuildFile; productRef = BE186E582E9A4A82002F6CC8 /* SMBClient */; };
 		BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D012EAFB806006DF15C /* GoogleSignIn */; };
@@ -62,6 +66,10 @@
 		3FA46CE4238496B7007ACC82 /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
 		3FE215872394F39300CD2A19 /* FilesStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesStorage.swift; sourceTree = "<group>"; };
+		BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessArchive.swift; sourceTree = "<group>"; };
+		BE0C16B82EC89E1400C78FEC /* archive.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive.h; sourceTree = "<group>"; };
+		BE0C16B92EC89E1400C78FEC /* archive_entry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive_entry.h; sourceTree = "<group>"; };
+		BE0C16C52EC8A0BC00C78FEC /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = usr/lib/libarchive.tbd; sourceTree = SDKROOT; };
 		BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SambaStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -72,6 +80,7 @@
 				BE2D3D042EAFB806006DF15C /* GoogleSignInSwift in Frameworks */,
 				BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */,
 				BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */,
+				BE0C16C62EC8A0C300C78FEC /* libarchive.tbd in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -82,6 +91,7 @@
 			children = (
 				3C14C44E225C69410044E4A7 /* SubItem.swift */,
 				3C14C451225CE19E0044E4A7 /* CueSheet.swift */,
+				BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */,
 			);
 			path = SubItem;
 			sourceTree = "<group>";
@@ -91,6 +101,7 @@
 			children = (
 				3CA2C92F2234952800481DB5 /* Products */,
 				3CA2C9302234952800481DB5 /* RemoteCloud */,
+				BE0C16C42EC8A0BC00C78FEC /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -105,6 +116,8 @@
 		3CA2C9302234952800481DB5 /* RemoteCloud */ = {
 			isa = PBXGroup;
 			children = (
+				BE0C16B82EC89E1400C78FEC /* archive.h */,
+				BE0C16B92EC89E1400C78FEC /* archive_entry.h */,
 				3CA2C95A2234E6F600481DB5 /* Assets.xcassets */,
 				3C0654A222384CD0003BD932 /* ChildStorage.swift */,
 				3CA2C95C2235569800481DB5 /* cloud.xcdatamodeld */,
@@ -141,6 +154,14 @@
 			path = Storages;
 			sourceTree = "<group>";
 		};
+		BE0C16C42EC8A0BC00C78FEC /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BE0C16C52EC8A0BC00C78FEC /* libarchive.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -148,6 +169,8 @@
 			isa = PBXHeadersBuildPhase;
 			files = (
 				3CA2C93F2234952800481DB5 /* RemoteCloud.h in Headers */,
+				BE0C16BA2EC89E1400C78FEC /* archive_entry.h in Headers */,
+				BE0C16BB2EC89E1400C78FEC /* archive.h in Headers */,
 			);
 		};
 /* End PBXHeadersBuildPhase section */
@@ -186,7 +209,7 @@
 				TargetAttributes = {
 					3CA2C92D2234952800481DB5 = {
 						CreatedOnToolsVersion = 10.1;
-						LastSwiftMigration = 1020;
+						LastSwiftMigration = 2610;
 					};
 				};
 			};
@@ -242,6 +265,7 @@
 				3C0654A52238D66D003BD932 /* NetworkStorage.swift in Sources */,
 				3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */,
 				3C0654A322384CD0003BD932 /* ChildStorage.swift in Sources */,
+				BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */,
 				3C14C44F225C69410044E4A7 /* SubItem.swift in Sources */,
 				3C14C454225DBB1A0044E4A7 /* LocalStorage.swift in Sources */,
 				3CA2C952223495E700481DB5 /* GoogleDriveStorage.swift in Sources */,
@@ -396,6 +420,7 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_OPTIMIZATION_LEVEL = s;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = RemoteCloud/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -410,9 +435,11 @@
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = Debug;
 		};
@@ -428,6 +455,7 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_OPTIMIZATION_LEVEL = s;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = RemoteCloud/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -442,9 +470,11 @@
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = Release;
 		};

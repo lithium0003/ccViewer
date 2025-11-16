@@ -553,7 +553,7 @@ public class SambaStorage: NetworkStorage {
     func storeItem(item: FileDirectoryInformation, path: String, context: NSManagedObjectContext) {
         print(path, item.fileName)
         let id = "\(path)/\(item.fileName)"
-        context.perform {
+        context.performAndWait {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
             if let result = try? context.fetch(fetchRequest) {

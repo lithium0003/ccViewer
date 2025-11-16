@@ -82,7 +82,7 @@ struct SelectItemsUIView: View {
                 doSort()
             }
             else {
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listsubitem(fileId: fileid)
+                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
                 items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
                 doSort()
             }

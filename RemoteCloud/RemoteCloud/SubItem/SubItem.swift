@@ -8,19 +8,130 @@
 
 import Foundation
 import CoreData
+internal import UniformTypeIdentifiers
 
 public protocol RemoteSubItem {
-    func listsubitem(fileId: String) async
-    func getsubitem(fileId: String) async -> RemoteItem?
+    func removeSubitem(fileId: String) async
+    func listSubitem(fileId: String) async
+    func getSubitem(fileId: String) async -> RemoteItem?
+}
+
+extension RemoteItem {
+    public var hasSubitems: Bool {
+        if let uti = UTType(filenameExtension: ext), uti.conforms(to: .archive) {
+            return true
+        }
+        if ext.lowercased() == "cue" {
+            return true
+        }
+        return false
+    }
+}
+
+extension RemoteData {
+    public var hasSubitems: Bool {
+        if let ext {
+            if let uti = UTType(filenameExtension: ext), uti.conforms(to: .archive) {
+                return true
+            }
+            if ext.lowercased() == "cue" {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 extension RemoteStorageBase: RemoteSubItem {
-    
-    public func listsubitem(fileId: String) async {
+    public func removeSubitem(fileId: String) async {
         guard let item = await getRaw(fileId: fileId) else {
             return
         }
-        if item.name.lowercased().hasSuffix(".cue") {
+        let itemid = item.id
+        let storage = storageName ?? ""
+        let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+        await backgroundContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
+            if let result = try? backgroundContext.fetch(fetchRequest) {
+                for object in result {
+                    backgroundContext.delete(object as! NSManagedObject)
+                }
+            }
+            fetchRequest.predicate = NSPredicate(format: "subid == %@ && storage == %@", itemid, storage)
+            if let result = try? backgroundContext.fetch(fetchRequest) {
+                for object in result {
+                    backgroundContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
+        await backgroundContext.perform {
+            try? backgroundContext.save()
+        }
+    }
+    
+    public func listSubitem(fileId: String) async {
+        guard let item = await getRaw(fileId: fileId) else {
+            return
+        }
+        if let uti = UTType(filenameExtension: item.ext), uti.conforms(to: .archive) {
+            let itemid = item.id
+            let mDate = item.mDate
+            let storage = storageName ?? ""
+            let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
+            var pass = false
+            await backgroundContext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
+                if let result = try? backgroundContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                    for subItem in items {
+                        pass = mDate == subItem.parentDate
+                    }
+                }
+            }
+            if pass { return }
+            await backgroundContext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemid, storage)
+                if let result = try? backgroundContext.fetch(fetchRequest) {
+                    for object in result {
+                        backgroundContext.delete(object as! NSManagedObject)
+                    }
+                }
+            }
+            let content = await processArchive(item: item)
+            for (subItem, subInfo) in content {
+                let id = "\(item.id)\t\(subItem)"
+                let comp = subItem.components(separatedBy: "/").filter({ !$0.isEmpty })
+                let name = comp.last ?? ""
+                let parent: String
+                if comp.count > 1 {
+                    parent = "\(item.id)\t\(comp.dropLast().joined(separator: "/"))/"
+                }
+                else {
+                    parent = item.id
+                }
+                
+                let newitem = RemoteData(context: backgroundContext)
+                newitem.storage = self.storageName
+                newitem.id = id
+                newitem.name = name
+                newitem.ext = name.components(separatedBy: ".").last ?? ""
+                newitem.cdate = subInfo.cdata
+                newitem.mdate = subInfo.mdate
+                newitem.folder = subItem.hasSuffix("/")
+                newitem.size = subInfo.size
+                newitem.hashstr = ""
+                newitem.parent = parent
+                newitem.parentDate = item.mDate
+                newitem.path = item.path + "/\(subItem)"
+                newitem.subid = item.id
+            }
+            await backgroundContext.perform {
+                try? backgroundContext.save()
+            }
+        }
+        else if item.ext.lowercased() == "cue" {
             let backgroundContext = CloudFactory.shared.data.persistentContainer.newBackgroundContext()
             let itemid = item.id
             let storage = storageName ?? ""
@@ -34,7 +145,7 @@ extension RemoteStorageBase: RemoteSubItem {
                 }
             }
             let stream = await item.open()
-            guard let data = try? await stream.read(position: 0, length: Int(item.size)) else {
+            guard let data = try? await stream.read() else {
                 return
             }
             guard let cue = CueSheet(data: data) else {
@@ -119,7 +230,7 @@ extension RemoteStorageBase: RemoteSubItem {
         }
     }
     
-    public func getsubitem(fileId: String) async -> RemoteItem? {
+    public func getSubitem(fileId: String) async -> RemoteItem? {
         let section = fileId.components(separatedBy: "\t")
         if section.count < 2 {
             return nil
@@ -127,7 +238,10 @@ extension RemoteStorageBase: RemoteSubItem {
         guard let item = await getRaw(fileId: section[0]) else {
             return nil
         }
-        if item.name.lowercased().hasSuffix(".cue") {
+        if let uti = UTType(filenameExtension: item.ext), uti.conforms(to: .archive) {
+            return await ArchiveRemoteItem(storage: item.storage, id: fileId)
+        }
+        else if item.ext.lowercased() == "cue" {
             return await CueSheetRemoteItem(storage: item.storage, id: fileId)
         }
         return nil

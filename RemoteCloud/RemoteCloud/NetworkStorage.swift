@@ -79,7 +79,7 @@ public class NetworkStorage: RemoteStorageBase {
     var cacheTokenDate: Date = Date(timeIntervalSince1970: 0)
     var tokenLife: TimeInterval = 0
     var lastCall = Date()
-    let callSemaphore = Semaphore(value: 10)
+    let callSemaphore = Semaphore(value: 5)
     let callWait = 0.2
     var cache_accessToken = ""
     var cache_refreshToken = ""
@@ -271,7 +271,7 @@ public class NetworkRemoteItem: RemoteItem {
 
 public class SlotStream: RemoteStream {
     static let slotcount = 50
-    static let slotadvance: Int64 = 5
+    static let slotadvance: Int64 = 2
     static let bufSize:Int64 = 2*1024*1024
     var error = false {
         didSet {
@@ -362,10 +362,8 @@ public class SlotStream: RemoteStream {
                     continue
                 }
                 if key <= p && p < key+Int64(buf.count) {
-                    print("pos \(p) key\(key)")
                     let s = Int(p - key)
                     let l = (len > buf.count - s) ? buf.count : len + s
-                    print("s\(s) l\(l) len\(len) count\(buf.count)")
                     ret += buf.subdata(in: s..<l)
                     len -= l-s
                     p += Int64(l-s)
@@ -384,7 +382,7 @@ public class SlotStream: RemoteStream {
         }
         
         func dataAvailable(pos: ClosedRange<Int64>) -> Bool {
-            return !buffer.allSatisfy({ $0.key > pos.lowerBound || $0.key + Int64($0.value.count) - 1 < pos.upperBound })
+            return !buffer.allSatisfy({ $0.key > pos.lowerBound || $0.key + Int64($0.value.count) < pos.upperBound })
         }
 
         func disposeBuffer() {
@@ -444,7 +442,7 @@ public class SlotStream: RemoteStream {
     func fillHeader() async {
         await initialized.signal()
     }
-    
+
     func firstFill() async {
         await withTaskGroup() { group in
             group.addTask { [self] in
@@ -460,7 +458,7 @@ public class SlotStream: RemoteStream {
             }
         }
     }
-            
+
     func subFillBuffer(pos: ClosedRange<Int64>) async {
         print("error on implimant")
         error = true
@@ -484,6 +482,9 @@ public class SlotStream: RemoteStream {
     }
     
     func subRead(position : Int64, length: Int) async throws -> Data? {
+        if position >= size {
+            return nil
+        }
         let len1 = (position + Int64(length) < size) ? Int64(length) : size - position
         let read_start = position
         let read_end = position + len1 - 1
@@ -523,20 +524,20 @@ public class SlotStream: RemoteStream {
         }
         return await buffer.read(position: position, length: Int(len1), read_start: read_start, read_end: read_end)
     }
-    
-    override public func read(position : Int64, length: Int, onProgress: ((Int) async throws ->Void)? = nil) async throws -> Data? {
-        print("read", position, length)
+
+    override public func read(position : Int64 = 0, length: Int = -1, onProgress: ((Int) async throws ->Void)? = nil) async throws -> Data? {
         if error {
             return nil
         }
-        print("read init wait", position, length)
-        guard await initialized.wait(timeout: .seconds(120)) == .success else {
+        guard await initialized.wait(timeout: .seconds(30)) == .success else {
             return nil
         }
-        print("read loop", position, length)
         var data = Data()
+        if position >= size {
+            return data
+        }
+        let length = length < 0 ? Int(size - position) : min(Int(size - position), length)
         for i in stride(from: 0, to: length, by: 1 * 1024 * 1024) {
-            print("read \(data.count)", position, length)
             let p = position + Int64(i)
             let len = min(length-i, 1*1024*1024)
             guard let d = try await subRead(position: p, length: len) else {
@@ -545,7 +546,6 @@ public class SlotStream: RemoteStream {
             data.append(d)
             try await onProgress?(Int(p))
         }
-        print("read done \(data.count)", position, length)
         return data
     }
 }

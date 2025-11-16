@@ -291,7 +291,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         let size = Int64(prop["getcontentlength"] ?? "0")
         let folder = prop["resourcetype"] == "collection"
         
-        await context.perform {
+        context.performAndWait {
             var prevParent: String?
             var prevPath: String?
             
@@ -609,14 +609,12 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 }
                 //print(url)
                 request = URLRequest(url: url)
-                if start != nil || length != nil {
-                    let s = start ?? 0
-                    if length == nil {
-                        request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                    }
-                    else {
-                        request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
-                    }
+                let s = start ?? 0
+                if length == nil {
+                    request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
+                }
+                else {
+                    request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
                 }
 
                 guard let (data, _) = try? await URLSession.shared.data(for: request, delegate: self) else {

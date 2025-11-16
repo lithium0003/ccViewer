@@ -39,6 +39,7 @@
 		BE0572EC2EC0CC9A00515817 /* RemoteCloud.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = RemoteCloud.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE0573042EC1BBBC00515817 /* ffconverter.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = ffconverter.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE0573072EC1C8FF00515817 /* GoogleCast.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GoogleCast.xcframework; path = "../GoogleCastSDK-ios-4.8.4_dynamic_xcframework/GoogleCast.xcframework"; sourceTree = "<group>"; };
+		BE0C16AC2EC8804D00C78FEC /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/usr/lib/libarchive.tbd; sourceTree = DEVELOPER_DIR; };
 		BE64E9972EA4044800BD4A7E /* CryptCloudViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CryptCloudViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -98,6 +99,7 @@
 		BE64E9B52EA4BC5200BD4A7E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				BE0C16AC2EC8804D00C78FEC /* libarchive.tbd */,
 				BE0573072EC1C8FF00515817 /* GoogleCast.xcframework */,
 				BE0573042EC1BBBC00515817 /* ffconverter.framework */,
 				BE0572EB2EC0CC9A00515817 /* ffplayer.framework */,
@@ -144,6 +146,7 @@
 				TargetAttributes = {
 					BE64E9962EA4044800BD4A7E = {
 						CreatedOnToolsVersion = 26.0.1;
+						LastSwiftMigration = 2610;
 					};
 				};
 			};
@@ -319,9 +322,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CryptCloudViewer/CryptCloudViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 92;
+				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_APP_SANDBOX = YES;
@@ -329,6 +333,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = CryptCloudViewer/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -361,6 +366,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -375,9 +381,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CryptCloudViewer/CryptCloudViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 92;
+				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_APP_SANDBOX = YES;
@@ -385,6 +392,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = CryptCloudViewer/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";

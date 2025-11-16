@@ -10,6 +10,7 @@ import SwiftUI
 import RemoteCloud
 import ffplayer
 import Combine
+internal import UniformTypeIdentifiers
 
 struct OpenfileUIView: View {
     let storages: [String]

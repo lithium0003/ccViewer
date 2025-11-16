@@ -76,6 +76,7 @@ struct TouchTestViewRepresentable: UIViewRepresentable {
 
 public struct FFPlayerUIView: View {
     let bridge: StreamBridge
+    @Environment(\.dismiss) private var dismiss
     @Binding var shuldDismiss: Bool
 
     @State var cancellables: Set<AnyCancellable> = []
@@ -200,6 +201,7 @@ public struct FFPlayerUIView: View {
                         if let im = FrameworkResource.getImage(name: "close") {
                             Button {
                                 bridge.onClose(true)
+                                dismiss()
                             } label: {
                                 Image(uiImage: im)
                             }

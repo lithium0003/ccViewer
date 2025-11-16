@@ -76,6 +76,7 @@ struct EditItemsUIView: View {
 
     @State var cancellables = Set<AnyCancellable>()
 
+    @State var editable = true
     @State private var mkdirPopover = false
     @State private var renamePopover = false
     @State private var chtimePopover = false
@@ -106,10 +107,6 @@ struct EditItemsUIView: View {
         return formatter2
     }
 
-    func hasSubItem(name: String?) -> Bool {
-        return name?.lowercased().hasSuffix(".cue") ?? false
-    }
-
     func doSort() {
         switch sortOrder {
         case 0:
@@ -136,16 +133,32 @@ struct EditItemsUIView: View {
         items = folders + files
     }
 
-    func reload() async {
-        if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+    func reload(_ force: Bool = false) async {
+        if fileid.contains("\t") {
+            editable = false
+            title = fileid.components(separatedBy: "\t").last ?? ""
+            items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+            doSort()
+        }
+        else if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
             title = item.path
             if item.isFolder {
-                await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                if force {
+                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                }
                 items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+                if items.isEmpty, !force {
+                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                    items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+                }
                 doSort()
             }
             else {
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listsubitem(fileId: fileid)
+                editable = false
+                if force {
+                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.removeSubitem(fileId: fileid)
+                }
+                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
                 items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
                 doSort()
             }
@@ -153,7 +166,7 @@ struct EditItemsUIView: View {
     }
 
     func checkDupName(testNames: [String]) async -> [Bool] {
-        await reload()
+        await reload(true)
         
         var ret: [Bool] = []
         for testName in testNames {
@@ -317,7 +330,7 @@ struct EditItemsUIView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(.primary)
-                        .disabled(!selection.isEmpty)
+                        .disabled(!selection.isEmpty || !editable)
                         .photosPicker(isPresented: $photoPresented, selection: $selectedPhotoItems)
                         .fileImporter(isPresented: $importerPresented, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
                             switch result {
@@ -332,7 +345,7 @@ struct EditItemsUIView: View {
                                         await uploadFile(url: url, service: service, parentId: fileid, scoped: true)
                                     }
                                     try? await Task.sleep(for: .seconds(5))
-                                    await reload()
+                                    await reload(true)
                                 }
                             case .failure(let error):
                                 print(error.localizedDescription)
@@ -390,7 +403,7 @@ struct EditItemsUIView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(.primary)
-                        .disabled(!selection.isEmpty)
+                        .disabled(!selection.isEmpty || !editable)
                         .alert("New folder", isPresented: $mkdirPopover) {
                             TextField("new name", text: $textNewName)
                             
@@ -416,7 +429,7 @@ struct EditItemsUIView: View {
                                         return
                                     }
                                     try? await Task.sleep(for: .seconds(1))
-                                    await reload()
+                                    await reload(true)
                                 }
                             }
                         }
@@ -435,7 +448,7 @@ struct EditItemsUIView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(.primary)
-                        .disabled(selection.count != 1)
+                        .disabled(selection.count != 1 || !editable)
                         .alert("Rename", isPresented: $renamePopover) {
                             TextField("new name", text: $textNewName)
                             
@@ -465,7 +478,7 @@ struct EditItemsUIView: View {
                                     }
                                     selection.removeAll()
                                     try? await Task.sleep(for: .seconds(1))
-                                    await reload()
+                                    await reload(true)
                                 }
                             }
                         }
@@ -484,7 +497,7 @@ struct EditItemsUIView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(.primary)
-                        .disabled(selection.count != 1)
+                        .disabled(selection.count != 1 || !editable)
                         .popover(isPresented: $chtimePopover) {
                             VStack {
                                 DatePicker("modified time", selection: $dateModified, displayedComponents: [.date, .hourAndMinute])
@@ -516,7 +529,7 @@ struct EditItemsUIView: View {
                                             }
                                             selection.removeAll()
                                             try? await Task.sleep(for: .seconds(1))
-                                            await reload()
+                                            await reload(true)
                                         }
                                     }
                                     .buttonStyle(.bordered)
@@ -566,14 +579,14 @@ struct EditItemsUIView: View {
                                 }
                                 try? await Task.sleep(for: .seconds(1))
                                 selection.removeAll()
-                                await reload()
+                                await reload(true)
                             }
                         } label: {
                             Text("\(Image("move").renderingMode(.template)) Move")
                         }
                         .buttonStyle(.bordered)
                         .tint(.primary)
-                        .disabled(selection.isEmpty)
+                        .disabled(selection.isEmpty || !editable)
 
                         Button {
                             deleteAlert = true
@@ -582,7 +595,7 @@ struct EditItemsUIView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
-                        .disabled(selection.isEmpty)
+                        .disabled(selection.isEmpty || !editable)
                         .alert("Delete", isPresented: $deleteAlert) {
                             Button("Delete", role: .destructive) {
                                 deleteAlert = false
@@ -603,7 +616,7 @@ struct EditItemsUIView: View {
                                     }
                                     selection.removeAll()
                                     try? await Task.sleep(for: .seconds(1))
-                                    await reload()
+                                    await reload(true)
                                 }
                             }
                             Button("Cancel", role: .cancel) {
@@ -613,8 +626,7 @@ struct EditItemsUIView: View {
                             Text("\(selection.count) item(s) will be deleted.")
                         }
                     }
-                    .
-                    listRowBackground(Color("NavigationEditColor"))
+                    .listRowBackground(Color("NavigationEditColor"))
                     FlowLayout(alignment: .leading) {
                         Button {
                             isLoading = true
@@ -635,7 +647,7 @@ struct EditItemsUIView: View {
                                 }
                                 selection.removeAll()
                                 try? await Task.sleep(for: .seconds(1))
-                                await reload()
+                                await reload(true)
                             }
                         } label: {
                             Text("\(Image(systemName: "eraser")) Unmark")
@@ -663,7 +675,7 @@ struct EditItemsUIView: View {
                                 await CloudFactory.shared.data.setPlaylist(playlistName: "default", items: playList)
                                 selection.removeAll()
                                 try? await Task.sleep(for: .seconds(1))
-                                await reload()
+                                await reload(true)
                             }
                         } label: {
                             Text("\(Image("addplay").renderingMode(.template)) Add playlist")
@@ -744,7 +756,7 @@ struct EditItemsUIView: View {
             .background(Color("NavigationEditColor"))
             .searchable(text: $searchText)
             .refreshable {
-                await reload()
+                await reload(true)
             }
 
             if isLoading {
@@ -782,7 +794,7 @@ struct EditItemsUIView: View {
 
             await reload()
         }
-        .navigationTitle("")
+        .navigationTitle(title)
         .toolbar {
             ToolbarItem() {
                 Menu {

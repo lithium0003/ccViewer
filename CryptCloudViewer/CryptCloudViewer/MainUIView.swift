@@ -70,7 +70,7 @@ enum HomePath: Hashable {
         case let .items(storage: storage, fileid: fileid):
             "\(storage):\(fileid)"
         case .open:
-            ""
+            "Open"
         case let .edit(storage: storage, fileid: fileid):
             "\(storage):\(fileid)"
         case .setting:

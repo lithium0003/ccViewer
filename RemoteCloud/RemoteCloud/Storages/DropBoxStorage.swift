@@ -186,7 +186,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         let size = item["size"] as? Int64 ?? 0
         let hashstr = item["content_hash"] as? String ?? ""
         
-        context.perform {
+        context.performAndWait {
             var prevParent: String?
             
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -323,14 +323,12 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
                     throw RetryError.Retry
                 }
                 request.setValue(String(bytes: postData, encoding: .utf8) ?? "", forHTTPHeaderField: "Dropbox-API-Arg")
-                if start != nil || length != nil {
-                    let s = start ?? 0
-                    if length == nil {
-                        request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                    }
-                    else {
-                        request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
-                    }
+                let s = start ?? 0
+                if length == nil {
+                    request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
+                }
+                else {
+                    request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
                 }
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry

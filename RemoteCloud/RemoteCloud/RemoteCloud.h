@@ -16,4 +16,5 @@ FOUNDATION_EXPORT const unsigned char RemoteCloudVersionString[];
 
 // In this header, you should import all the public headers of your framework using statements like #import <RemoteCloud/PublicHeader.h>
 
-
+#import <RemoteCloud/archive.h>
+#import <RemoteCloud/archive_entry.h>

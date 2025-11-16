@@ -199,9 +199,7 @@ struct ImageShowUIView: View {
                     defer {
                         remoteData.isLive = false
                     }
-                    let data = try? await remoteData.read(position: 0, length: Int(remoteData.size), onProgress: { pos in
-                        print(pos)
-                    })
+                    let data = try? await remoteData.read()
                     if let data, let im = UIImage(data: data) {
                         images.append(im)
                         imageIdx = 0
@@ -221,96 +219,103 @@ struct ImageShowUIView: View {
             loadingTask = Task {
                 var ret: [Int: UIImage] = [:]
                 ret[curIdx] = image
-                var tasks: [Task<(Int, UIImage)?, Never>] = []
-                for k in 1..<files.count {
-                    if Task.isCancelled {
-                        break
-                    }
-                    if curIdx + k < files.count {
-                        let itemData = files[curIdx + k]
-                        if let id = itemData.id {
-                            let task = Task { ()->(Int, UIImage)? in
-                                try? await withThrowingTaskGroup { group in
-                                    group.addTask { ()->(Int, UIImage)? in
-                                        let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
-                                        if let remoteData = await item?.open() {
-                                            defer {
-                                                remoteData.isLive = false
-                                            }
-                                            let data = try? await remoteData.read(position: 0, length: Int(remoteData.size))
-                                            if let data, let im = UIImage(data: data) {
-                                                return (curIdx + k, im)
-                                            }
-                                        }
-                                        return nil
-                                    }
-                                    group.addTask {
-                                        try await Task.sleep(for: .seconds(10))
-                                        throw CancellationError()
-                                    }
-                                    let ret = try await group.next()!
-                                    group.cancelAll()
-                                    return ret
-                                }
-                            }
-                            tasks.append(task)
+                await withTaskGroup { group0 in
+                    var count = 0
+                    for k in 1..<files.count {
+                        if Task.isCancelled {
+                            break
                         }
-                    }
-                    if curIdx - k >= 0 {
-                        let itemData = files[curIdx - k]
-                        if let id = itemData.id {
-                            let task = Task { ()->(Int, UIImage)? in
-                                try? await withThrowingTaskGroup { group in
-                                    group.addTask { ()->(Int, UIImage)? in
-                                        let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
-                                        if let remoteData = await item?.open() {
-                                            defer {
-                                                remoteData.isLive = false
+                        if curIdx + k < files.count {
+                            let itemData = files[curIdx + k]
+                            if let id = itemData.id {
+                                group0.addTask {
+                                    try? await withThrowingTaskGroup { group in
+                                        group.addTask { ()->(Int, UIImage)? in
+                                            let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
+                                            try Task.checkCancellation()
+                                            if let remoteData = await item?.open() {
+                                                defer {
+                                                    remoteData.isLive = false
+                                                }
+                                                try Task.checkCancellation()
+                                                let data = try? await remoteData.read()
+                                                try Task.checkCancellation()
+                                                if let data, let im = UIImage(data: data) {
+                                                    return (curIdx + k, im)
+                                                }
                                             }
-                                            let data = try? await remoteData.read(position: 0, length: Int(remoteData.size))
-                                            if let data, let im = UIImage(data: data) {
-                                                return (curIdx - k, im)
-                                            }
+                                            return nil
                                         }
-                                        return nil
+                                        group.addTask {
+                                            try await Task.sleep(for: .seconds(10))
+                                            print("timeout")
+                                            return nil
+                                        }
+                                        let ret = try await group.next()!
+                                        group.cancelAll()
+                                        return ret
                                     }
-                                    group.addTask {
-                                        try await Task.sleep(for: .seconds(10))
-                                        throw CancellationError()
-                                    }
-                                    let ret = try await group.next()!
-                                    group.cancelAll()
-                                    return ret
                                 }
+                                count += 1
                             }
-                            tasks.append(task)
                         }
-                    }
-                    if tasks.count > 5 {
-                        if let first = tasks.first {
-                            if let (i, im) = await first.value {
+                        if curIdx - k >= 0 {
+                            let itemData = files[curIdx - k]
+                            if let id = itemData.id {
+                                group0.addTask {
+                                    try? await withThrowingTaskGroup { group in
+                                        group.addTask { ()->(Int, UIImage)? in
+                                            let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
+                                            try Task.checkCancellation()
+                                            if let remoteData = await item?.open() {
+                                                defer {
+                                                    remoteData.isLive = false
+                                                }
+                                                try Task.checkCancellation()
+                                                let data = try? await remoteData.read()
+                                                try Task.checkCancellation()
+                                                if let data, let im = UIImage(data: data) {
+                                                    return (curIdx - k, im)
+                                                }
+                                            }
+                                            return nil
+                                        }
+                                        group.addTask {
+                                            try await Task.sleep(for: .seconds(10))
+                                            print("timeout")
+                                            return nil
+                                        }
+                                        let ret = try await group.next()!
+                                        group.cancelAll()
+                                        return ret
+                                    }
+                                }
+                                count += 1
+                            }
+                        }
+                        while count > 1 {
+                            if let next = await group0.next(), let (i, im) = next {
                                 ret[i] = im
                                 images = ret.sorted(by: { $0.key < $1.key }).map(\.value)
                                 if let idx = images.firstIndex(of: image!) {
                                     imageIdx = idx
                                 }
                             }
-                            tasks.removeFirst()
+                            count -= 1
                         }
                     }
-                }
-                for task in tasks {
-                    if Task.isCancelled {
-                        task.cancel()
-                        _ = await task.value
-                        continue
-                    }
-                    if let (i, im) = await task.value {
-                        ret[i] = im
-                        images = ret.sorted(by: { $0.key < $1.key }).map(\.value)
-                        if let idx = images.firstIndex(of: image!) {
-                            imageIdx = idx
+                    while count > 0 {
+                        if Task.isCancelled {
+                            break
                         }
+                        if let next = await group0.next(), let (i, im) = next {
+                            ret[i] = im
+                            images = ret.sorted(by: { $0.key < $1.key }).map(\.value)
+                            if let idx = images.firstIndex(of: image!) {
+                                imageIdx = idx
+                            }
+                        }
+                        count -= 1
                     }
                 }
                 totalImages = images.count

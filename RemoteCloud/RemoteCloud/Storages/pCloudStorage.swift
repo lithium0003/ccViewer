@@ -212,7 +212,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         let size = item["size"] as? Int64 ?? 0
         let hashint = item["hash"] as? Int
         
-        context.perform {
+        context.performAndWait {
             var prevParent: String?
             var prevPath: String?
             
@@ -323,16 +323,14 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 var request2: URLRequest = URLRequest(url: URL(string: downLink)!)
                 request2.httpMethod = "GET"
                 request2.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-                if start != nil || length != nil {
-                    let s = start ?? 0
-                    if length == nil {
-                        request2.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                    }
-                    else {
-                        request2.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
-                    }
+                let s = start ?? 0
+                if length == nil {
+                    request2.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
                 }
-                
+                else {
+                    request2.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
+                }
+
                 guard let (data2, _) = try? await URLSession.shared.data(for: request2) else {
                     throw RetryError.Retry
                 }

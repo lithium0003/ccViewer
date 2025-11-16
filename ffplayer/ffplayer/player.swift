@@ -501,7 +501,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         if let imageitem = await CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
             if let imagestream = await CloudFactory.shared.storageList.get(storage)?.get(fileId: imageitem.id ?? "")?.open() {
                 
-                if let data = try? await imagestream.read(position: 0, length: Int(imageitem.size)), let image = UIImage(data: data) {
+                if let data = try? await imagestream.read(), let image = UIImage(data: data) {
                     self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
                         return image
                     }
@@ -680,14 +680,14 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                             task.cancel()
                             if idx == curIdx {
                                 curIdx += 1
-                                if !playlist {
+                                if ret >= 0 && !playlist {
                                     Task {
                                         await CloudFactory.shared.data.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: playPos / mediaDuration)
                                     }
                                 }
                             }
                             else {
-                                if !playlist {
+                                if ret >= 0 && !playlist {
                                     Task {
                                         await CloudFactory.shared.data.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
                                     }

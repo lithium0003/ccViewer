@@ -48,10 +48,9 @@ struct ItemsUIView: View {
     @State var uploading = false
     @State var cancellables = Set<AnyCancellable>()
 
-    @State var isLoopPlay = UserDefaults.standard.bool(forKey: "loop")
-    @State var isShufflePlay = UserDefaults.standard.bool(forKey: "shuffle")
-    
-    @State var isCasting = Converter.IsCasting()
+    @State var isCasting = false
+    @State var isLoopPlay = false
+    @State var isShufflePlay = false
 
     let formatString = DateFormatter.dateFormat(fromTemplate: "yyyyMMdd", options: 0, locale: Locale.current)!
     var f: DateFormatter {
@@ -71,10 +70,6 @@ struct ItemsUIView: View {
         formatter2.allowedUnits = [.useAll]
         formatter2.countStyle = .file
         return formatter2
-    }
-
-    func hasSubItem(name: String?) -> Bool {
-        return name?.lowercased().hasSuffix(".cue") ?? false
     }
 
     func doSort() {
@@ -107,17 +102,32 @@ struct ItemsUIView: View {
         itemMark = await CloudFactory.shared.data.getMark(storage: storage, targetIDs: items.map({ $0.id ?? "" }), parentID: fileid)
     }
     
-    func reload() async {
-        if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+    func reload(_ force: Bool = false) async {
+        if fileid.contains("\t") {
+            title = fileid.components(separatedBy: "\t").last ?? ""
+            items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+            doSort()
+            await getMarks()
+        }
+        else if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
             title = item.path
             if item.isFolder {
-                await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                if force {
+                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                }
                 items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+                if items.isEmpty, !force {
+                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
+                    items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
+                }
                 doSort()
                 await getMarks()
             }
             else {
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listsubitem(fileId: fileid)
+                if force {
+                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.removeSubitem(fileId: fileid)
+                }
+                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
                 items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
                 doSort()
                 await getMarks()
@@ -172,7 +182,7 @@ struct ItemsUIView: View {
                             }
                             .listRowBackground(Color("FolderColor"))
                         }
-                        else if hasSubItem(name: item.name) {
+                        else if item.hasSubitems {
                             NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
                                 VStack(alignment: .leading) {
                                     Text(verbatim: item.name ?? "")
@@ -250,7 +260,7 @@ struct ItemsUIView: View {
             .searchable(text: $searchText)
             .refreshable {
                 isLoading = true
-                await reload()
+                await reload(true)
                 isLoading = false
             }
 
@@ -373,15 +383,9 @@ struct ItemsUIView: View {
             }
         }
         .onAppear() {
-            isLoading = true
-            Task {
-                defer {
-                    isLoading = false
-                }
-                try? await Task.sleep(for: .milliseconds(300))
-                await reload()
-                isCasting = Converter.IsCasting()
-            }
+            isCasting = Converter.IsCasting()
+            isLoopPlay = UserDefaults.standard.bool(forKey: "loop")
+            isShufflePlay = UserDefaults.standard.bool(forKey: "shuffle")
         }
         .onDisappear {
             isCasting = false
@@ -401,8 +405,15 @@ struct ItemsUIView: View {
                     }
                 }
                 .store(in: &cancellables)
+
+            isLoading = true
+            defer {
+                isLoading = false
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            await reload()
         }
-        .navigationTitle("")
+        .navigationTitle(title)
         .toolbar {
             ToolbarItem() {
                 NavigationLink(value: HomePath.edit(storage: storage, fileid: fileid)) {

@@ -35,8 +35,6 @@ class PlaylistDocument: UIDocument {
 }
 
 public class dataItems {
-
-    @MainActor
     public func listData(storage: String, parentID: String) async -> [RemoteData]  {
         let viewContext = persistentContainer.viewContext
         
@@ -443,7 +441,6 @@ public class dataItems {
         }
     }
     
-    @MainActor
     public func getImage(storage: String, parentId: String, baseName: String) async -> RemoteData? {
         let viewContext = persistentContainer.viewContext
         
@@ -472,21 +469,23 @@ public class dataItems {
         }
         return nil
     }
-    
-    @MainActor
+
     public func getData(storage: String, fileId: String) async -> RemoteData? {
         let viewContext = self.persistentContainer.viewContext
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-        return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+        return await viewContext.perform {
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+        }
     }
 
-    @MainActor
     public func getData(path: String) async -> RemoteData? {
         let viewContext = self.persistentContainer.viewContext
-        let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchrequest.predicate = NSPredicate(format: "path == %@", path)
-        return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+        return await viewContext.perform {
+            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchrequest.predicate = NSPredicate(format: "path == %@", path)
+            return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+        }
     }
 
     // MARK: - Core Data stack
@@ -525,20 +524,4 @@ public class dataItems {
         })
         return container
     }()
-
-    // MARK: - Core Data Saving support
-
-    public func saveContext () {
-        let context = persistentContainer.viewContext
-        if context.hasChanges {
-            do {
-                try context.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nserror = error as NSError
-                fatalError("Unresolved error \(nserror), \(nserror.userInfo)")
-            }
-        }
-    }
 }

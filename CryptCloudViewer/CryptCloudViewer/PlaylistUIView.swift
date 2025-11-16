@@ -6,10 +6,11 @@
 //
 
 import SwiftUI
-
-import RemoteCloud
 import Combine
 internal import UniformTypeIdentifiers
+
+import RemoteCloud
+import ffconverter
 
 struct PlayItem: Codable, Identifiable, Transferable {
     var id: String {
@@ -55,8 +56,9 @@ struct PlaylistUIView: View {
     @State var uploading = false
     @State var cancellables = Set<AnyCancellable>()
 
-    @State var isLoopPlay = UserDefaults.standard.bool(forKey: "loop")
-    @State var isShufflePlay = UserDefaults.standard.bool(forKey: "shuffle")
+    @State var isCasting = false
+    @State var isLoopPlay = false
+    @State var isShufflePlay = false
 
     let formatString = DateFormatter.dateFormat(fromTemplate: "yyyyMMdd", options: 0, locale: Locale.current)!
     var f: DateFormatter {
@@ -91,7 +93,7 @@ struct PlaylistUIView: View {
                 await CloudFactory.shared.storageList.get(storage)?.list(path: path)
                 if fileid.contains("\t") {
                     let baseFileid = fileid.components(separatedBy: "\t")[0]
-                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listsubitem(fileId: baseFileid)
+                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: baseFileid)
                 }
                 if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
                     newItems[uuid] = item
@@ -206,7 +208,18 @@ struct PlaylistUIView: View {
                                     .font(.largeTitle)
                             }
                             .onTapGesture {
-                                env.path.append(.open(storages: [items[id]?.storage ?? ""], fileids: [items[id]?.id ?? ""], playlist: true))
+                                if Converter.IsCasting() {
+                                    isLoading = true
+                                    Task {
+                                        defer {
+                                            isLoading = false
+                                        }
+                                        await playConverter(storages: [items[id]?.storage ?? ""], fileids: [items[id]?.id ?? ""], playlist: true)
+                                    }
+                                }
+                                else {
+                                    env.path.append(HomePath.open(storages: [items[id]?.storage ?? ""], fileids: [items[id]?.id ?? ""], playlist: true))
+                                }
                             }
                         }
                         .onMove(perform: rowReplace)
@@ -261,12 +274,31 @@ struct PlaylistUIView: View {
                         .buttonStyle(.glass)
                     }
                     Spacer()
-                    Button {
-                        
-                    } label: {
-                        Image("cast").renderingMode(.template)
+                    if isCasting {
+                        CastButton()
+                            .frame(width: 20, height: 20)
+                            .buttonStyle(.glass)
+                        Spacer()
+                            .frame(width: 20)
+                        Button {
+                            Task {
+                                await Converter.Stop()
+                                isCasting = Converter.IsCasting()
+                            }
+                        } label: {
+                            Image("cast_on").renderingMode(.template)
+                        }
+                        .buttonStyle(.glassProminent)
                     }
-                    .buttonStyle(.glass)
+                    else {
+                        Button {
+                            Converter.Start()
+                            isCasting = Converter.IsCasting()
+                        } label: {
+                            Image("cast").renderingMode(.template)
+                        }
+                        .buttonStyle(.glass)
+                    }
                     Button {
                         var storages: [String] = []
                         var fileids: [String] = []
@@ -277,7 +309,19 @@ struct PlaylistUIView: View {
                             }
                         }
                         if storages.isEmpty { return }
-                        env.path.append(.open(storages: storages, fileids: fileids, playlist: true))
+                        if Converter.IsCasting() {
+                            if isLoading { return }
+                            isLoading = true
+                            Task {
+                                defer {
+                                    isLoading = false
+                                }
+                                await playConverter(storages: storages, fileids: fileids, playlist: true)
+                            }
+                        }
+                        else {
+                            env.path.append(.open(storages: storages, fileids: fileids, playlist: true))
+                        }
                     } label: {
                         Image("playall").renderingMode(.template)
                     }
@@ -323,15 +367,13 @@ struct PlaylistUIView: View {
         } message: {
             Text("Remove this playlist?")
         }
-        .onAppear() {
-            isLoading = true
-            Task {
-                defer {
-                    isLoading = false
-                }
-                try? await Task.sleep(for: .milliseconds(300))
-                await reload()
-            }
+        .onAppear {
+            isCasting = Converter.IsCasting()
+            isLoopPlay = UserDefaults.standard.bool(forKey: "loop")
+            isShufflePlay = UserDefaults.standard.bool(forKey: "shuffle")
+        }
+        .onDisappear {
+            isCasting = false
         }
         .task {
             DownloadProgressManeger.shared.subject
@@ -348,6 +390,15 @@ struct PlaylistUIView: View {
                     }
                 }
                 .store(in: &cancellables)
+
+            isLoading = true
+            Task {
+                defer {
+                    isLoading = false
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+                await reload()
+            }
         }
         .navigationTitle("")
         .toolbar {

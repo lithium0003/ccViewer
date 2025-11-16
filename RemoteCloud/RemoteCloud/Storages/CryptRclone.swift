@@ -10,7 +10,7 @@ import Foundation
 import CommonCrypto
 import SwiftUI
 import AuthenticationServices
-import UniformTypeIdentifiers
+internal import UniformTypeIdentifiers
 
 struct PasswordRcloneView: View {
     let callback: (String, String, String, String, String) async -> Void

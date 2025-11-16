@@ -53,7 +53,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             else {
                 return
             }
-            if duration > 0 {
+            if duration > 0, await !CastConverter.shared.playlist {
                 print("set sec", sec, duration, sec / duration)
                 await CloudFactory.shared.data.setMark(storage: storage, targetID: id, parentID: parent, position: sec / duration)
             }
@@ -100,6 +100,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
     var waiting = false
 
     var timer: Timer?
+    var playlist = false
     
     func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
         if let url = mediaStatus?.mediaInformation?.contentURL, let sec = mediaStatus?.streamPosition, sec > 0 {
@@ -231,7 +232,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
     }
 }
 
-func playConverter(storages: [String], fileids: [String]) async {
+func playConverter(storages: [String], fileids: [String], playlist: Bool = false) async {
     var shuffle: Bool {
         UserDefaults.standard.bool(forKey: "shuffle")
     }
@@ -255,6 +256,7 @@ func playConverter(storages: [String], fileids: [String]) async {
     if shuffle {
         items.shuffle()
     }
+    CastConverter.shared.playlist = playlist
     let castContext = GCKCastContext.sharedInstance()
     if castContext.castState == .connected || castContext.castState == .connecting {
         if let remoteClient = castContext.sessionManager.currentSession?.remoteMediaClient, remoteClient.mediaStatus?.queueItemCount ?? 0 == 0 {

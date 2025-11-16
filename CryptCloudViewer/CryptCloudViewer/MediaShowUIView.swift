@@ -63,7 +63,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
                     return
                 }
                 let requestLength = request.requestedLength
-                print("s\(startOffset) r\(requestLength)")
+                //print("s\(startOffset) r\(requestLength)")
                 guard self.stream!.isLive else {
                     loadingRequest.finishLoading(with: URLError(URLError.Code.cannotOpenFile))
                     return
@@ -83,7 +83,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
         let maxlen = 2*1024*1024
         let len = (length > maxlen) ? maxlen : length
         let data = try? await stream?.read(position: position, length: len, onProgress: nil)
-        print("read s\(position) r\(len) d\(data?.count ?? -1)")
+        //print("read s\(position) r\(len) d\(data?.count ?? -1)")
         if let data = data {
             request.respond(with: data)
             if len == length, data.count == len {
@@ -247,7 +247,7 @@ class CustomPlayer: NSObject {
         
         if let imageitem = await CloudFactory.shared.data.getImage(storage: item.storage, parentId: parentId, baseName: basename) {
             if let imagestream = await CloudFactory.shared.storageList.get(item.storage)?.get(fileId: imageitem.id ?? "")?.open() {
-                let data = try? await imagestream.read(position: 0, length: Int(imageitem.size))
+                let data = try? await imagestream.read()
                 if let data = data, let image = UIImage(data: data) {
                     return image
                 }

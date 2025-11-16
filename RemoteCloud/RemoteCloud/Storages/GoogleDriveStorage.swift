@@ -46,7 +46,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
     let uploadSemaphore = Semaphore(value: 5)
     let scope = [
         "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/drive.metadata",
     ]
     var spaces = ""
     
@@ -269,7 +268,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             fixId = id
         }
 
-        context.perform {
+        context.performAndWait {
             var prevParent: String?
             var prevPath: String?
             
@@ -478,16 +477,14 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?alt=media")!)
                 request.httpMethod = "GET"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-                if start != nil || length != nil {
-                    let s = start ?? 0
-                    if length == nil {
-                        request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                    }
-                    else {
-                        request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
-                    }
+                let s = start ?? 0
+                if length == nil {
+                    request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
                 }
-                
+                else {
+                    request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
+                }
+
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
