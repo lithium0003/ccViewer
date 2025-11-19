@@ -516,7 +516,7 @@ public class SlotStream: RemoteStream {
                     break
                 }
                 try await Task.sleep(for: .milliseconds(100))
-                if start.timeIntervalSinceNow < Double(length) * -1e-4 {
+                if start.timeIntervalSinceNow < min(-10, Double(length) * -1e-4) {
                     print("error on timeout")
                     throw CancellationError()
                 }

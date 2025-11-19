@@ -103,6 +103,7 @@ public struct FFPlayerUIView: View {
     @State var observation2: NSKeyValueObservation? = nil
     @State var pipAvailable = false
     @State var pipActive = false
+    @State var initDone = false
 
     @State var skip_nextsec = UserDefaults.standard.integer(forKey: "playSkipForwardSec") {
         didSet {
@@ -185,6 +186,7 @@ public struct FFPlayerUIView: View {
                                 cancellables.removeAll()
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                             }
                             .buttonStyle(.glass)
                             .padding()
@@ -201,9 +203,12 @@ public struct FFPlayerUIView: View {
                         if let im = FrameworkResource.getImage(name: "close") {
                             Button {
                                 bridge.onClose(true)
-                                dismiss()
+                                if !initDone {
+                                    dismiss()
+                                }
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                             }
                             .buttonStyle(.glass)
                             .padding()
@@ -238,6 +243,7 @@ public struct FFPlayerUIView: View {
                                 bridge.onCycleCh(0)
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 30, height: 30)
@@ -253,6 +259,7 @@ public struct FFPlayerUIView: View {
                                 bridge.onCycleCh(1)
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 30, height: 30)
@@ -283,6 +290,7 @@ public struct FFPlayerUIView: View {
                                 bridge.onCycleCh(2)
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 30, height: 30)
@@ -300,12 +308,14 @@ public struct FFPlayerUIView: View {
                                 bridge.onSeekChapter(-1)
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 30, height: 30)
                             }
                             .controlSize(.mini)
                             .buttonStyle(.glass)
+                            .tint(.green)
                         }
                         if let im = FrameworkResource.getImage(name: "prev00") {
                             Button {
@@ -328,6 +338,7 @@ public struct FFPlayerUIView: View {
                             } label: {
                                 VStack(spacing: -15) {
                                     Image(uiImage: im)
+                                        .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
                                         .frame(width: 30, height: 30)
@@ -338,6 +349,7 @@ public struct FFPlayerUIView: View {
                             }
                             .controlSize(.mini)
                             .buttonStyle(.glass)
+                            .tint(.green)
                         }
                         if let im1 = FrameworkResource.getImage(name: "play"), let im2 = FrameworkResource.getImage(name: "pause") {
                             Button {
@@ -347,12 +359,15 @@ public struct FFPlayerUIView: View {
                             } label: {
                                 if pause {
                                     Image(uiImage: im1)
+                                        .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
                                         .frame(width: 30, height: 30)
+                                        .tint(.green)
                                 }
                                 else {
                                     Image(uiImage: im2)
+                                        .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
                                         .frame(width: 30, height: 30)
@@ -360,6 +375,7 @@ public struct FFPlayerUIView: View {
                             }
                             .controlSize(.mini)
                             .buttonStyle(.glass)
+                            .tint(.green)
                         }
                         if let im = FrameworkResource.getImage(name: "next00") {
                             Button {
@@ -382,6 +398,7 @@ public struct FFPlayerUIView: View {
                             } label: {
                                 VStack(spacing: -15) {
                                     Image(uiImage: im)
+                                        .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
                                         .frame(width: 30, height: 30)
@@ -392,18 +409,21 @@ public struct FFPlayerUIView: View {
                             }
                             .controlSize(.mini)
                             .buttonStyle(.glass)
+                            .tint(.green)
                         }
                         if let im = FrameworkResource.getImage(name: "nextp") {
                             Button {
                                 bridge.onSeekChapter(1)
                             } label: {
                                 Image(uiImage: im)
+                                    .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
                                     .frame(width: 30, height: 30)
                             }
                             .controlSize(.mini)
                             .buttonStyle(.glass)
+                            .tint(.green)
                         }
                         Spacer()
                     }
@@ -467,6 +487,7 @@ public struct FFPlayerUIView: View {
 
             if isLoading {
                 ProgressView()
+                    .tint(.white)
                     .padding(30)
                     .background {
                         Color.black
@@ -479,6 +500,11 @@ public struct FFPlayerUIView: View {
         }
         .toolbarVisibility(.hidden, for: .automatic)
         .statusBarHidden(!isMediaInfoShow)
+        .onDisappear {
+            if !pipActive {
+                bridge.onClose(true)
+            }
+        }
         .task {
             displayLayer = bridge.displayLayer
             bridge.touchUpdate
@@ -561,6 +587,12 @@ public struct FFPlayerUIView: View {
             bridge.pauseSender
                 .sink { p in
                     pause = p
+                }
+                .store(in: &cancellables)
+            
+            bridge.initDoneSender
+                .sink { v in
+                    initDone = v
                 }
                 .store(in: &cancellables)
 

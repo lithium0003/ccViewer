@@ -47,7 +47,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     var videoPTS: Double
     var name: String
     var mediaDuration: Double
-    var soundOnly = false
+    var soundOnly = 0
     var image: MPMediaItemArtwork?
     var playPos = 0.0 {
         didSet {
@@ -80,8 +80,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     public let touchUpdate = PassthroughSubject<Date, Never>()
     public let lockrotateSender = PassthroughSubject<Bool, Never>()
 
+    public let initDoneSender = PassthroughSubject<Bool, Never>()
+
     var selfref: UnsafeMutableRawPointer!
-    var sound: AudioQueuePlayer!
+    var sound: AudioQueuePlayer?
     
     var pipController: AVPictureInPictureController?
     var displayLayer: AVSampleBufferDisplayLayer!
@@ -122,7 +124,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         soundPTS = Double.nan
         videoPTS = Double.nan
         mediaDuration = 0
-        sound = AudioQueuePlayer()
+        sound = AudioQueuePlayer.shared
         super.init()
         
         selfref = Unmanaged<StreamBridge>.passUnretained(self).toOpaque()
@@ -158,12 +160,12 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
     }
     
-    let setSoundOnly: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
-        (ref) in
+    let setSoundOnly: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = {
+        (ref, value) in
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
-            stream.soundOnly = true
-            stream.soundOnlySender.send(true)
+            stream.soundOnly = Int(value)
+            stream.soundOnlySender.send(value == 1)
         }
     }
     
@@ -285,7 +287,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             }
             stream.videoPTS = t
             autoreleasepool {
-                stream.playPos = t
+                if stream.soundOnly == 2 {
+                    stream.playPos = t
+                }
                 guard let displayLayer = stream.displayLayer else {
                     return
                 }
@@ -349,12 +353,13 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         (ref) in
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            guard let sound = stream.sound else { return -1 }
             if stream.isCancel {
-               return stream.sound.isPlay ? 1 : 0
+               return sound.isPlay ? 1 : 0
             }
             print("sound_play")
-            stream.sound.play()
-            return stream.sound.isPlay ? 1 : 0
+            sound.play()
+            return sound.isPlay ? 1 : 0
         }
         return -1
     }
@@ -363,9 +368,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         (ref) in
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            guard let sound = stream.sound else { return -1 }
             print("sound_stop")
-            stream.sound.stop()
-            return stream.sound.isPlay ? 1 : 0
+            sound.stop()
+            return sound.isPlay ? 1 : 0
         }
         return -1
     }
@@ -517,10 +523,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     public func onStop() {
         isCancel = true
         stream?.isLive = false
-        Task {
-            run_quit(param)
-            sound.stop()
-        }
+        run_quit(param)
+        sound?.stop()
         stream = nil
     }
     
@@ -528,10 +532,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         userBreak = interactive
         isCancel = true
         stream?.isLive = false
-        Task {
-            run_quit(param)
-            sound.stop()
-        }
+        run_quit(param)
+        sound?.stop()
         stream = nil
         pipController = nil
         pixelBuffer = nil
@@ -555,10 +557,12 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
     
     public func run() async -> Bool {
+        if sound == nil { return true }
         guard remotes.count > 0 else {
             return true
         }
-        
+        initDoneSender.send(false)
+
         let aribText = UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text")
         var ret = -1
         var count = 0
@@ -570,12 +574,12 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
         let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
 
-        sound.onLoadData = { [weak self] buffer, capacity in
+        sound?.onLoadData = { [weak self] buffer, capacity in
             guard let self else {
                 return Double.nan
             }
             let t = load_sound(self.param, buffer, Int32(capacity/2))
-            if !t.isNaN {
+            if t.isFinite {
                 self.soundPTS = t
                 self.playPos = t
                 self.positionSender.send(t)
@@ -619,7 +623,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             var partial_start = Double.nan
             if !playlist, let p = await CloudFactory.shared.mark.getMark(storage: remotes[idx].storage, targetID: remotes[idx].id) {
                 if remotes.count > 1 {
-                    if p < 0 || p >= 1 {
+                    if p < 0 || p > 0.99 {
                         curIdx += 1
                         continue
                     }
@@ -665,8 +669,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                                 print(error)
                             }
 
+                            initDoneSender.send(true)
                             run_play(self.param)
-                            self.sound.play()
+                            self.sound?.play()
                             let task = Task {
                                 while true {
                                     try await Task.sleep(for: .seconds(1))
@@ -681,23 +686,22 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                             if idx == curIdx {
                                 curIdx += 1
                                 if ret >= 0 && !playlist {
-                                    Task {
+                                    if mediaDuration > 0 {
                                         await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: playPos / mediaDuration)
+                                    }
+                                    else {
+                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
                                     }
                                 }
                             }
                             else {
                                 if ret >= 0 && !playlist {
-                                    Task {
-                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
-                                    }
+                                    await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
                                 }
                             }
 
                             stream?.isLive = false
-                            Task {
-                                await remotes[idx].cancel()
-                            }
+                            await remotes[idx].cancel()
                             stream = nil
                             pixelBuffer = nil
                             continuation.resume(returning: ret)
@@ -705,6 +709,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     }
                 }
             }
+            initDoneSender.send(false)
             if ret >= 0 {
                 count += 1
             }

@@ -84,6 +84,10 @@ struct CryptCloudViewerApp: App {
         if UserDefaults.standard.bool(forKey: "tutorial"), UserDefaults.standard.integer(forKey: "previousBuildNo") < 99 {
             showInitAlert = true
         }
+        else {
+            let buildNum = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") ?? 0
+            UserDefaults.standard.set(buildNum, forKey: "previousBuildNo")
+        }
     }
     
     func deletePreviousData() async {

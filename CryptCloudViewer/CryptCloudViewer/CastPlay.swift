@@ -184,6 +184,14 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             return
         }
         let info = ConvertIteminfo(item: item)
+        let skip = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+        let stop = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+        if skip > 0 {
+            info.startpos = Double(skip)
+        }
+        if stop > 0 {
+            info.playduration = Double(stop)
+        }
         print(item.path)
         if let url = await Converter.Play(item: info) {
             let randID = url.deletingLastPathComponent().lastPathComponent

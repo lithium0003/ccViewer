@@ -23,6 +23,8 @@ struct SettingUIView: View {
     }()
 
     @State var password = ""
+    @State var uploadInBackground = UserDefaults.standard.bool(forKey: "uploadInBackground")
+    @State var downloadInBackground = UserDefaults.standard.bool(forKey: "downloadInBackground")
     @State var useImageViewer = UserDefaults.standard.bool(forKey: "ImageViewer")
     @State var usePDFViewer = UserDefaults.standard.bool(forKey: "PDFViewer")
     @State var useMediaViewer = UserDefaults.standard.bool(forKey: "MediaViewer")
@@ -63,6 +65,23 @@ struct SettingUIView: View {
     @State var cloudPlaypos = UserDefaults.standard.bool(forKey: "cloudPlaypos")
 
     @State var cloudPlaylist = UserDefaults.standard.bool(forKey: "cloudPlaylist")
+
+    @State var startOffsetHour = 0
+    @State var startOffsetMin = 0
+    @State var startOffsetSec = 0
+    @State var startOffset = 0 {
+        didSet {
+            UserDefaults.standard.set(startOffset, forKey: "playStartSkipSec")
+        }
+    }
+    @State var stopDurationHour = 0
+    @State var stopDurationMin = 0
+    @State var stopDurationSec = 0
+    @State var stopDuration = 0 {
+        didSet {
+            UserDefaults.standard.set(stopDuration, forKey: "playStopAfterSec")
+        }
+    }
 
     @State var deleteConfirmation = false
     
@@ -189,6 +208,19 @@ struct SettingUIView: View {
             }
 
             Section {
+                Toggle("Upload in background", isOn: $uploadInBackground)
+                    .onChange(of: uploadInBackground) {
+                        UserDefaults.standard.set(uploadInBackground, forKey: "uploadInBackground")
+                    }
+                Toggle("Download in background", isOn: $downloadInBackground)
+                    .onChange(of: downloadInBackground) {
+                        UserDefaults.standard.set(downloadInBackground, forKey: "downloadInBackground")
+                    }
+            } header: {
+                Text("Background task")
+            }
+
+            Section {
                 Toggle("Use Image viewer", isOn: $useImageViewer)
                     .onChange(of: useImageViewer) {
                         UserDefaults.standard.set(useImageViewer, forKey: "ImageViewer")
@@ -301,6 +333,113 @@ struct SettingUIView: View {
 
             Section {
                 HStack {
+                    Spacer()
+                    HStack {
+                        Picker(selection: $startOffsetHour) {
+                            ForEach(0..<26, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Hour")
+                        }
+                        Text(":")
+                        Picker(selection: $startOffsetMin) {
+                            ForEach(0..<60, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Min")
+                        }
+                        Text(":")
+                        Picker(selection: $startOffsetSec) {
+                            ForEach(0..<60, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Sec")
+                        }
+                    }
+                    .frame(width: 350)
+                }
+                HStack {
+                    Spacer()
+                    Button(role: .destructive) {
+                        startOffsetHour = 0
+                        startOffsetMin = 0
+                        startOffsetSec = 0
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } header: {
+                Text("Start offset")
+            }
+            .onChange(of: startOffsetHour) {
+                startOffset = startOffsetHour * 3600 + startOffsetMin * 60 + startOffsetSec
+            }
+            .onChange(of: startOffsetMin) {
+                startOffset = startOffsetHour * 3600 + startOffsetMin * 60 + startOffsetSec
+            }
+            .onChange(of: startOffsetSec) {
+                startOffset = startOffsetHour * 3600 + startOffsetMin * 60 + startOffsetSec
+            }
+            Section {
+                HStack {
+                    Spacer()
+                    HStack {
+                        Picker(selection: $stopDurationHour) {
+                            ForEach(0..<26, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Hour")
+                        }
+                        Text(":")
+                        Picker(selection: $stopDurationMin) {
+                            ForEach(0..<60, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Min")
+                        }
+                        Text(":")
+                        Picker(selection: $stopDurationSec) {
+                            ForEach(0..<60, id: \.self) {
+                                Text("\($0)")
+                            }
+                        } label: {
+                            Text("Sec")
+                        }
+                    }
+                    .frame(width: 350)
+                }
+                HStack {
+                    Spacer()
+                    Button(role: .destructive) {
+                        stopDurationHour = 0
+                        stopDurationMin = 0
+                        stopDurationSec = 0
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } header: {
+                Text("Stop duration")
+            }
+            .onChange(of: stopDurationHour) {
+                stopDuration = stopDurationHour * 3600 + stopDurationMin * 60 + stopDurationSec
+            }
+            .onChange(of: stopDurationMin) {
+                stopDuration = stopDurationHour * 3600 + stopDurationMin * 60 + stopDurationSec
+            }
+            .onChange(of: stopDurationSec) {
+                stopDuration = stopDurationHour * 3600 + stopDurationMin * 60 + stopDurationSec
+            }
+
+            Section {
+                HStack {
                     Text("Current cache size")
                     Spacer()
                     Text(networkCacheSizeStr)
@@ -387,6 +526,14 @@ struct SettingUIView: View {
         }
         .onAppear {
             password = getKeyChain(key: "password") ?? ""
+            startOffset = UserDefaults.standard.integer(forKey: "playStartSkipSec")
+            startOffsetHour = startOffset / 3600
+            startOffsetMin = (startOffset % 3600) / 60
+            startOffsetSec = startOffset % 60
+            stopDuration = UserDefaults.standard.integer(forKey: "playStopAfterSec")
+            stopDurationHour = stopDuration / 3600
+            stopDurationMin = (stopDuration % 3600) / 60
+            stopDurationSec = stopDuration % 60
         }
         .task {
             try? await Task.sleep(for: .milliseconds(500))

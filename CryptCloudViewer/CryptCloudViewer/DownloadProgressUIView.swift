@@ -181,7 +181,7 @@ class DownloadProgressManeger {
     
     @concurrent
     public func download(outUrl: URL, item: RemoteItem) async {
-        if ProcessInfo.processInfo.isiOSAppOnMac {
+        if ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "downloadInBackground") {
             await download_mac(outUrl: outUrl, item: item)
             return
         }

@@ -422,6 +422,7 @@ struct MediaShowUIView: View {
 
             if isLoading {
                 ProgressView()
+                    .tint(.white)
                     .padding(30)
                     .background {
                         Color.black

@@ -152,19 +152,23 @@ struct ImageShowUIView: View {
     
     var body: some View {
         ZStack {
+            Color.black
+                .ignoresSafeArea()
+            
             imageView
                 .ignoresSafeArea()
 
             if isLoading {
                 VStack {
                     ProgressView()
+                        .tint(.white)
                         .padding(30)
                         .scaleEffect(3)
                     
                     Text(verbatim: progStr)
                 }
                 .background {
-                    Color(uiColor: .systemBackground)
+                    Color(uiColor: .black)
                         .opacity(0.9)
                 }
                 .cornerRadius(10)
@@ -195,6 +199,7 @@ struct ImageShowUIView: View {
             }
         }
         .navigationTitle(titleStr)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarVisibility(hideHeader ? .hidden: .automatic, for: .automatic)
         .statusBarHidden(hideHeader)
         .task {

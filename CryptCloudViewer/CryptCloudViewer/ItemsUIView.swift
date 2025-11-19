@@ -99,6 +99,8 @@ struct ItemsUIView: View {
     }
 
     func getMarks() async {
+        itemMark.removeAll()
+        await Task.yield()
         itemMark = await CloudFactory.shared.mark.getMark(storage: storage, targetIDs: items.map({ $0.id ?? "" }), parentID: fileid)
     }
     
@@ -151,7 +153,7 @@ struct ItemsUIView: View {
     
     @ViewBuilder
     func backgroundColor(_ item: RemoteData) -> some View {
-        if let id = item.id, let p = itemMark[id] {
+        if let id = item.id, let p = itemMark[id], p.isFinite, p >= 0 {
             GeometryReader { geometry in
                 Color("DidPlayColor")
                 Color.blue.opacity(0.25)
@@ -200,18 +202,22 @@ struct ItemsUIView: View {
                             .listRowBackground(Color("CueColor"))
                         }
                         else {
-                            VStack(alignment: .leading) {
-                                Text(verbatim: item.name ?? "")
-                                    .font(.headline)
-                                if let mdate = item.mdate {
-                                    Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                        .font(.footnote)
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(verbatim: item.name ?? "")
+                                        .font(.headline)
+                                    if let mdate = item.mdate {
+                                        Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                            .font(.footnote)
+                                    }
+                                    else {
+                                        Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                            .font(.footnote)
+                                    }
                                 }
-                                else {
-                                    Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                        .font(.footnote)
-                                }
+                                Spacer()
                             }
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 if Converter.IsCasting() {
                                     isLoading = true
@@ -231,14 +237,15 @@ struct ItemsUIView: View {
                                 if UserDefaults.standard.bool(forKey: "savePlaypos") {
                                     Button {
                                         Task {
+                                            isLoading = true
                                             if itemMark[item.id ?? ""] != nil  {
                                                 await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: nil)
                                             }
                                             else {
                                                 await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: 1.0)
                                             }
-                                            try? await Task.sleep(for: .seconds(1))
                                             await getMarks()
+                                            isLoading = false
                                         }
                                     } label: {
                                         if itemMark[item.id ?? ""] != nil {

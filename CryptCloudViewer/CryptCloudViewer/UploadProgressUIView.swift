@@ -211,7 +211,7 @@ class UploadProgressManeger {
     
     @concurrent
     public func upload(url: URL, service: RemoteStorage, parentId: String, uploadname: String) async {
-        if ProcessInfo.processInfo.isiOSAppOnMac {
+        if ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "uploadInBackground") {
             await upload_mac(url: url, service: service, parentId: parentId, uploadname: uploadname)
             return
         }

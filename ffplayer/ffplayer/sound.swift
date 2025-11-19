@@ -13,6 +13,7 @@ import MediaPlayer
 import CoreAudio
 
 class AudioQueuePlayer {
+    static let shared = AudioQueuePlayer()
     let sampleRate = 48000.0
     
     var isPlay = false
@@ -28,7 +29,7 @@ class AudioQueuePlayer {
         return callbackStruct
     }()
 
-    init?() {
+    private init?() {
         var acd = AudioComponentDescription(componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_RemoteIO, componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
         let audioComponent: AudioComponent = AudioComponentFindNext(nil, &acd)!
         guard AudioComponentInstanceNew(audioComponent, &audioUnit) == noErr else {
@@ -79,19 +80,23 @@ class AudioQueuePlayer {
         guard !isPlay else {
             return
         }
+        isPlay = true
         guard AudioOutputUnitStart(audioUnit!) == noErr else {
+            isPlay = false
             return
         }
-        isPlay = true
     }
     
     func stop() {
         guard isPlay else {
             return
         }
-        guard AudioOutputUnitStop(audioUnit!) == noErr else {
-            return
-        }
         isPlay = false
+        Task.detached { [weak self] in
+            guard let audioUnit = self?.audioUnit else { return }
+            guard AudioOutputUnitStop(audioUnit) == noErr else {
+                return
+            }
+        }
     }
 }

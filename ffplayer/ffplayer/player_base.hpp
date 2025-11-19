@@ -88,6 +88,7 @@ public:
         AVStream        *audio_st = NULL;
         PacketQueue     audioq;
         audio_eof_enum  audio_eof = playing;
+        bool            audio_fin = false;
         std::shared_ptr<AVCodecContext> audio_ctx;
         AudioParams audio_filter_src = {};
 
@@ -137,6 +138,7 @@ public:
         int64_t         video_current_pts_time = -1;
 
         bool            video_eof = false;
+        bool            video_fin = false;
         bool            video_only = false;
         int             video_width = -1;
         int             video_height = -1;
@@ -151,13 +153,13 @@ public:
         
         VideoPicture    pictq[VIDEO_PICTURE_QUEUE_SIZE];
         int             pictq_size = 0, pictq_rindex = 0, pictq_windex = 0;
-        VideoPicture*   pictq_prev = NULL;
+//        VideoPicture*   pictq_prev = NULL;
+//        VideoPicture*   pictq_next = NULL;
         int64_t         pictq_active_serial = -1;
         bool            pict_seek_after = true;
         std::mutex      pictq_mutex;
         std::condition_variable pictq_cond;
 
-        double          frame_timer = std::nan("");
         double          frame_last_pts = std::nan("");
         double          frame_last_delay = 10e-3;
 

@@ -39,26 +39,27 @@ public class PlayMark {
         CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
         let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
         
-        return await Task { @MainActor in
-            let viewContext = viewContext
-            
+        let viewContext = viewContext
+        return await viewContext.perform {
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
             fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", target2, storage)
-            
+            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
+
             var results: [String: Double] = [:]
             do {
                 for item in try viewContext.fetch(fetchrequest) as! [Mark] {
                     if let hashedId = item.id, let orgId = targets[hashedId] {
-                        results[orgId] = item.position
+                        if results[orgId] == nil {
+                            results[orgId] = item.position
+                        }
                     }
                 }
             }
             catch {
                 print(error)
             }
-            
             return results
-        }.value
+        }
     }
     
     public func getMark(storage: String, targetID: String) async -> Double? {
@@ -76,15 +77,15 @@ public class PlayMark {
         }
         CC_SHA512(data, CC_LONG(data.count-1), &result)
         let target = result.map({ String(format: "%02hhx", $0) }).joined()
-        
-        return await Task { @MainActor in
-            let viewContext = viewContext
-            
+
+        let viewContext = viewContext
+        return await viewContext.perform {
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
             fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-            
+            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
+
             return try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
-        }.value
+        }
     }
     
     func getCloudMark(storage: String, targetID: String) async {
@@ -100,12 +101,13 @@ public class PlayMark {
         let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [target]))
         do {
             let result = try await ckDatabase.records(matching: ckQuery)
-            await persistentContainer.performBackgroundTask { context in
+            let viewContext = viewContext
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", targetID, storage)
-                if let result = try? context.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        context.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
                 
@@ -117,19 +119,20 @@ public class PlayMark {
                         let parent = record["parentId"] as String?
                         
                         if let pos = pos {
-                            let newitem = Mark(context: context)
+                            let newitem = Mark(context: viewContext)
                             newitem.id = id
                             newitem.parent = parent
                             newitem.storage = storage
                             newitem.position = pos
+                            newitem.mdate = Date()
                         }
-                        
                     case .failure(let error):
                         print(error)
                     }
                 }
-                
-                try? context.save()
+            }
+            try await viewContext.perform {
+                try viewContext.save()
             }
         }
         catch {
@@ -150,12 +153,13 @@ public class PlayMark {
         let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "parentId == %@", argumentArray: [target2]))
         do {
             let result = try await ckDatabase.records(matching: ckQuery)
-            await persistentContainer.performBackgroundTask { context in
+            let viewContext = viewContext
+            await viewContext.perform {
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-                if let result = try? context.fetch(fetchRequest) {
+                if let result = try? viewContext.fetch(fetchRequest) {
                     for object in result {
-                        context.delete(object as! NSManagedObject)
+                        viewContext.delete(object as! NSManagedObject)
                     }
                 }
                 
@@ -167,19 +171,21 @@ public class PlayMark {
                         let parent = record["parentId"] as String?
                         
                         if let pos = pos {
-                            let newitem = Mark(context: context)
+                            let newitem = Mark(context: viewContext)
                             newitem.id = id
                             newitem.parent = parent
                             newitem.storage = storage
                             newitem.position = pos
+                            newitem.mdate = Date()
                         }
                         
                     case .failure(let error):
                         print(error)
                     }
                 }
-                
-                try? context.save()
+            }
+            try await viewContext.perform {
+                try viewContext.save()
             }
         }
         catch {
@@ -206,26 +212,28 @@ public class PlayMark {
         CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
         let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
         
-        await persistentContainer.performBackgroundTask { context in
+        let viewContext = viewContext
+        await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-            if let result = try? context.fetch(fetchRequest) {
+            if let result = try? viewContext.fetch(fetchRequest) {
                 for object in result {
-                    context.delete(object as! NSManagedObject)
+                    viewContext.delete(object as! NSManagedObject)
                 }
             }
             
             if let position = position {
-                let newitem = Mark(context: context)
+                let newitem = Mark(context: viewContext)
                 newitem.id = target
                 newitem.parent = target2
                 newitem.storage = storage
                 newitem.position = position
-                
-                try? context.save()
+                newitem.mdate = Date()
+
+                try? viewContext.save()
             }
             else {
-                try? context.save()
+                try? viewContext.save()
             }
         }
         
