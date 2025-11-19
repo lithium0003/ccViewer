@@ -75,8 +75,7 @@ class HTTPserver {
         
         listen(sockfd,5)
 
-        if !ProcessInfo.processInfo.isiOSAppOnMac {
-            
+        if !ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "castInBackground") {
             let request = BGContinuedProcessingTaskRequest(
                 identifier: taskIdentifier,
                 title: "Local server for cast",

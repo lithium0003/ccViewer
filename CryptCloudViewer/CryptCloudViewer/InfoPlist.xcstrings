@@ -11,7 +11,8 @@
             "value" : "CryptCloudViewer"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "NSFaceIDUsageDescription" : {
       "comment" : "Privacy - Face ID Usage Description",
@@ -21,6 +22,12 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Use for protect to start app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ起動時の保護に使用します"
           }
         }
       }
@@ -33,6 +40,12 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "CryptCloudViewer uses the local network to discover Cast-enabled devices on your WiFi\nnetwork."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CryptCloudViewerはローカル接続をWiFi接続しているCast可能なデバイスを検索するために使用します"
           }
         }
       }

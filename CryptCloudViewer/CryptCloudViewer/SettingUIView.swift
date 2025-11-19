@@ -25,6 +25,7 @@ struct SettingUIView: View {
     @State var password = ""
     @State var uploadInBackground = UserDefaults.standard.bool(forKey: "uploadInBackground")
     @State var downloadInBackground = UserDefaults.standard.bool(forKey: "downloadInBackground")
+    @State var castInBackground = UserDefaults.standard.bool(forKey: "castInBackground")
     @State var useImageViewer = UserDefaults.standard.bool(forKey: "ImageViewer")
     @State var usePDFViewer = UserDefaults.standard.bool(forKey: "PDFViewer")
     @State var useMediaViewer = UserDefaults.standard.bool(forKey: "MediaViewer")
@@ -216,9 +217,14 @@ struct SettingUIView: View {
                     .onChange(of: downloadInBackground) {
                         UserDefaults.standard.set(downloadInBackground, forKey: "downloadInBackground")
                     }
+                Toggle("Cast in background", isOn: $castInBackground)
+                    .onChange(of: castInBackground) {
+                        UserDefaults.standard.set(castInBackground, forKey: "castInBackground")
+                    }
             } header: {
                 Text("Background task")
             }
+            .disabled(ProcessInfo.processInfo.isiOSAppOnMac)
 
             Section {
                 Toggle("Use Image viewer", isOn: $useImageViewer)
