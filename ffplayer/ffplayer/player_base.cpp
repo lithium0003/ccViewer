@@ -133,16 +133,16 @@ Player::Player() : audio(this), subtitle(this), video(this)
 
 void Player::setPause(bool value)
 {
+    if(!param) return;
     struct stream_param *p = (struct stream_param *)param;
-    if(!p) return;
     pause = value;
     p->send_pause(p->stream, value ? 1: 0);
 }
 
 void Player::Quit()
 {
+    if(!param) return;
     struct stream_param *p = (struct stream_param *)param;
-    if(!p) return;
     quit = true;
     setPause(p->sound_stop(p->stream) != 1);
     clear_soundbufer();
@@ -175,6 +175,7 @@ bool Player::IsQuit(bool pure)
 void Player::Finalize()
 {
     Quit();
+    if(!param) return;
     struct stream_param *p = (struct stream_param *)param;
     p->sound_stop(p->stream);
 
