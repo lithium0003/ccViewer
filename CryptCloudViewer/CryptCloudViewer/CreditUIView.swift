@@ -1097,8 +1097,39 @@ struct CreditUIView: View {
             )
         } header: {
             Text(verbatim: "CryptCloudViewer")
+        } footer: {
+            Text("This application is OpenSource project.")
         }
 
+        Section {
+            HStack {
+                Text(verbatim: "Rclone")
+                Spacer()
+                Link(
+                  "https://rclone.org/",
+                  destination: URL(string: "https://rclone.org/")!
+                )
+            }
+            HStack {
+                Text(verbatim: "CarotDAV")
+                Spacer()
+                Link(
+                  "http://rei.to/carotdav.html",
+                  destination: URL(string: "http://rei.to/carotdav.html")!
+                )
+            }
+            HStack {
+                Text(verbatim: "Cryptomator")
+                Spacer()
+                Link(
+                  "https://cryptomator.org/",
+                  destination: URL(string: "https://cryptomator.org/")!
+                )
+            }
+        } header: {
+            Text("Supported encryption algorithms")
+        }
+        
         Section {
             OutlineGroup(ffmpeg, children: \.children) { item in
                 item.view
