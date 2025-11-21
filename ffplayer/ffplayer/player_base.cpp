@@ -617,6 +617,7 @@ int Player::stream_component_open(int stream_index)
 
         {
             video.video_SAR = codecCtx->sample_aspect_ratio;
+            video.video_aspect = av_q2d(codecCtx->sample_aspect_ratio);
             double aspect_ratio = 0;
             if (codecCtx->sample_aspect_ratio.num == 0) {
                 aspect_ratio = 0;
