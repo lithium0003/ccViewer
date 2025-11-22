@@ -388,11 +388,21 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
     }
 
     override func listChildren(fileId: String, path: String) async {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
         if spaces == "appDataFolder" {
             let fixFileId = (fileId == "") ? rootName : fileId
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
             if let items = result {
-                let viewContext = CloudFactory.shared.data.viewContext                
                 for item in items {
                     storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
                 }
@@ -403,7 +413,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return
         }
         if fileId == "" {
-            let viewContext = CloudFactory.shared.data.viewContext
             storeRootItems(context: viewContext)
             await viewContext.perform {
                 try? viewContext.save()
@@ -413,7 +422,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         if fileId == "teamdrives" {
             let result = await listTeamdrives(q: "", pageToken: "")
             if let items = result {
-                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
                     storeTeamDriveItem(item: item, context: viewContext)
                 }
@@ -430,7 +438,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             let fixFileId = comp[1]
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId)
             if let items = result {
-                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
                     storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: viewContext)
                 }
@@ -443,7 +450,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             let fixFileId = (fileId == "mydrive") ? rootName : fileId
             let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
             if let items = result {
-                let viewContext = CloudFactory.shared.data.viewContext
                 for item in items {
                     storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
                 }

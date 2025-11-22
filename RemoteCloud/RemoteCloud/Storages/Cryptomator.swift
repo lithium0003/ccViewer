@@ -777,6 +777,21 @@ public class Cryptomator: ChildStorage {
         // fileId dir: parentDirId/deflatedName/dirId
         os_log("%{public}@", log: log, type: .debug, "ListChildren(cryptomator:\(storageName ?? "")) \(fileId)")
 
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
+        await viewContext.perform {
+            try? viewContext.save()
+        }
+
         if fileId == "" {
             await subListChildren(dirId: "", fileId: fileId, path: path)
         }

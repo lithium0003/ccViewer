@@ -256,6 +256,17 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     }
 
     override func listChildren(fileId: String, path: String) async {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
         let folderId: Int
         if fileId == "" {
             folderId = 0
@@ -267,7 +278,6 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return
         }
         if let items = await listFolder(folderId: folderId) {
-            let viewContext = CloudFactory.shared.data.viewContext
             for item in items {
                 storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
             }

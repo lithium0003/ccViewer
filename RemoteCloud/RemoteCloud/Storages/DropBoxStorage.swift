@@ -291,9 +291,19 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     override func listChildren(fileId: String, path: String) async {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
         let result = await listFolder(path: fileId)
         if let items = result {
-            let viewContext = CloudFactory.shared.data.viewContext            
             for item in items {
                 storeItem(item: item, parentFileId: fileId, context: viewContext)
             }

@@ -90,6 +90,21 @@ public class ChildStorage: RemoteStorageBase {
     }
     
     override func listChildren(fileId: String, path: String) async {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
+        await viewContext.perform {
+            try? viewContext.save()
+        }
+
         let fixFileId = (fileId == "") ? "\(baseRootStorage)\n\(baseRootFileId)" : fileId
         let array = fixFileId.components(separatedBy: .newlines)
         let baseStorage = array[0]
@@ -99,7 +114,6 @@ public class ChildStorage: RemoteStorageBase {
         }
         await s.list(fileId: baseFileId)
 
-        let viewContext = CloudFactory.shared.data.viewContext
         let items = await getBaseList(baseStorage: baseStorage, baseFileId: baseFileId)
         for item in items {
             guard let storage = item.storage, let id = item.id, let name = item.name else {

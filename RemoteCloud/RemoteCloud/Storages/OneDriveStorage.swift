@@ -288,9 +288,18 @@ public class OneDriveStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     override func listChildren(fileId: String, path: String) async {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                for object in result {
+                    viewContext.delete(object as! NSManagedObject)
+                }
+            }
+        }
         if let items = await listFiles(itemId: fileId, nextLink: "") {
-            let viewContext = CloudFactory.shared.data.viewContext
-            
             for item in items {
                 storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
             }
