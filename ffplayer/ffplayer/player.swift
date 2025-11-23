@@ -94,7 +94,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     
     var isCancel = false
     let semaphore = DispatchSemaphore(value: 1)
-    var param: UnsafeMutableRawPointer!
+    var param: UnsafeMutableRawPointer?
     
     var nameCStr: [CChar]? = nil
     var userBreak = false
@@ -523,7 +523,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     public func onStop() {
         isCancel = true
         stream?.isLive = false
-        run_quit(param)
+        if let param {
+            run_quit(param)
+        }
         sound?.stop()
         stream = nil
     }
@@ -532,7 +534,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         userBreak = interactive
         isCancel = true
         stream?.isLive = false
-        run_quit(param)
+        if let param {
+            run_quit(param)
+        }
         sound?.stop()
         stream = nil
         pipController = nil
@@ -541,19 +545,27 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     
     public func onSeek(_ pos: Double) {
         let pos64: Int64 = Int64(pos * 1000000)
-        run_seek(param, pos64)
+        if let param {
+            run_seek(param, pos64)
+        }
     }
     
     public func onSeekChapter(_ inc: Int) {
-        run_seek_chapter(param, Int32(inc))
+        if let param {
+            run_seek_chapter(param, Int32(inc))
+        }
     }
     
     public func onPause(_ state: Bool) async {
-        run_pause(param, state ? 1 : 0)
+        if let param {
+            run_pause(param, state ? 1 : 0)
+        }
     }
 
     public func onCycleCh(_ tag: Int) {
-        run_cycle_ch(param, Int32(tag))
+        if let param {
+            run_cycle_ch(param, Int32(tag))
+        }
     }
     
     public func run() async -> Bool {
@@ -639,28 +651,28 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     nameCStr.withUnsafeMutableBufferPointer { itemname in
                         let latency = AVAudioSession.sharedInstance().outputLatency
                         print(latency)
-                        self.param = make_arg(
+                        param = make_arg(
                             itemname.baseAddress,
                             latency,
                             partial_start,
                             start_skip,
                             stop_limit,
                             aribText ? 1: 0,
-                            self.selfref,
-                            self.read_packet,
-                            self.seek,
-                            self.cancel,
-                            self.draw_pict,
-                            self.setDuration,
-                            self.setSoundOnly,
-                            self.sound_play,
-                            self.sound_stop,
-                            self.wait_stop,
-                            self.wait_start,
-                            self.send_pause,
-                            self.skip_media,
-                            self.cc_draw,
-                            self.change_lang)
+                            selfref,
+                            read_packet,
+                            seek,
+                            cancel,
+                            draw_pict,
+                            setDuration,
+                            setSoundOnly,
+                            sound_play,
+                            sound_stop,
+                            wait_stop,
+                            wait_start,
+                            send_pause,
+                            skip_media,
+                            cc_draw,
+                            change_lang)
                         
                         Task {
                             do {
@@ -670,15 +682,16 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                             }
 
                             initDoneSender.send(true)
-                            run_play(self.param)
-                            self.sound?.play()
+                            run_play(param!)
+                            sound?.play()
                             let task = Task {
                                 while true {
                                     try await Task.sleep(for: .seconds(1))
                                     updateMediaInfo()
                                 }
                             }
-                            var ret = Int(run_finish(self.param))
+                            var ret = Int(run_finish(param!))
+                            param = nil
                             if userBreak {
                                 ret = 1
                             }
@@ -758,15 +771,21 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 case .newDeviceAvailable:
                     let latency = AVAudioSession.sharedInstance().outputLatency
                     print(latency)
-                    set_latency(param, latency)
+                    if let param {
+                        set_latency(param, latency)
+                    }
                     break
                 case .oldDeviceUnavailable:
                     if audioSessionPortDescription?.portType == .headphones || audioSessionPortDescription?.portType == .bluetoothA2DP {
-                        run_pause(param, 1)
+                        if let param {
+                            run_pause(param, 1)
+                        }
                     }
                     let latency = AVAudioSession.sharedInstance().outputLatency
                     print(latency)
-                    set_latency(param, latency)
+                    if let param {
+                        set_latency(param, latency)
+                    }
                     break
                 default:
                     break
@@ -788,7 +807,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     let wasSuspendedKey = wasSuspendedKeyValue.boolValue
                     print(wasSuspendedKey)
                     if !wasSuspendedKey {
-                        run_pause(param, 1)
+                        if let param {
+                            run_pause(param, 1)
+                        }
                     }
                 case .ended:
                     guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
@@ -796,7 +817,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     }
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                     if options.contains(.shouldResume) {
-                        run_pause(param, 0)
+                        if let param {
+                            run_pause(param, 0)
+                        }
                     }
                 default:
                     break
@@ -814,7 +837,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
             Task {
-                run_pause(self.param, self.pause ? 0 : 1)
+                if let param = self.param {
+                    run_pause(param, self.pause ? 0 : 1)
+                }
                 let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
                 self.playPos = t
             }
@@ -827,7 +852,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 return .commandFailed
             }
             Task {
-                run_pause(self.param, 1)
+                if let param = self.param {
+                    run_pause(param, 1)
+                }
                 let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
                 self.playPos = t
             }
@@ -840,7 +867,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 return .commandFailed
             }
             Task {
-                run_pause(self.param, 0)
+                if let param = self.param {
+                    run_pause(param, 0)
+                }
                 let t = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
                 self.playPos = t
             }
@@ -856,14 +885,18 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
             pos += Double(truncating: interval)
             let pos64: Int64 = Int64(pos * 1000000)
-            run_seek(self.param, pos64)
+            if let param = self.param {
+                run_seek(param, pos64)
+            }
             return .success
         }
         commandCenter.skipForwardCommand.preferredIntervals = [NSNumber(value: skip_nextsec)]
 
         commandCenter.nextTrackCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            run_seek_chapter(self.param, Int32(1))
+            if let param = self.param {
+                run_seek_chapter(param, Int32(1))
+            }
             return .success
         }
 
@@ -876,14 +909,18 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
             pos -= Double(truncating: interval)
             let pos64: Int64 = Int64(pos * 1000000)
-            run_seek(self.param, pos64)
+            if let param = self.param {
+                run_seek(param, pos64)
+            }
             return .success
         }
         commandCenter.skipBackwardCommand.preferredIntervals = [NSNumber(value: skip_prevsec)]
 
         commandCenter.previousTrackCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            run_seek_chapter(self.param, Int32(-1))
+            if let param = self.param {
+                run_seek_chapter(param, Int32(-1))
+            }
             return .success
         }
 
@@ -892,7 +929,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             if let event = remoteEvent as? MPChangePlaybackPositionCommandEvent {
                 let pos = event.positionTime
                 let pos64: Int64 = Int64(pos * 1000000)
-                run_seek(self.param, pos64)
+                if let param = self.param {
+                    run_seek(param, pos64)
+                }
                 return .success
             }
             return .commandFailed
@@ -950,9 +989,13 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
 
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime) async {
         Task {
-            run_pause(param, 1)
+            if let param {
+                run_pause(param, 1)
+            }
             onSeek(playPos + skipInterval.seconds)
-            run_pause(param, 0)
+            if let param {
+                run_pause(param, 0)
+            }
         }
     }
     

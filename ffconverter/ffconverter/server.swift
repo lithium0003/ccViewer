@@ -72,10 +72,9 @@ class HTTPserver {
             perror("ERROR on binding")
             return nil
         }
-        
         listen(sockfd,5)
 
-        if !ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "castInBackground") {
+        if !ProcessInfo.processInfo.isiOSAppOnMac && UserDefaults.standard.bool(forKey: "castInBackground") {
             let request = BGContinuedProcessingTaskRequest(
                 identifier: taskIdentifier,
                 title: "Local server for cast",

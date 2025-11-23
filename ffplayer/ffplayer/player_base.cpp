@@ -51,8 +51,8 @@ void quitPlayer(struct stream_param * param)
 
 double load_sound(void *arg, float *buffer, int num_packets)
 {
+    if(!arg) return -1;
     struct stream_param *param = (struct stream_param *)arg;
-    if(!param) return -1;
     auto player = (Player *)param->player;
     if(!player) return -1;
     return player->load_sound(buffer, num_packets);
@@ -1684,6 +1684,7 @@ void Player::seek_chapter(int inc)
 
 void Player::set_pause(bool pause_state)
 {
+    if(!param) return;
     struct stream_param *stream = (struct stream_param *)param;
     if(pause_state) {
         if(pause) return;

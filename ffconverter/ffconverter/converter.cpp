@@ -1178,7 +1178,7 @@ void audio_thread(Converter *is, int index)
                         av_frame_unref(&audio_frame_out);
                         continue;
                     }
-                    if (abs(delta_sample) < 8196) {
+                    if (abs(delta_sample) < audio_out_sample_rate / 2) {
                         pts += (double)(out_samples) / audio_out_sample_rate;
                         is->audio_info[index]->frame_count += out_samples;
 
