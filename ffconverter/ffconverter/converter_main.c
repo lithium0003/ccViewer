@@ -20,12 +20,14 @@ const char *FLUSH_STR = "FLUSH";
 const char *EOF_STR = "EOF";
 const char *ABORT_STR = "ABORT";
 
+int averror_eof = AVERROR_EOF;
+int averror_exit = AVERROR_EXIT;
+
 void *makeconvert_arg(char *name,
                       void *object,
                       double start,
                       double duration,
                       int arib_convert_text,
-                      void(*wait_to_start)(void *opaque),
                       void(*set_duration)(void *opaque, double duration),
                       int(*read_packet)(void *opaque, unsigned char *buf, int buf_size),
                       long long(*seek)(void *opaque, long long offset, int whence),
@@ -43,7 +45,6 @@ void *makeconvert_arg(char *name,
     param->start = start;
     param->duration = duration;
     param->arib_convert_text = arib_convert_text;
-    param->wait_to_start = wait_to_start;
     param->set_duration = set_duration;
     param->read_packet = read_packet;
     param->seek = seek;

@@ -9,6 +9,7 @@ import Foundation
 import RemoteCloud
 import ffconverter
 import GoogleCast
+internal import UniformTypeIdentifiers
 
 class CastConverter: NSObject, GCKRemoteMediaClientListener {
     static let shared = CastConverter()
@@ -25,8 +26,36 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         }
 
         var items: [RemoteItem] = []
+        var itemIDMap: [Int: String] = [:]
         var durations: [String: (Double, String, String, String)] = [:]
         var currentIdx = -1
+        var currentItemID: Int = -1 {
+            didSet {
+                print("currentItemID change", currentItemID, oldValue)
+                if currentItemID == oldValue {
+                    return
+                }
+                if oldValue < 0 { return }
+                for i in 0...oldValue {
+                    if let path = itemIDMap[i] {
+                        Task {
+                            print("Convert done", i, path)
+                            await Converter.Done(targetPath: path)
+                        }
+                    }
+                }
+            }
+        }
+
+        func setItemID(_ id: Int, path: String) {
+            print("setItemID", id, path)
+            itemIDMap[id] = path
+        }
+        
+        func setCurrentItemID(_ id: Int) {
+            print("setCurrentItemID", id)
+            currentItemID = id
+        }
 
         func playDone(url: URL, sec: Double) async {
             let randID = url.deletingLastPathComponent().lastPathComponent
@@ -59,21 +88,15 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             }
         }
         
-        func done() async {
-            if currentIdx < 1 { return }
-            for i in 0..<currentIdx {
-                await Converter.Done(targetPath: items[i].path)
-            }
-        }
-        
         func finish() async {
             for item in items {
                 await Converter.Done(targetPath: item.path)
             }
             items.removeAll()
+            itemIDMap.removeAll()
         }
         
-        func nextItem() -> RemoteItem? {
+        func nextItem() -> (Int, RemoteItem)? {
             if currentIdx + 1 < items.count {
                 currentIdx += 1
             }
@@ -88,7 +111,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
                     return nil
                 }
             }
-            return items[currentIdx]
+            return (currentIdx, items[currentIdx])
         }
         
         func setItems(_ items: [RemoteItem]) {
@@ -97,21 +120,54 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         }
     }
     var prop = Items()
-    var waiting = false
+    var waiting: Int64 = 0
 
     var timer: Timer?
     var playlist = false
     
+    func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaMetadata: GCKMediaMetadata?) {
+        if let itemID = mediaMetadata?.integer(forKey: kGCKMetadataKeyQueueItemID) {
+            print("itemID", itemID)
+            Task {
+                await prop.setCurrentItemID(itemID)
+            }
+        }
+        if mediaMetadata == nil {
+            Task {
+                await prop.setCurrentItemID(-1)
+            }
+            print("queue next item immidiaetly")
+            Task {
+                await playNext(true)
+            }
+        }
+        else {
+            if waiting < 1 {
+                OSAtomicIncrement64(&waiting)
+                print("queue next item")
+                Task {
+                    await playNext()
+                }
+            }
+        }
+    }
+    
     func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
+        if mediaStatus?.nextQueueItem == nil {
+            myButton.isEnabled = false
+        }
+        else {
+            myButton.isEnabled = true
+        }
         if let url = mediaStatus?.mediaInformation?.contentURL, let sec = mediaStatus?.streamPosition, sec > 0 {
             Task {
                 await prop.playDone(url: url, sec: sec)
             }
-            if !waiting, mediaStatus?.nextQueueItem == nil {
-                print("queue has not next item")
-                waiting = true
+            if waiting < 1, mediaStatus?.nextQueueItem == nil || mediaStatus?.currentQueueItem == nil {
+                OSAtomicIncrement64(&waiting)
+                print("queue next item")
                 Task {
-                    await playNext(client)
+                    await playNext()
                 }
             }
         }
@@ -124,32 +180,28 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             if let remoteClient = castContext.sessionManager.currentSession?.remoteMediaClient {
                 if let next = remoteClient.mediaStatus?.nextQueueItem {
                     remoteClient.queueJumpToItem(withID: next.itemID, playPosition: 0, customData: nil)
-                    Task {
-                        await prop.done()
-                        await removeNextButton()
-                    }
+                }
+                else {
+                    myButton.isEnabled = false
                 }
             }
         }
     }
     
-    @MainActor
-    func addNextButton() async {
-        let castContext = GCKCastContext.sharedInstance()
-        let expandedController = castContext.defaultExpandedMediaControlsViewController
+    lazy var myButton = {
         let myButton = UIButton()
         let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24.0, weight: .regular, scale: .default)
         myButton.setImage(UIImage(systemName: "forward.end.fill", withConfiguration: symbolConfiguration), for: .normal)
         myButton.addTarget(self, action: #selector(didTapMyButton), for: .touchUpInside)
-        expandedController.setButtonType(.custom, at: 3)
-        expandedController.setCustomButton(myButton, at: 3)
-    }
+        return myButton
+    }()
     
     @MainActor
-    func removeNextButton() async {
+    func addNextButton() async {
         let castContext = GCKCastContext.sharedInstance()
         let expandedController = castContext.defaultExpandedMediaControlsViewController
-        expandedController.setButtonType(.none, at: 3)
+        expandedController.setButtonType(.custom, at: 3)
+        expandedController.setCustomButton(myButton, at: 3)
     }
     
     @MainActor
@@ -159,12 +211,8 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
     }
     
     @concurrent
-    func playNext(_ client: GCKRemoteMediaClient) async {
-        defer {
-            Task { @MainActor in
-                waiting = false
-            }
-        }
+    func playNext(_ immidiate: Bool = false) async {
+        await addNextButton()
         Task { @MainActor in
             if timer == nil {
                 timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -180,7 +228,10 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
                 }
             }
         }
-        guard let item = await prop.nextItem() else {
+        guard let (index, item) = await prop.nextItem() else {
+            Task { @MainActor in
+                OSAtomicDecrement64(&waiting)
+            }
             return
         }
         let info = ConvertIteminfo(item: item)
@@ -195,47 +246,74 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         print(item.path)
         if let url = await Converter.Play(item: info) {
             let randID = url.deletingLastPathComponent().lastPathComponent
+            await prop.setItemID(index, path: item.path)
             if await Converter.start_encode(randID: randID) {
                 var sleepCount = 0
-                while Converter.IsCasting(), await !Converter.fileReady(randID: randID) {
-                    try? await Task.sleep(for: .seconds(1))
+                while Converter.IsCasting(), await !Converter.fileReady(randID: randID), await Converter.runState(randID: randID) {
+                    try? await Task.sleep(for: .milliseconds(100))
                     sleepCount += 1
                     print("sleep \(sleepCount)")
                 }
-                try? await Task.sleep(for: .seconds(1))
+            }
+            if await !Converter.runState(randID: randID) {
+                print("Convert failed.")
+                await playNext()
+                return
             }
 
             let metadata = GCKMediaMetadata()
             metadata.setString(item.name, forKey: kGCKMetadataKeyTitle)
+            metadata.setInteger(index, forKey: kGCKMetadataKeyQueueItemID)
             let mediaInfoBuilder = GCKMediaInformationBuilder(contentURL: url)
-            mediaInfoBuilder.streamDuration = .infinity
             mediaInfoBuilder.hlsSegmentFormat = .TS
-            mediaInfoBuilder.streamType = .live
             mediaInfoBuilder.contentType = "application/vnd.apple.mpegurl"
             mediaInfoBuilder.metadata = metadata
             let itemBuilder = GCKMediaQueueItemBuilder()
             itemBuilder.mediaInformation = mediaInfoBuilder.build()
             itemBuilder.startTime = 0
-            itemBuilder.preloadTime = 0
             itemBuilder.autoplay = true
+            let newItem = itemBuilder.build()
             if await prop.currentIdx != 0 {
-                client.queueInsert(itemBuilder.build(), beforeItemWithID: kGCKMediaQueueInvalidItemID)
-                await addNextButton()
+                let castContext = GCKCastContext.sharedInstance()
+                if let client = castContext.sessionManager.currentCastSession?.remoteMediaClient {
+                    if immidiate {
+                        let request = GCKMediaLoadRequestDataBuilder()
+                        let queue = GCKMediaQueueDataBuilder(queueType: .generic)
+                        queue.items = [newItem]
+                        request.queueData = queue.build()
+                        request.startTime = 0
+                        client.loadMedia(with: request.build())
+                    }
+                    else {
+                        client.queueInsert(newItem, beforeItemWithID: kGCKMediaQueueInvalidItemID)
+                    }
+                }
+                Task { @MainActor in
+                    myButton.isEnabled = true
+                }
             }
             else {
                 let request = GCKMediaLoadRequestDataBuilder()
                 let queue = GCKMediaQueueDataBuilder(queueType: .generic)
-                queue.items = [itemBuilder.build()]
-                queue.startTime = 0
+                queue.items = [newItem]
                 request.queueData = queue.build()
-                client.loadMedia(with: request.build())
-                await removeNextButton()
+                request.startTime = 0
+                let castContext = GCKCastContext.sharedInstance()
+                if let client = castContext.sessionManager.currentCastSession?.remoteMediaClient {
+                    client.loadMedia(with: request.build())
+                }
+                Task { @MainActor in
+                    myButton.isEnabled = false
+                }
             }
 
-            try? await Task.sleep(for: .seconds(2))
-            if Converter.IsCasting() {
+            let castContext = GCKCastContext.sharedInstance()
+            if Converter.IsCasting(), castContext.castState == .connected || castContext.castState == .connecting {
                 await showController()
             }
+        }
+        Task { @MainActor in
+            OSAtomicDecrement64(&waiting)
         }
     }
 }
@@ -247,11 +325,11 @@ func playConverter(storages: [String], fileids: [String], playlist: Bool = false
     var items: [RemoteItem] = []
     for (storage, fileid) in zip(storages, fileids) {
         if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-            if remoteItem.ext == "txt" {
+            if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
             }
-            else if OpenfileUIView.pict_exts.contains(remoteItem.ext) {
+            else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
             }
-            else if remoteItem.ext == "pdf" {
+            else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
             }
             else if remoteItem.ext == "cue" {
             }
@@ -270,8 +348,8 @@ func playConverter(storages: [String], fileids: [String], playlist: Bool = false
         if let remoteClient = castContext.sessionManager.currentSession?.remoteMediaClient, remoteClient.mediaStatus?.queueItemCount ?? 0 == 0 {
             await CastConverter.shared.prop.setItems(items)
             remoteClient.add(CastConverter.shared)
-            CastConverter.shared.waiting = true
-            await CastConverter.shared.playNext(remoteClient)
+            OSAtomicIncrement64(&CastConverter.shared.waiting)
+            await CastConverter.shared.playNext()
         }
     }
 }

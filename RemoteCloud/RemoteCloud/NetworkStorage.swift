@@ -78,7 +78,6 @@ public class NetworkStorage: RemoteStorageBase {
     
     var cacheTokenDate: Date = Date(timeIntervalSince1970: 0)
     var tokenLife: TimeInterval = 0
-    var lastCall = Date()
     let callSemaphore = Semaphore(value: 5)
     let callWait = 0.2
     var cache_accessToken = ""
@@ -124,15 +123,7 @@ public class NetworkStorage: RemoteStorageBase {
         if callcount > maxCall {
             throw RetryError.Failed
         }
-        if lastCall.timeIntervalSinceNow > -callWait {
-            if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
-                throw CancellationError()
-            }
-            try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))
-            return try await callWithRetry(action: action, callcount: callcount+1)
-        }
-        if await semaphore.wait(timeout: .seconds(1)) == .timeout {
+        if await semaphore.wait(timeout: .seconds(5)) == .timeout {
             if cancelTime.timeIntervalSinceNow > 0 {
                 cancelTime = Date(timeIntervalSinceNow: 0.5)
                 throw CancellationError()
@@ -363,7 +354,7 @@ public class SlotStream: RemoteStream {
                 }
                 if key <= p && p < key+Int64(buf.count) {
                     let s = Int(p - key)
-                    let l = (len > buf.count - s) ? buf.count : len + s
+                    let l = (len + s > buf.count) ? buf.count : len + s
                     ret += buf.subdata(in: s..<l)
                     len -= l-s
                     p += Int64(l-s)
@@ -454,7 +445,7 @@ public class SlotStream: RemoteStream {
                 await subFillBuffer(pos: pos1...pos2)
             }
             group.addTask { [self] in
-                let slot = (size - SlotStream.bufSize) / SlotStream.bufSize
+                let slot = size / SlotStream.bufSize
                 let pos1 = slot * SlotStream.bufSize
                 let pos2 = min(size-1, (slot+1) * SlotStream.bufSize - 1)
                 guard pos1 <= pos2 else {
@@ -506,8 +497,8 @@ public class SlotStream: RemoteStream {
                     let pos2 = min(size-1, (p+1) * SlotStream.bufSize - 1)
                     let slotdone = await buffer.dataAvailable(pos: pos1...pos2)
                     if !slotdone {
-                        Task {
-                            await fillBuffer(slot: p)
+                        Task.detached(priority: .high) {
+                            await self.fillBuffer(slot: p)
                         }
                     }
                     done = done && slotdone
@@ -545,11 +536,11 @@ public class SlotStream: RemoteStream {
         if position >= size {
             return data
         }
-        let length = length < 0 ? Int(size - position) : min(Int(size - position), length)
-        for i in stride(from: 0, to: length, by: 1 * 1024 * 1024) {
-            let p = position + Int64(i)
-            let len = min(length-i, 1*1024*1024)
-            guard let d = try await subRead(position: p, length: len) else {
+        let length = length < 0 ? size - position : min(size - position, Int64(length))
+        for p in stride(from: position, to: position + length, by: 32 * 1024) {
+            let len = min(position + length - p, 32*1024)
+            if !isLive { return nil }
+            guard let d = try await subRead(position: p, length: Int(len)) else {
                 return nil
             }
             data.append(d)
@@ -567,10 +558,18 @@ public class RemoteNetworkStream: SlotStream {
         self.remote = remote
         await super.init(size: remote.size)
     }
-    
+
+    override func setLive(_ live: Bool) {
+        if !live {
+            Task {
+                await remote.cancel()
+            }
+        }
+    }
+
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard pos.lowerBound >= 0 else { return }
-        if await !buffer.dataAvailable(pos: pos), isLive {
+        if isLive, await !buffer.dataAvailable(pos: pos) {
             let len = min(size-1, pos.upperBound) - max(0, pos.lowerBound) + 1
             let data = try? await remote.remoteStorage.readFile(fileId: remote.id, start: pos.lowerBound, length: len)
             if let data = data {

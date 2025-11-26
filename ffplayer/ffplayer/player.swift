@@ -191,20 +191,21 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             let buf_array = UnsafeMutableBufferPointer<UInt8>(start: buf_unwrapped, count: Int(buf_size))
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             if stream.isCancel {
-               return -1
+               return averror_exit
             }
             guard let rstream = stream.stream else {
-                return -1
+                return averror_exit
             }
+            //print("read \(stream.position) \(buf_size)")
             stream.semaphore.wait()
             defer {
                 stream.semaphore.signal()
             }
             if stream.position >= stream.remotes[stream.idx].size {
-                return -1
+                return averror_eof
             }
             let semaphore = DispatchSemaphore(value: 0)
-            let task = Task {
+            Task.detached(priority: .high) {
                 defer {
                     semaphore.signal()
                 }
@@ -217,12 +218,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     count = data.copyBytes(to: buf_array)
                     stream.position += Int64(count)
                 }
-                else {
-                    return
-                }
             }
             semaphore.wait()
         }
+        //print("read count \(count)")
         return Int32(count)
     }
 

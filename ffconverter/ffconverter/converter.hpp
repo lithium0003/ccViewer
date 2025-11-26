@@ -45,7 +45,7 @@ extern "C" {
 class Converter {
 public:
     bool   quit = false;
-    bool   ishidden = false;
+    bool   failed = false;
     
     AVFormatContext *pFormatCtx = NULL;
     

@@ -1202,7 +1202,15 @@ public class RemoteCryptRcloneStream: SlotStream {
         key = remote.remoteStorage.dataKey
         await super.init(size: OrignalLength)
     }
-    
+
+    override func setLive(_ live: Bool) {
+        if !live {
+            Task {
+                await remote.cancel()
+            }
+        }
+    }
+
     override func fillHeader() async {
         guard let data = try? await remote.read(start: 0, length: remote.remoteStorage.fileHeaderSize) else {
             print("error on header null")

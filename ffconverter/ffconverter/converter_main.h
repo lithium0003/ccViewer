@@ -9,12 +9,14 @@
 #ifndef converter_main_h
 #define converter_main_h
 
+extern int averror_eof;
+extern int averror_exit;
+
 void *makeconvert_arg(char *name,
                       void *object,
                       double start,
                       double duration,
                       int arib_convert_text,
-                      void(*wait_to_start)(void *opaque),
                       void(*set_duration)(void *opaque, double duration),
                       int(*read_packet)(void *opaque, unsigned char *buf, int buf_size),
                       long long(*seek)(void *opaque, long long offset, int whence),

@@ -36,58 +36,6 @@ struct OpenfileUIView: View {
     @State var loadFailed = false
     @State var shuldDismiss = false
 
-    static let media_exts = [
-        "mov",
-        "mp4",
-        "mp3",
-        "wav",
-        "aac",
-        "3gp",
-        "m4a",
-    ]
-
-    static let pict_exts = [
-        "tif","tiff",
-        "heic",
-        "jpg","jpeg",
-        "gif",
-        "png",
-        "bmp",
-        "ico",
-        "cur",
-        "xbm",
-        "3fr", // (Hasselblad)
-        "ari", // (Arri_Alexa)
-        "arw","srf","sr2", // (Sony)
-        "bay", // (Casio)
-        "braw", // (Blackmagic Design)
-        "cri", // (Cintel)
-        "crw","cr2","cr3", // (Canon)
-        "cap","iiq","eip", // (Phase_One)
-        "dcs","dcr","drf","k25","kdc", // (Kodak)
-        "dng", // (Adobe)
-        "erf", // (Epson)
-        "fff", // (Imacon/Hasselblad raw)
-        "gpr", // (GoPro)
-        "mef", // (Mamiya)
-        "mdc", // (Minolta, Agfa)
-        "mos", // (Leaf)
-        "mrw", // (Minolta, Konica Minolta)
-        "mos", // (Leaf)
-        "mrw", // (Minolta, Konica Minolta)
-        "nef","nrw", // (Nikon)
-        "orf", // (Olympus)
-        "pef","ptx", // (Pentax)
-        "pxn", // (Logitech)
-        "r3d", // (RED Digital Cinema)
-        "raf", // (Fuji)
-        "raw","rw2", // (Panasonic)
-        "raw","rwl","dng", // (Leica)
-        "rwz", // (Rawzor)
-        "srw", // (Samsung)
-        "x3f", // (Sigma)
-    ]
-
     var body: some View {
         switch dispType {
         case .empty:
@@ -116,11 +64,11 @@ struct OpenfileUIView: View {
                     if UserDefaults.standard.bool(forKey: "FFplayer"), UserDefaults.standard.bool(forKey: "firstFFplayer") {
                         for (storage, fileid) in zip(storages, fileids) {
                             if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                                if remoteItem.ext == "txt" {
+                                if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                                 }
-                                else if OpenfileUIView.pict_exts.contains(remoteItem.ext) {
+                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
                                 }
-                                else if remoteItem.ext == "pdf" {
+                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
                                 }
                                 else {
                                     ffplay = true
@@ -133,13 +81,13 @@ struct OpenfileUIView: View {
                     else {
                         for (storage, fileid) in zip(storages, fileids) {
                             if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                                if remoteItem.ext == "txt" {
+                                if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                                 }
-                                else if OpenfileUIView.pict_exts.contains(remoteItem.ext) {
+                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
                                 }
-                                else if remoteItem.ext == "pdf" {
+                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
                                 }
-                                else if OpenfileUIView.media_exts.contains(remoteItem.ext), UserDefaults.standard.bool(forKey: "MediaViewer") {
+                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie), UserDefaults.standard.bool(forKey: "MediaViewer") {
                                     passStorages.append(storage)
                                     passFileids.append(fileid)
                                 }
@@ -163,13 +111,13 @@ struct OpenfileUIView: View {
                     }
                 }
                 if let storage = storages.first, let fileid = fileids.first, let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                    if remoteItem.ext == "txt" {
+                    if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                         dispType = .txt
                     }
-                    else if OpenfileUIView.pict_exts.contains(remoteItem.ext), UserDefaults.standard.bool(forKey: "ImageViewer") {
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image), UserDefaults.standard.bool(forKey: "ImageViewer") {
                         dispType = .image
                     }
-                    else if remoteItem.ext == "pdf", UserDefaults.standard.bool(forKey: "PDFViewer") {
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf), UserDefaults.standard.bool(forKey: "PDFViewer") {
                         dispType = .pdf
                     }
                     else if UserDefaults.standard.bool(forKey: "FFplayer"), UserDefaults.standard.bool(forKey: "firstFFplayer") {
@@ -178,7 +126,7 @@ struct OpenfileUIView: View {
                         bridge = await Player.prepare(storages: passStorages, fileids: passFileids, playlist: playlist)
                         dispType = .ffplay
                     }
-                    else if OpenfileUIView.media_exts.contains(remoteItem.ext), UserDefaults.standard.bool(forKey: "MediaViewer") {
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie), UserDefaults.standard.bool(forKey: "MediaViewer") {
                         passStorages.append(storage)
                         passFileids.append(fileid)
                         dispType = .media

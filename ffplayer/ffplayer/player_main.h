@@ -9,6 +9,9 @@
 #ifndef player_main_h
 #define player_main_h
 
+extern int averror_eof;
+extern int averror_exit;
+
 void *make_arg(char *name,
                double latency,
                double partial_start,

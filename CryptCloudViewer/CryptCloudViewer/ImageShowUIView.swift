@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RemoteCloud
+internal import UniformTypeIdentifiers
 
 struct ImageShowUIView: View {
     let storage: String
@@ -230,12 +231,20 @@ struct ImageShowUIView: View {
                         imageIdx = 0
                         image = im
                     }
+                    else {
+                        return
+                    }
                 }
             }
             
             await Task.yield()
             guard let remoteItem else { return }
-            let files = await CloudFactory.shared.data.listData(storage: remoteItem.storage, parentID: remoteItem.parent).filter{ OpenfileUIView.pict_exts.contains($0.ext ?? "") }.sorted(by: { ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending })
+            let files = await CloudFactory.shared.data.listData(storage: remoteItem.storage, parentID: remoteItem.parent).filter({ item in
+                if let uti = UTType(filenameExtension: item.ext ?? "") {
+                    return uti.conforms(to: .image)
+                }
+                return false
+            }).sorted(by: { ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending })
             totalImages = files.count
             guard let curIdx = files.firstIndex(where: { $0.id == remoteItem.id }) else { return }
             guard files.count > 1 else { return }

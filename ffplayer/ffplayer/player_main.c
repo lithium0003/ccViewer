@@ -13,6 +13,9 @@
 #include <libavutil/avutil.h>
 #include <libavcodec/avcodec.h>
 
+int averror_eof = AVERROR_EOF;
+int averror_exit = AVERROR_EXIT;
+
 void *make_arg(char *name,
                double latency,
                double partial_start,

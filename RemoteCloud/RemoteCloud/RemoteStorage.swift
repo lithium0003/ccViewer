@@ -185,8 +185,15 @@ public class RemoteItem {
 
 public class RemoteStream {
     public internal(set) var size:Int64
-    public var isLive = true
-    
+    public var isLive = true {
+        didSet {
+            setLive(isLive)
+        }
+    }
+
+    func setLive(_ live: Bool) {
+    }
+
     init(size: Int64) async {
         self.size = size
     }
@@ -928,7 +935,7 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
 }
 
 public actor Semaphore {
-    private var value: Int
+    private var value: Int64
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var idlist: [UUID] = []
     public enum waitResult {
@@ -937,7 +944,7 @@ public actor Semaphore {
     }
     
     public init(value: Int = 0) {
-        self.value = value
+        self.value = Int64(value)
     }
     
     public func wait() async {
@@ -945,8 +952,7 @@ public actor Semaphore {
     }
     
     private func wait(id: UUID) async {
-        value -= 1
-        if value >= 0 { return }
+        if OSAtomicDecrement64(&value) >= 0 { return }
         await withCheckedContinuation {
             idlist.append(id)
             waiters[id] = $0
@@ -980,7 +986,7 @@ public actor Semaphore {
     }
     
     public func signal() {
-        value += 1
+        OSAtomicIncrement64(&value)
         guard let id = idlist.first else { return }
         idlist.removeFirst()
         waiters[id]?.resume()

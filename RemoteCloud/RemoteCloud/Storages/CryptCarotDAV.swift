@@ -476,6 +476,14 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         await super.init(size: OrignalLength)
     }
 
+    override func setLive(_ live: Bool) {
+        if !live {
+            Task {
+                await remote.cancel()
+            }
+        }
+    }
+
     override func fillHeader() async {
         if let data = try? await remote.read(start: 0, length: Int64(remote.remoteStorage.CryptHeaderByte)) {
             if !salt.elementsEqual(data.subdata(in: 0..<salt.count)) {

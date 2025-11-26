@@ -198,7 +198,7 @@ class HTTPserver {
         var tmpBuffer = [UInt8]()
         var requestDone = false
         while self.isRunning {
-            let buflen = 256*1024
+            let buflen = 1024
             var buffer = [UInt8](repeating: 0, count: buflen)
             let n = buffer.withUnsafeMutableBytes { read(connSockfd, $0.baseAddress, buflen) }
             

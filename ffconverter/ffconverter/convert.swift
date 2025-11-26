@@ -39,52 +39,59 @@ public class PlayItemInfo {
 
 public class Converter {
     static var converter: convert?
-    
+
     public class func IsCasting() -> Bool {
         return converter != nil
     }
-    
+
     public class func Start() {
         if converter == nil {
             converter = convert()
         }
     }
-    
+
     public class func Stop() async {
         if converter != nil {
             await converter?.finish()
             converter = nil
         }
     }
-    
+
     public class func Done(targetPath: String) async {
         guard let c = converter else {
             return
         }
         await c.args.playdone(targetPath: targetPath)
     }
-    
+
     public class func Play(item: ConvertIteminfo) async -> URL? {
         guard let c = converter else {
             return nil
         }
         return await c.play(info: item)
     }
-    
+
     public class func start_encode(randID: String) async -> Bool {
         guard let c = converter else {
             return false
         }
         return await c.args.start_running(randID: randID)
     }
-    
+
+    public class func runState(randID: String) async -> Bool {
+        guard let c = converter else {
+            return false
+        }
+        return await c.args.get_runState(randID: randID)
+    }
+
     public class func fileReady(randID: String) async -> Bool {
         guard let c = converter else {
             return false
         }
         return await c.args.fileReady(randID: randID)
     }
-    
+
     public class func touch(randID: String, segment: Int) async {
         guard let c = converter else {
             return
@@ -93,11 +100,12 @@ public class Converter {
             return
         }
         await c.args.set_lasttouch(item: randID, t: Date())
+        r.encoder.last_touch = Date()
         for w in r.encoder.writer {
             w?.set_touch(count: segment)
         }
     }
-    
+
     public class func duration(randID: String) async -> Double {
         guard let c = converter else {
             return 0
@@ -107,7 +115,7 @@ public class Converter {
         }
         return r.mediaDuration
     }
-    
+
     public class func baseItem(randID: String) async -> RemoteItem? {
         guard let c = converter else {
             return nil
@@ -131,6 +139,7 @@ class convert {
         private var holdfiles: [String: URL] = [:]
         private var items: [String: String] = [:]
         private var lasttouch: [String: Date] = [:]
+        private var runState: [String: Bool] = [:]
 
         func get_running(randID: String) -> StreamBridgeConvert? {
             running[randID]
@@ -146,7 +155,8 @@ class convert {
             if let bridge = running[randID] {
                 if tasks[randID] == nil {
                     tasks[randID] = Task {
-                        await bridge.run()
+                        let ret = await bridge.run()
+                        runState[randID] = ret
                         running[randID] = nil
                         tasks[randID] = nil
                     }
@@ -156,15 +166,14 @@ class convert {
             return false
         }
         
-        func fileReady(randID: String) -> Bool {
-            if let bridge = running[randID] {
-                if bridge.playing == 0 {
-                    return false
-                }
-                if bridge.playing == 1 {
-                    bridge.playing = 2
-                }
+        func get_runState(randID: String) -> Bool {
+            if let runstate = runState[randID] {
+                return runstate
             }
+            return true
+        }
+        
+        func fileReady(randID: String) -> Bool {
             if let urlout = holdfiles[randID] {
                 return FileManager.default.fileExists(atPath: urlout.appending(path: "stream.m3u8").path(percentEncoded: false))
             }
@@ -198,11 +207,14 @@ class convert {
         }
 
         func playdone(targetPath: String) {
+            print("playdone", targetPath)
             guard let randID = items[targetPath] else {
                 return
             }
-            
+            print("playdone", randID)
+
             if let r = running[randID] {
+                r.encoder.last_touch = Date()
                 r.abort()
             }
             if let urlout = holdfiles[randID] {
@@ -442,22 +454,23 @@ class StreamBridgeConvert {
         if let ref_unwrapped = ref, let buf_unwrapped = buf {
             let buf_array = UnsafeMutableBufferPointer<UInt8>(start: buf_unwrapped, count: Int(buf_size))
             let stream = Unmanaged<StreamBridgeConvert>.fromOpaque(ref_unwrapped).takeUnretainedValue()
-            while !stream.isCancel && stream.encoder.needWait && stream.playing != 0 {
+            while !stream.isCancel && stream.encoder.needWait {
                 print(stream.name, "wait")
                 sleep(1)
             }
             if stream.isCancel {
-                return -1
+                return averror_exit
             }
+            //print("read \(stream.position) \(buf_size)")
             stream.semaphore.wait()
             defer {
                 stream.semaphore.signal()
             }
             if stream.position >= stream.remote.size {
-                return -1
+                return averror_eof
             }
             let semaphore = DispatchSemaphore(value: 0)
-            let task = Task {
+            Task.detached(priority: .high) {
                 defer {
                     semaphore.signal()
                 }
@@ -470,12 +483,10 @@ class StreamBridgeConvert {
                     count = data.copyBytes(to: buf_array)
                     stream.position += Int64(count)
                 }
-                else {
-                    return
-                }
             }
             semaphore.wait()
         }
+        //print("read count \(count)")
         return Int32(count)
     }
     
@@ -557,18 +568,6 @@ class StreamBridgeConvert {
         }
     }
 
-    let wait_to_start: @convention(c) (UnsafeMutableRawPointer?) -> Void = {
-        (ref) in
-        if let ref_unwrapped = ref {
-            let stream = Unmanaged<StreamBridgeConvert>.fromOpaque(ref_unwrapped).takeUnretainedValue()
-            stream.playing = 1
-            while !stream.isCancel && stream.playing < 2 {
-                print(stream.name, "wait")
-                sleep(1)
-            }
-        }
-    }
-
     class params {
         let itemname: UnsafeMutablePointer<Int8>!
         let sdlparam: UnsafeMutableRawPointer!
@@ -586,7 +585,7 @@ class StreamBridgeConvert {
         abort_run(sdlparam)
     }
     
-    func run() async {
+    func run() async -> Bool {
         var basename = remote.name
         if let subid = remote.subid, let subbase = await CloudFactory.shared.storageList.get(remote.storage)?.get(fileId: subid) {
             basename = subbase.name
@@ -605,22 +604,23 @@ class StreamBridgeConvert {
             duration = d
         }
         nameCStr = self.name.cString(using: .utf8)
-        await withCheckedContinuation { continuation in
+        let ret = await withCheckedContinuation { continuation in
             nameCStr?.withUnsafeMutableBufferPointer { itemname in
                 sdlparam = makeconvert_arg(itemname.baseAddress, selfref,
                                            start, duration,
                                            UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text_cast") ? 1: 0,
-                                           wait_to_start, set_duration,
+                                           set_duration,
                                            read_packet, seek, cancel,
                                            encode, encode_sound, encode_text, finish,
                                            stream_count, select_stream)
                 run_play(sdlparam)
-                run_finish(self.sdlparam)
+                let ret = run_finish(self.sdlparam) == 0 ? true : false
                 self.encoder.finish_encode()
-                continuation.resume()
+                continuation.resume(returning: ret)
             }
         }
         isCancel = true
         stream.isLive = false
+        return ret;
     }
 }

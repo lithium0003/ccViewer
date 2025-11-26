@@ -52,11 +52,14 @@ extern "C" {
         if(!param) return -1;
         if(!(Converter *)param->converter) return -1;
         ((Converter *)param->converter)->parse_thread.join();
+        int ret = ((Converter *)param->converter)->failed ? 1 : 0;
         ((Converter *)param->converter)->Finalize();
-        return 0;
+        return ret;
     }
     
     int cancelConvert(struct convert_param * param) {
+        if(!param) return -1;
+        if(!(Converter *)param->converter) return -1;
         ((Converter *)param->converter)->Quit();
         return 0;
     }
@@ -77,22 +80,23 @@ void decode_thread(struct convert_param *stream)
 
     Converter *converter = (Converter *)stream->converter;
     
+    converter->failed = true;
     converter->videoStream.clear();
     converter->audioStream.clear();
     converter->subtitleStream.clear();
 
     converter->pFormatCtx = avformat_alloc_context();
-    unsigned char *buffer = (unsigned char *)av_malloc(1024*1024);
+    unsigned char *buffer = (unsigned char *)av_malloc(32*1024);
     AVIOContext *pIoCtx = avio_alloc_context(
                                              buffer,
-                                             1024*1024,
+                                             32*1024,
                                              0,
                                              stream->stream,
                                              stream->read_packet,
                                              NULL,
                                              stream->seek
                                              );
-    AVPacket packet = { 0 };
+    AVPacket packet = { 0 }, *inpkt = &packet;
     bool error = false;
     converter->pFormatCtx->pb = pIoCtx;
     char *filename = stream->name;
@@ -107,7 +111,6 @@ void decode_thread(struct convert_param *stream)
     char *cp;
     int main_audio = -1;
     int main_subtitle = -1;
-    int search_count = 10000;
     
     std::vector<int> audioStream;
     std::vector<int> videoStream;
@@ -120,18 +123,6 @@ void decode_thread(struct convert_param *stream)
     if (avformat_open_input(&converter->pFormatCtx, filename, NULL, NULL) != 0) {
         printf("avformat_open_input() failed %s\n", filename);
         goto failed_open;
-    }
-    
-    while(search_count > 0 && !converter->quit) {
-        if(av_read_frame(converter->pFormatCtx, &packet) < 0)
-            break;
-        av_packet_unref(&packet);
-        search_count--;
-    }
-    av_seek_frame(converter->pFormatCtx, -1, 0, 0);
-    
-    if(converter->quit) {
-        goto failed_run;
     }
     
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
@@ -365,12 +356,12 @@ void decode_thread(struct convert_param *stream)
     }
     stream->set_duration(stream->stream, converter->media_duration);
 
-    stream->wait_to_start(stream->stream);
     if (converter->IsQuit()) {
         goto finish;
     }
 
     // main decode loop
+    converter->failed = false;
     av_log(NULL, AV_LOG_INFO, "decode_thread read loop\n");
     for (;;) {
         if (converter->IsQuit()) {
@@ -404,9 +395,9 @@ void decode_thread(struct convert_param *stream)
             }
         }
         packet_count++;
-        int ret1 = av_read_frame(converter->pFormatCtx, &packet);
+        int ret1 = av_read_frame(converter->pFormatCtx, inpkt);
         if (ret1 < 0) {
-            av_packet_unref(&packet);
+            av_packet_unref(inpkt);
             if (ret1 == AVERROR(EAGAIN))
                 continue;
             if ((ret1 == AVERROR_EOF) || (ret1 = AVERROR(EIO))) {
@@ -446,8 +437,9 @@ void decode_thread(struct convert_param *stream)
             continue;
         }
         
+        inpkt->time_base = converter->pFormatCtx->streams[inpkt->stream_index]->time_base;
         if (!isnan(start_skip)) {
-            av_packet_unref(&packet);
+            av_packet_unref(inpkt);
             int64_t start_time_org = 0;
             if(converter->pFormatCtx->start_time != AV_NOPTS_VALUE)
                 start_time_org = converter->pFormatCtx->start_time;
@@ -468,9 +460,9 @@ void decode_thread(struct convert_param *stream)
             continue;
         }
         
-        if((packet.flags & (AV_PKT_FLAG_CORRUPT | AV_PKT_FLAG_DISCARD)) > 0) {
-            av_packet_unref(&packet);
-            av_log(NULL, AV_LOG_INFO, "flag %d %lld\n", packet.flags, packet.pts);
+        if((inpkt->flags & (AV_PKT_FLAG_CORRUPT | AV_PKT_FLAG_DISCARD)) > 0) {
+            av_packet_unref(inpkt);
+            av_log(NULL, AV_LOG_INFO, "flag %d %lld\n", inpkt->flags, inpkt->pts);
             continue;
         }
 
@@ -478,9 +470,9 @@ void decode_thread(struct convert_param *stream)
         bool found = false;
         // Is this a packet from the video stream?
         for(int i = 0; i < converter->videoStream.size(); i++) {
-            if (packet.stream_index == converter->videoStream[i]) {
+            if (inpkt->stream_index == converter->videoStream[i]) {
                 //av_log(NULL, AV_LOG_INFO, "video %d packet %lld\n", packet.stream_index, packet_count);
-                if(converter->video_info[i]->videoq.put(&packet) == 0) {
+                if(converter->video_info[i]->videoq.put(inpkt) == 0) {
                     converter->video_info[i]->video_eof = false;
                 }
                 video_last = packet_count;
@@ -490,13 +482,13 @@ void decode_thread(struct convert_param *stream)
         }
         if (!found) {
             for(int i = 0; i < converter->subtitleStream.size(); i++) {
-                if (packet.stream_index == converter->subtitleStream[i]) {
+                if (inpkt->stream_index == converter->subtitleStream[i]) {
                     //av_log(NULL, AV_LOG_INFO, "subtile %d packet %lld\n", packet.stream_index, packet_count);
-                    if(av_q2d(converter->pFormatCtx->streams[packet.stream_index]->time_base) > 0) {
+                    if(av_q2d(converter->pFormatCtx->streams[inpkt->stream_index]->time_base) > 0) {
                         //printf("subtitle timebase %f\n", av_q2d(converter->pFormatCtx->streams[packet.stream_index]->time_base));
-                        converter->subtitle_timebase = converter->pFormatCtx->streams[packet.stream_index]->time_base;
+                        converter->subtitle_timebase = converter->pFormatCtx->streams[inpkt->stream_index]->time_base;
                     }
-                    converter->subtitle_info[i]->subtitleq.put(&packet);
+                    converter->subtitle_info[i]->subtitleq.put(inpkt);
                     found = true;
                     break;
                 }
@@ -506,7 +498,7 @@ void decode_thread(struct convert_param *stream)
             // sound stream id check
             bool main_packet = false;
             for(int i = 0; i < converter->audioStream.size(); i++) {
-                if (packet.stream_index == converter->audioStream[i]) {
+                if (inpkt->stream_index == converter->audioStream[i]) {
                     //av_log(NULL, AV_LOG_INFO, "audio %d packet %lld\n", packet.stream_index, packet_count);
                     converter->audio_info[i]->absent = false;
                     if(converter->audio_info[i]->audioq.put(&packet) == 0) {
@@ -556,7 +548,7 @@ void decode_thread(struct convert_param *stream)
                 }
             }
         }
-        av_packet_unref(&packet);
+        av_packet_unref(inpkt);
     }
     /* all done - wait for it */
     while (!converter->IsQuit(true)) {
@@ -768,18 +760,22 @@ void video_thread(Converter *is, int index)
                         last_h = frame1.height;
                         last_format = (AVPixelFormat)frame1.format;
                         is->video_info[index]->video_SAR = frame1.sample_aspect_ratio;
-                        is->video_info[index]->video_aspect = av_q2d(frame1.sample_aspect_ratio);
+                        double aspect_ratio = av_q2d(frame1.sample_aspect_ratio);
+                        if (aspect_ratio <= 0.0) {
+                            aspect_ratio = 1;
+                        }
+                        is->video_info[index]->video_aspect = aspect_ratio;
                         is->video_info[index]->video_height = filt_out->inputs[0]->h;
                         is->video_info[index]->video_width = filt_out->inputs[0]->w;
                         is->video_info[index]->video_srcheight = frame1.height;
                         is->video_info[index]->video_srcwidth = frame1.width;
                     }
                     //printf("key %d\n", frame1.key_frame);
-                }
 
-                if (av_buffersrc_write_frame(filt_in, inframe) < 0){
-                    av_frame_unref(inframe);
-                    goto loopend;
+                    if (av_buffersrc_write_frame(filt_in, inframe) < 0){
+                        av_frame_unref(inframe);
+                        goto loopend;
+                    }
                 }
                 
                 if (inframe) av_frame_unref(inframe);
@@ -826,7 +822,7 @@ void video_thread(Converter *is, int index)
                             pts = (pts_t - is->video_info[index]->video_start_pts) * av_q2d(is->video_info[index]->video_st->time_base);
                         }
                     }
-                    //av_log(NULL, AV_LOG_INFO, "video pts %f\n", pts);
+                    //av_log(NULL, AV_LOG_INFO, "video clock %f\n", pts);
                     if(!isnan(duration) && pts > duration) {
                         is->Quit();
                     }
@@ -871,31 +867,47 @@ finish:
 
 bool Converter::Configure_VideoFilter(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFrame *frame, AVFilterGraph *graph, const VideoStreamInfo *video)
 {
+    char args[256];
+
+    AVBufferSrcParameters *par = av_buffersrc_parameters_alloc();
+    if (!par)
+        return false;
+    
+    *filt_in = avfilter_graph_alloc_filter(graph, avfilter_get_by_name("buffer"), "buffer");
+    if(!*filt_in) {
+        av_freep(&par);
+        return false;
+    }
+
+    AVRational fr = av_guess_frame_rate(pFormatCtx, video->video_st, NULL);
+    par->format              = frame->format;
+    par->time_base           = video->video_st->time_base;
+    par->width               = frame->width;
+    par->height              = frame->height;
+    par->sample_aspect_ratio = video->video_st->codecpar->sample_aspect_ratio;
+    par->color_space         = frame->colorspace;
+    par->color_range         = frame->color_range;
+    par->alpha_mode          = frame->alpha_mode;
+    par->frame_rate          = fr;
+    par->hw_frames_ctx       = frame->hw_frames_ctx;
+    
+    if(av_buffersrc_parameters_set(*filt_in, par) < 0) {
+        av_freep(&par);
+        return false;
+    }
+
+    if(avfilter_init_dict(*filt_in, NULL) < 0) {
+        av_freep(&par);
+        return false;
+    }
+    av_freep(&par);
+
     AVFilterContext *filt_scale = NULL;
     AVFilterContext *filt_scale2 = NULL;
     AVFilterContext *filt_pad = NULL;
     AVFilterContext *filt_deint = NULL;
     AVFilterContext *filt_input, *filt_output;
-    char args[256];
     
-    snprintf(args, sizeof(args),
-             "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
-             frame->width, frame->height, frame->format,
-             video->video_st->time_base.num, video->video_st->time_base.den,
-             video->video_st->codecpar->sample_aspect_ratio.num, FFMAX(video->video_st->codecpar->sample_aspect_ratio.den, 1));
-    AVRational fr = av_guess_frame_rate(pFormatCtx, video->video_st, NULL);
-    if (fr.num && fr.den)
-        av_strlcatf(args, sizeof(args), ":frame_rate=%d/%d", fr.num, fr.den);
-    
-    if (avfilter_graph_create_filter(
-                                     filt_in,
-                                     avfilter_get_by_name("buffer"),
-                                     "buffer",
-                                     args,
-                                     NULL,
-                                     graph
-                                     ) < 0)
-        return false;
     if (avfilter_graph_create_filter(
                                      filt_out,
                                      avfilter_get_by_name("buffersink"),
@@ -906,6 +918,45 @@ bool Converter::Configure_VideoFilter(AVFilterContext **filt_in, AVFilterContext
                                      ) < 0)
         return false;
     filt_input = *filt_in;
+    if(video->video_ctx->pix_fmt != video->video_ctx->sw_pix_fmt){
+        AVFilterContext *filt_download = NULL;
+        snprintf(args, sizeof(args), "");
+        if (avfilter_graph_create_filter(
+                                         &filt_download,
+                                         avfilter_get_by_name("hwdownload"),
+                                         "hwdownload",
+                                         args,
+                                         NULL,
+                                         graph
+                                         ) < 0)
+        {
+            return false;
+        }
+        if (avfilter_link(filt_input, 0, filt_download, 0) != 0)
+        {
+            return false;
+        }
+        filt_input = filt_download;
+        
+        AVFilterContext *filt_format = NULL;
+        snprintf(args, sizeof(args), "pix_fmts=nv12");
+        if (avfilter_graph_create_filter(
+                                         &filt_format,
+                                         avfilter_get_by_name("format"),
+                                         "format",
+                                         args,
+                                         NULL,
+                                         graph
+                                         ) < 0)
+        {
+            return false;
+        }
+        if (avfilter_link(filt_input, 0, filt_format, 0) != 0)
+        {
+            return false;
+        }
+        filt_input = filt_format;
+    }
     filt_output = *filt_out;
     if (video->deinterlace) {
         snprintf(args, sizeof(args), "mode=0:parity=-1:deint=1");
@@ -1412,12 +1463,6 @@ int subtitle_thread(Converter *is, int index)
     int64_t old_serial = 0;
     sub_info prev_sub;
 
-    while(is->main_video < 0) {
-        if(is->IsQuit())
-            break;
-        av_usleep(10*1000);
-    }
-
     is->subtitle_info[index]->subpictq_active_serial = av_gettime();
     while (!is->IsQuit()) {
         AVCodecContext *subtitle_ctx = is->subtitle_info[index]->subtitle_ctx.get();
@@ -1453,7 +1498,7 @@ int subtitle_thread(Converter *is, int index)
         int ret;
         AVSubtitle sub;
         double pts = 0;
-        pts = packet.pts * av_q2d(is->subtitle_timebase);
+        pts = packet.pts * av_q2d(packet.time_base);
         if ((ret = avcodec_decode_subtitle2(subtitle_ctx, &sub, &got_frame, &packet)) < 0) {
             av_packet_unref(&packet);
             char buf[AV_ERROR_MAX_STRING_SIZE];
@@ -1479,6 +1524,7 @@ int subtitle_thread(Converter *is, int index)
             sp->subw = subtitle_ctx->width ? subtitle_ctx->width : is->video_info[is->main_video]->video_ctx->width;
             sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->video_info[is->main_video]->video_ctx->height;
             for (size_t i = 0; i < sub.num_rects; i++) {
+                sub.rects[i]->x *= is->video_info[is->main_video]->video_aspect;
                 int width = sub.rects[i]->w * is->video_info[is->main_video]->video_aspect;
                 uint8_t *data[4];
                 int linesize[4];
@@ -1577,7 +1623,9 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
             if(subtitle->subpictq.peek2(sp2) == 0) {
                 if(pts > sp2->pts) {
                     subtitle->subpictq.get(sp);
-                    sp = sp2;
+                }
+                else if(pts > sp->pts + 5 && pts + 6 < sp2->pts) {
+                    subtitle->subpictq.get(sp);
                 }
             }
             else {
@@ -1676,6 +1724,10 @@ int Converter::stream_component_open(int stream_index)
         }
         else {
             av_dict_set_int(&opts, "sub_type", SUBTITLE_BITMAP, 0);
+            av_dict_set(&opts, "font", "monospace", 0);
+            av_dict_set_int(&opts, "replace_msz_ascii", 0, 0);
+            av_dict_set_int(&opts, "replace_msz_japanese", 0, 0);
+            av_dict_set_int(&opts, "replace_msz_glyph", 0, 0);
         }
     }
 
@@ -1693,7 +1745,7 @@ int Converter::stream_component_open(int stream_index)
         {
             std::shared_ptr<AudioStreamInfo> info(new AudioStreamInfo(this));
             info->audio_st = pFormatCtx->streams[stream_index];
-            info->audio_ctx = codecCtx;
+            info->audio_ctx = std::move(codecCtx);
             info->audio_eof = playing;
             if(lang) {
                 info->language = lang->value;
@@ -1710,31 +1762,27 @@ int Converter::stream_component_open(int stream_index)
         {
             std::shared_ptr<VideoStreamInfo> info(new VideoStreamInfo(this));
             info->video_st = pFormatCtx->streams[stream_index];
-            info->video_ctx = codecCtx;
             if(lang) {
                 info->language = lang->value;
             }
             else {
                 info->language = "und";
             }
-            info->video_SAR = info->video_ctx->sample_aspect_ratio;
-            double aspect_ratio = 0;
-            if (info->video_ctx->sample_aspect_ratio.num == 0) {
-                aspect_ratio = 0;
+            {
+                info->video_SAR = codecCtx->sample_aspect_ratio;
+                double aspect_ratio = av_q2d(codecCtx->sample_aspect_ratio);
+                if (aspect_ratio <= 0.0) {
+                    aspect_ratio = 1;
+                }
+                info->video_aspect = aspect_ratio;
+                
+                info->video_height = codecCtx->height;
+                info->video_width = ((int)rint(codecCtx->width * aspect_ratio)) & ~1;
+                info->video_srcheight = codecCtx->height;
+                info->video_srcwidth = codecCtx->width;
             }
-            else {
-                aspect_ratio = av_q2d(info->video_ctx->sample_aspect_ratio) *
-                info->video_ctx->width / info->video_ctx->height;
-            }
-            if (aspect_ratio <= 0.0) {
-                aspect_ratio = (double)info->video_ctx->width /
-                (double)info->video_ctx->height;
-            }
-            info->video_height = codecCtx->height;
-            info->video_width = ((int)rint(info->video_height * aspect_ratio)) & ~1;
-            info->video_srcheight = codecCtx->height;
-            info->video_srcwidth = codecCtx->width;
             info->video_eof = false;
+            info->video_ctx = std::move(codecCtx);
             video_info.push_back(info);
             
             video_thread.push_back(std::thread(::video_thread, this, video_info.size()-1));
@@ -1744,7 +1792,7 @@ int Converter::stream_component_open(int stream_index)
         {
             std::shared_ptr<SubtitleStreamInfo> info(new SubtitleStreamInfo(this));
             info->subtitle_st = pFormatCtx->streams[stream_index];
-            info->subtitle_ctx = codecCtx;
+            info->subtitle_ctx = std::move(codecCtx);
             if(lang) {
                 info->language = lang->value;
             }

@@ -216,10 +216,10 @@ int decode_thread(struct stream_param *stream)
     player->subtitle.subtitleStream = -1;
 
     player->pFormatCtx = avformat_alloc_context();
-    unsigned char *buffer = (unsigned char *)av_malloc(1024*1024);
+    unsigned char *buffer = (unsigned char *)av_malloc(32*1024);
     AVIOContext *pIoCtx = avio_alloc_context(
                                              buffer,
-                                             1024*1024,
+                                             32*1024,
                                              0,
                                              stream->stream,
                                              stream->read_packet,
@@ -237,7 +237,7 @@ int decode_thread(struct stream_param *stream)
         printf("avformat_open_input() failed %s\n", filename);
         goto failed_open;
     }
-    
+
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information
     if (player->IsQuit() || avformat_find_stream_info(player->pFormatCtx, NULL) < 0) {
@@ -499,18 +499,8 @@ int decode_thread(struct stream_param *stream)
             player->master_clock_offset = inpkt->pts * av_q2d(player->pFormatCtx->streams[inpkt->stream_index]->time_base) - ((player->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : player->pFormatCtx->start_time) * av_q2d(AV_TIME_BASE_Q);
         }
 
-        if (inpkt->stream_index == player->video.videoStream) {
-            player->video.videoq.put(inpkt);
-        }
-        else if (inpkt->stream_index == player->audio.audioStream) {
-            player->audio.audioq.put(inpkt);
-        }
-        else if (inpkt->stream_index == player->subtitle.subtitleStream) {
-            player->subtitle.subtitleq.put(inpkt);
-        }
-        av_packet_unref(inpkt);
-
         if (__builtin_isfinite(start_skip)) {
+            av_packet_unref(inpkt);
             start_skip -= 1;
             if(start_skip > 0) {
                 printf("start skip %f sec\n", start_skip);
@@ -521,7 +511,19 @@ int decode_thread(struct stream_param *stream)
                 player->seek_req_type = Player::seek_type_pos;
             }
             start_skip = std::nan("");
+            continue;
         }
+
+        if (inpkt->stream_index == player->video.videoStream) {
+            player->video.videoq.put(inpkt);
+        }
+        else if (inpkt->stream_index == player->audio.audioStream) {
+            player->audio.audioq.put(inpkt);
+        }
+        else if (inpkt->stream_index == player->subtitle.subtitleStream) {
+            player->subtitle.subtitleq.put(inpkt);
+        }
+        av_packet_unref(inpkt);
     }
     av_log(NULL, AV_LOG_INFO, "decode_thread read loop end\n");
     /* all done - wait for it */
@@ -561,6 +563,7 @@ int Player::stream_component_open(int stream_index)
         return -1;
     }
     codecCtx->time_base = pFormatCtx->streams[stream_index]->time_base;
+
     AVDictionary *opts = NULL;
     av_dict_set(&opts, "threads", "auto", 0);
     if(codecCtx->codec_id == AV_CODEC_ID_ARIB_CAPTION) {
@@ -569,6 +572,10 @@ int Player::stream_component_open(int stream_index)
         }
         else {
             av_dict_set_int(&opts, "sub_type", SUBTITLE_BITMAP, 0);
+            av_dict_set(&opts, "font", "monospace", 0);
+            av_dict_set_int(&opts, "replace_msz_ascii", 0, 0);
+            av_dict_set_int(&opts, "replace_msz_japanese", 0, 0);
+            av_dict_set_int(&opts, "replace_msz_glyph", 0, 0);
         }
     }
 
@@ -617,22 +624,14 @@ int Player::stream_component_open(int stream_index)
 
         {
             video.video_SAR = codecCtx->sample_aspect_ratio;
-            video.video_aspect = av_q2d(codecCtx->sample_aspect_ratio);
-            double aspect_ratio = 0;
-            if (codecCtx->sample_aspect_ratio.num == 0) {
-                aspect_ratio = 0;
-            }
-            else {
-                aspect_ratio = av_q2d(codecCtx->sample_aspect_ratio) *
-                codecCtx->width / codecCtx->height;
-            }
+            double aspect_ratio = av_q2d(codecCtx->sample_aspect_ratio);
             if (aspect_ratio <= 0.0) {
-                aspect_ratio = (double)codecCtx->width /
-                (double)codecCtx->height;
+                aspect_ratio = 1;
             }
-            
+            video.video_aspect = aspect_ratio;
+
             video.video_height = codecCtx->height;
-            video.video_width = ((int)rint(video.video_height * aspect_ratio)) & ~1;
+            video.video_width = ((int)rint(codecCtx->width * aspect_ratio)) & ~1;
             video.video_srcheight = codecCtx->height;
             video.video_srcwidth = codecCtx->width;
         }
@@ -968,21 +967,13 @@ int video_thread(Player *is)
                         || frame.sample_aspect_ratio.den != is->video.video_SAR.den || frame.sample_aspect_ratio.num != is->video.video_SAR.num)
                     {
                         is->video.video_SAR = frame.sample_aspect_ratio;
-                        is->video.video_aspect = av_q2d(frame.sample_aspect_ratio);
-                        double aspect_ratio = 0;
-                        if (video_ctx->sample_aspect_ratio.num == 0) {
-                            aspect_ratio = 0;
-                        }
-                        else {
-                            aspect_ratio = av_q2d(video_ctx->sample_aspect_ratio) *
-                            frame.width / frame.height;
-                        }
+                        double aspect_ratio = av_q2d(frame.sample_aspect_ratio);
                         if (aspect_ratio <= 0.0) {
-                            aspect_ratio = (double)frame.width /
-                            (double)frame.height;
+                            aspect_ratio = 1;
                         }
+                        is->video.video_aspect = aspect_ratio;
                         is->video.video_height = video_ctx->height;
-                        is->video.video_width = ((int)rint(is->video.video_height * aspect_ratio)) & ~1;
+                        is->video.video_width = ((int)rint(video_ctx->width * aspect_ratio)) & ~1;
 
                         is->video.video_srcheight = frame.height;
                         is->video.video_srcwidth = frame.width;
@@ -1901,6 +1892,7 @@ int subtitle_thread(Player *is)
         sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->video.video_ctx->height;
         if(sub.format == 0) {
             for (size_t i = 0; i < sub.num_rects; i++) {
+                sub.rects[i]->x *= is->video.video_aspect;
                 int width = sub.rects[i]->w * is->video.video_aspect;
                 uint8_t *data[4];
                 int linesize[4];
@@ -1958,7 +1950,6 @@ void Player::subtitle_display(VideoPicture *vp)
             if(subtitle.subpictq.peek2(sp2) == 0) {
                 if(vp->pts > sp2->pts) {
                     subtitle.subpictq.get(sp);
-                    sp = sp2;
                 }
             }
             else {

@@ -90,11 +90,36 @@ public class ArchiveBridge {
             let myself = Unmanaged<ArchiveBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             let newoffset = min(myself.item.size, myself.offset + request)
             let skipcount = newoffset - myself.offset
+            myself.offset = newoffset
             return skipcount
         }
         return 0
     }
-    
+
+    let archive_seek_callback: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, la_int64_t, Int32) -> la_int64_t = {
+        (archive, ref, offset, whence) in
+        if let ref_unwrapped = ref {
+            let myself = Unmanaged<ArchiveBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            switch (whence) {
+            case SEEK_CUR:
+                let newoffset = min(myself.item.size, max(0, myself.offset + offset))
+                myself.offset = newoffset
+                return newoffset
+            case SEEK_SET:
+                let newoffset = min(myself.item.size, max(0, offset))
+                myself.offset = newoffset
+                return newoffset
+            case SEEK_END:
+                let newoffset = min(myself.item.size, max(0, myself.item.size + offset))
+                myself.offset = newoffset
+                return newoffset
+            default:
+                return la_int64_t(ARCHIVE_FATAL)
+            }
+        }
+        return la_int64_t(ARCHIVE_FATAL)
+    }
+
     let archive_close_callback: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?) -> Int32 = {
         (archive, ref) in
         if let ref_unwrapped = ref {
@@ -119,7 +144,13 @@ func processArchive(item: RemoteItem) async -> [String: (size: Int64, mdate: Dat
     archive_read_support_filter_all(a)
     let bridge = ArchiveBridge(item: item)
     var filelist: [String: (size: Int64, mdate: Date, cdata: Date)] = [:]
-    if archive_read_open2(a, bridge.selfref, bridge.archive_open_callback, bridge.archive_read_callback, bridge.archive_skip_callback, bridge.archive_close_callback) == ARCHIVE_OK {
+    archive_read_set_callback_data(a, bridge.selfref);
+    archive_read_set_open_callback(a, bridge.archive_open_callback);
+    archive_read_set_read_callback(a, bridge.archive_read_callback);
+    archive_read_set_skip_callback(a, bridge.archive_skip_callback);
+    archive_read_set_seek_callback(a, bridge.archive_seek_callback);
+    archive_read_set_close_callback(a, bridge.archive_close_callback);
+    if archive_read_open1(a) == ARCHIVE_OK {
         defer {
             if let s = archive_error_string(a) {
                 print(String(cString: s))
@@ -177,7 +208,13 @@ func getDataFromArchive(item: RemoteItem, file: String) async -> Data? {
     archive_read_support_format_all(a)
     archive_read_support_filter_all(a)
     let bridge = ArchiveBridge(item: item)
-    if archive_read_open2(a, bridge.selfref, bridge.archive_open_callback, bridge.archive_read_callback, bridge.archive_skip_callback, bridge.archive_close_callback) == ARCHIVE_OK {
+    archive_read_set_callback_data(a, bridge.selfref);
+    archive_read_set_open_callback(a, bridge.archive_open_callback);
+    archive_read_set_read_callback(a, bridge.archive_read_callback);
+    archive_read_set_skip_callback(a, bridge.archive_skip_callback);
+    archive_read_set_seek_callback(a, bridge.archive_seek_callback);
+    archive_read_set_close_callback(a, bridge.archive_close_callback);
+    if archive_read_open1(a) == ARCHIVE_OK {
         defer {
             archive_read_free(a)
         }

@@ -1,0 +1,13 @@
+diff --git a/libavformat/mov.c b/libavformat/mov.c
+index ef190106f9..87d61fdea6 100644
+--- a/libavformat/mov.c
++++ b/libavformat/mov.c
+@@ -5173,7 +5173,7 @@ static int sanity_checks(void *log_obj, MOVStreamContext *sc, int index)
+     if (sc->stsc_count && sc->stsc_data[ sc->stsc_count - 1 ].first > sc->chunk_count) {
+         av_log(log_obj, AV_LOG_ERROR, "stream %d, contradictionary STSC and STCO\n",
+                index);
+-        return 2;
++        //return 2;
+     }
+     return 0;
+ }

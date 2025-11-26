@@ -28,15 +28,15 @@ class Encoder {
     var subwriter: [WebVTTwriter?] = []
     let dest: URL
     var isLive = true
+    var last_touch: Date?
     var needWait: Bool {
-        var wait = true
+        var wait = false
         for w in writer {
             if let w {
-                if w.last_write_m3u8 < 0 {
-                    wait = false
-                    break
+                if w.last_write_m3u8 > 1, last_touch == nil {
+                    wait = true
                 }
-                if w.touch_count >= 0 {
+                else {
                     wait = false
                     break
                 }
@@ -180,11 +180,10 @@ class Encoder {
         }
         
         let properties = [
-            //kVTCompressionPropertyKey_RealTime: true,
-            kVTCompressionPropertyKey_AverageBitRate: 5*1024*1024,
+            kVTCompressionPropertyKey_AverageBitRate: 10*1024*1024,
             kVTCompressionPropertyKey_AllowOpenGOP: false,
             kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_High_4_1,
-            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 5.0,
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 1.0,
             ] as CFDictionary
         status = VTSessionSetProperties(self.compressionSession!, propertyDictionary: properties)
         guard status == noErr else {
@@ -214,7 +213,7 @@ class Encoder {
             } catch {
                 return
             }
-            let w = TS_writer(dest: p, split_time: 5.0, time_hint: 10.0)
+            let w = TS_writer(dest: p, split_time: 5.0, time_hint: 5.0)
             if i == 0 {
                 w.set_channel(video: 1, audio: 0)
             }
