@@ -1,2 +1,7 @@
 xcuserdata/
 xcshareddata/
+GoogleCastSDK-*
+work/build/
+work/output/
+work/libaribcaption/
+work/ffmpeg/
