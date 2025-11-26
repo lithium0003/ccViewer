@@ -62,16 +62,26 @@ struct OpenfileUIView: View {
                 if storages.count > 1 {
                     var ffplay = false
                     if UserDefaults.standard.bool(forKey: "FFplayer"), UserDefaults.standard.bool(forKey: "firstFFplayer") {
-                        for (storage, fileid) in zip(storages, fileids) {
-                            if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                                if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                        await withTaskGroup { group in
+                            for (storage, fileid) in zip(storages, fileids) {
+                                group.addTask { ()->(String, String)? in
+                                    if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                                        if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                                        }
+                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
+                                        }
+                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
+                                        }
+                                        else {
+                                            ffplay = true
+                                            return (storage, fileid)
+                                        }
+                                    }
+                                    return nil
                                 }
-                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
-                                }
-                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
-                                }
-                                else {
-                                    ffplay = true
+                            }
+                            for await item in group {
+                                if let (storage, fileid) = item {
                                     passStorages.append(storage)
                                     passFileids.append(fileid)
                                 }
@@ -79,20 +89,29 @@ struct OpenfileUIView: View {
                         }
                     }
                     else {
-                        for (storage, fileid) in zip(storages, fileids) {
-                            if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                                if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                        await withTaskGroup { group in
+                            for (storage, fileid) in zip(storages, fileids) {
+                                group.addTask { ()->(String, String)? in
+                                    if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                                        if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                                        }
+                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
+                                        }
+                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
+                                        }
+                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie), UserDefaults.standard.bool(forKey: "MediaViewer") {
+                                            return (storage, fileid)
+                                        }
+                                        else {
+                                            ffplay = true
+                                            return (storage, fileid)
+                                        }
+                                    }
+                                    return nil
                                 }
-                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
-                                }
-                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
-                                }
-                                else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie), UserDefaults.standard.bool(forKey: "MediaViewer") {
-                                    passStorages.append(storage)
-                                    passFileids.append(fileid)
-                                }
-                                else {
-                                    ffplay = true
+                            }
+                            for await item in group {
+                                if let (storage, fileid) = item {
                                     passStorages.append(storage)
                                     passFileids.append(fileid)
                                 }

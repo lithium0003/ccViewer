@@ -25,8 +25,8 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
             UserDefaults.standard.bool(forKey: "shuffle")
         }
 
-        var items: [RemoteItem] = []
-        var itemIDMap: [Int: String] = [:]
+        var orgItems: [(String, String)] = []
+        var itemMap: [Int: RemoteItem] = [:]
         var durations: [String: (Double, String, String, String)] = [:]
         var currentIdx = -1
         var currentItemID: Int = -1 {
@@ -37,19 +37,16 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
                 }
                 if oldValue < 0 { return }
                 for i in 0...oldValue {
-                    if let path = itemIDMap[i] {
+                    if let item = itemMap[i] {
                         Task {
-                            print("Convert done", i, path)
-                            await Converter.Done(targetPath: path)
+                            print("Convert done", i, item.path)
+                            await Converter.Done(targetPath: item.path)
+                            await item.cancel()
+                            itemMap[i] = nil
                         }
                     }
                 }
             }
-        }
-
-        func setItemID(_ id: Int, path: String) {
-            print("setItemID", id, path)
-            itemIDMap[id] = path
         }
         
         func setCurrentItemID(_ id: Int) {
@@ -89,21 +86,20 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         }
         
         func finish() async {
-            for item in items {
+            for item in itemMap.values {
                 await Converter.Done(targetPath: item.path)
             }
-            items.removeAll()
-            itemIDMap.removeAll()
+            itemMap.removeAll()
         }
         
-        func nextItem() -> (Int, RemoteItem)? {
-            if currentIdx + 1 < items.count {
+        func nextItem() async -> (Int, RemoteItem)? {
+            if currentIdx + 1 < orgItems.count {
                 currentIdx += 1
             }
             else {
                 if loop {
                     if shuffle {
-                        items.shuffle()
+                        orgItems.shuffle()
                     }
                     currentIdx = 0
                 }
@@ -111,11 +107,23 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
                     return nil
                 }
             }
-            return (currentIdx, items[currentIdx])
+            let (storage, fileid) = orgItems[currentIdx]
+            if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                itemMap[currentIdx] = remoteItem
+                return (currentIdx, remoteItem)
+            }
+            if currentIdx > 0 {
+                return await nextItem()
+            }
+            return nil
         }
         
-        func setItems(_ items: [RemoteItem]) {
-            self.items = items
+        func setItems(_ items: [(String, String)]) async {
+            await finish()
+            orgItems = items
+            if shuffle {
+                orgItems.shuffle()
+            }
             currentIdx = -1
         }
     }
@@ -246,7 +254,6 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
         print(item.path)
         if let url = await Converter.Play(item: info) {
             let randID = url.deletingLastPathComponent().lastPathComponent
-            await prop.setItemID(index, path: item.path)
             if await Converter.start_encode(randID: randID) {
                 var sleepCount = 0
                 while Converter.IsCasting(), await !Converter.fileReady(randID: randID), await Converter.runState(randID: randID) {
@@ -319,28 +326,31 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
 }
 
 func playConverter(storages: [String], fileids: [String], playlist: Bool = false) async {
-    var shuffle: Bool {
-        UserDefaults.standard.bool(forKey: "shuffle")
-    }
-    var items: [RemoteItem] = []
-    for (storage, fileid) in zip(storages, fileids) {
-        if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-            if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
-            }
-            else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
-            }
-            else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
-            }
-            else if remoteItem.ext == "cue" {
-            }
-            else {
-                items.append(remoteItem)
+    var items: [(String, String)] = []
+    await withTaskGroup { group in
+        for (storage, fileid) in zip(storages, fileids) {
+            group.addTask { () -> (String, String)? in
+                if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                    if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                    }
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
+                    }
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
+                    }
+                    else if remoteItem.ext == "cue" {
+                    }
+                    else {
+                        return (storage, fileid)
+                    }
+                }
+                return nil
             }
         }
-    }
-    if items.isEmpty { return }
-    if shuffle {
-        items.shuffle()
+        for await item in group {
+            if let item {
+                items.append(item)
+            }
+        }
     }
     CastConverter.shared.playlist = playlist
     let castContext = GCKCastContext.sharedInstance()
