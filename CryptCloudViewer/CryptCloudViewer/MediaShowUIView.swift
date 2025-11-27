@@ -36,7 +36,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
                 if item == nil {
                     item = await CloudFactory.shared.storageList.get(storageName)?.get(fileId: String(fileId))
                 }
-                guard let item = self.item else {
+                guard let item else {
                     loadingRequest.finishLoading(with: URLError(URLError.Code.cannotOpenFile))
                     return
                 }
@@ -64,7 +64,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
                 }
                 let requestLength = request.requestedLength
                 //print("s\(startOffset) r\(requestLength)")
-                guard self.stream!.isLive else {
+                guard stream!.isLive else {
                     loadingRequest.finishLoading(with: URLError(URLError.Code.cannotOpenFile))
                     return
                 }
@@ -82,20 +82,39 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
         }
         let maxlen = 2*1024*1024
         let len = (length > maxlen) ? maxlen : length
-        let data = try? await stream?.read(position: position, length: len, onProgress: nil)
-        //print("read s\(position) r\(len) d\(data?.count ?? -1)")
-        if let data = data {
-            request.respond(with: data)
-            if len == length, data.count == len {
-                loadingRequest.finishLoading()
+        let start = Date()
+        while !loadingRequest.isCancelled, start.timeIntervalSinceNow > -30 {
+            let data = try? await stream?.read(position: position, length: len, onProgress: nil)
+            //print("read s\(position) r\(len) d\(data?.count ?? -1)")
+            if let data = data {
+                request.respond(with: data)
+                if len == length, data.count == len {
+                    loadingRequest.finishLoading()
+                }
+                else {
+                    await respondData(position: position+Int64(data.count), length: length-data.count, request: request, loadingRequest: loadingRequest)
+                }
+                return
             }
             else {
-                await respondData(position: position+Int64(data.count), length: length-data.count, request: request, loadingRequest: loadingRequest)
+                // error, reopen stream
+                //print("read reopen stream")
+                stream?.isLive = false
+                stream = nil
+                guard let item else {
+                    loadingRequest.finishLoading(with: URLError(.cannotOpenFile))
+                    return
+                }
+                await item.cancel()
+                try? await Task.sleep(for: .seconds(2))
+                if let item = await CloudFactory.shared.storageList.get(item.storage)?.get(fileId: item.id) {
+                    self.item = nil
+                    self.item = item
+                    stream = await item.open()
+                }
             }
         }
-        else {
-            loadingRequest.finishLoading(with: URLError(.cannotOpenFile))
-        }
+        loadingRequest.finishLoading(with: URLError(.cannotOpenFile))
     }
 }
 
@@ -152,11 +171,13 @@ class CustomPlayer: NSObject {
         let item = playItems[itemIndex]
         let storage = item["storage"] as! String
         let id = item["id"] as! String
+        guard let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: id), let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie) || uti.conforms(to: .video) || uti.conforms(to: .audio) else {
+            return
+        }
         let url = getURL(storage: storage, fileId: id)
         infoItems[url] = item
         let asset = getAsset(url: url)
         // Load the "playable" property
-        let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: id)
         do {
             if try await asset.load(.isPlayable) {
                 let status = asset.status(of: .isPlayable)
@@ -164,18 +185,16 @@ class CustomPlayer: NSObject {
                 case .loaded:
                     // Sucessfully loaded. Continue processing.
                     let playitem = AVPlayerItem(asset: asset)
-                    if let remoteItem {
-                        let titleItem =  AVMutableMetadataItem()
-                        titleItem.identifier = AVMetadataIdentifier.commonIdentifierTitle
-                        titleItem.value = remoteItem.name as any NSCopying & NSObjectProtocol
-                        playitem.externalMetadata.append(titleItem)
-                        if let image = await getArtimage(item: remoteItem), let data = image.jpegData(compressionQuality: 1.0) {
-                            let artItem = AVMutableMetadataItem()
-                            artItem.identifier = AVMetadataIdentifier.commonIdentifierArtwork
-                            artItem.value = data as NSData
-                            artItem.dataType = kCMMetadataBaseDataType_JPEG as String
-                            playitem.externalMetadata.append(artItem)
-                        }
+                    let titleItem =  AVMutableMetadataItem()
+                    titleItem.identifier = AVMetadataIdentifier.commonIdentifierTitle
+                    titleItem.value = remoteItem.name as any NSCopying & NSObjectProtocol
+                    playitem.externalMetadata.append(titleItem)
+                    if let image = await getArtimage(item: remoteItem), let data = image.jpegData(compressionQuality: 1.0) {
+                        let artItem = AVMutableMetadataItem()
+                        artItem.identifier = AVMetadataIdentifier.commonIdentifierArtwork
+                        artItem.value = data as NSData
+                        artItem.dataType = kCMMetadataBaseDataType_JPEG as String
+                        playitem.externalMetadata.append(artItem)
                     }
                     
                     NotificationCenter.default.addObserver(self, selector: #selector(didPlayToEndTime), name: .AVPlayerItemDidPlayToEndTime, object: playitem)
@@ -209,14 +228,14 @@ class CustomPlayer: NSObject {
             if shuffle {
                 playIndex.shuffle()
             }
-            Task {
-                await enqueuePlayItem()
-            }
+        }
+        Task {
+            await enqueuePlayItem()
         }
     }
 
     func enqueuePlayItem() async {
-        while let next = playIndex.first {
+        if let next = playIndex.first {
             await PrepareAVPlayerItem(itemIndex: next)
             playIndex = Array(playIndex.dropFirst())
         }
@@ -303,6 +322,7 @@ class PlayerManager: NSObject, AVPlayerViewControllerDelegate {
             Task {
                 await oldValue?.finish()
             }
+            let commandCenter = MPRemoteCommandCenter.shared()
             if player != nil {
                 UIApplication.shared.beginReceivingRemoteControlEvents()
                 do {
@@ -311,8 +331,23 @@ class PlayerManager: NSObject, AVPlayerViewControllerDelegate {
                 } catch {
                     print(error)
                 }
+
+                commandCenter.nextTrackCommand.addTarget { [weak self] event in
+                    self?.player?.player.advanceToNextItem()
+                    Task {
+                        await self?.player?.enqueuePlayItem()
+                    }
+                    return .success
+                }
+                commandCenter.previousTrackCommand.addTarget { [weak self] event in
+                    self?.player?.player.seek(to: .zero)
+                    return .success
+                }
             }
             else {
+                commandCenter.nextTrackCommand.removeTarget(nil)
+                commandCenter.previousTrackCommand.removeTarget(nil)
+
                 try? AVAudioSession.sharedInstance().setActive(false)
                 UIApplication.shared.endReceivingRemoteControlEvents()
             }
@@ -472,6 +507,7 @@ struct MediaShowUIView: View {
             PlayerManager.shared.player = newplayer
             await Task.yield()
 
+            await newplayer.enqueuePlayItem()
             await newplayer.enqueuePlayItem()
         }
     }

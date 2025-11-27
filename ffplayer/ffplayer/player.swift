@@ -38,9 +38,10 @@ public class PiPManager {
 
 public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDelegate, AVPictureInPictureControllerDelegate {
     let playlist: Bool
-    var remotes: [RemoteItem]
+    var remotes: [(String, String)]
     var curIdx = 0
     var idx = 0
+    var remoteItem: RemoteItem?
     var stream: RemoteStream?
     var position: Int64
     var soundPTS: Double
@@ -111,13 +112,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
 
         self.playlist = playlist
-        var remotes: [RemoteItem] = []
-        for (storage, fileid) in zip(storages, fileids) {
-            if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-                remotes.append(item)
-            }
-        }
-        self.remotes = remotes
+        remotes = zip(storages, fileids).map({ ($0, $1) })
+        remoteItem = nil
         stream = nil
         name = ""
         position = 0
@@ -176,9 +172,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             stream.isCancel = true
             stream.stream?.isLive = false
             Task {
-                for remote in stream.remotes {
-                    await remote.cancel()
-                }
+                await stream.remoteItem?.cancel()
+                stream.stream = nil
+                stream.remoteItem = nil
             }
             stream.semaphore.signal()
         }
@@ -193,7 +189,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             if stream.isCancel {
                return averror_exit
             }
-            guard let rstream = stream.stream else {
+            guard let ritem = stream.remoteItem else {
                 return averror_exit
             }
             //print("read \(stream.position) \(buf_size)")
@@ -201,7 +197,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             defer {
                 stream.semaphore.signal()
             }
-            if stream.position >= stream.remotes[stream.idx].size {
+            if stream.position >= ritem.size {
                 return averror_eof
             }
             let semaphore = DispatchSemaphore(value: 0)
@@ -209,14 +205,33 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 defer {
                     semaphore.signal()
                 }
-                let data = try? await rstream.read(position: stream.position, length: Int(buf_size))
-                if stream.isCancel {
-                    return
-                }
-                assert(data?.count ?? 0 <= Int(buf_size))
-                if let data, data.count > 0 {
-                    count = data.copyBytes(to: buf_array)
-                    stream.position += Int64(count)
+                let start = Date()
+                while start.timeIntervalSinceNow > -30 {
+                    guard let rstream = stream.stream else {
+                        break
+                    }
+                    let data = try? await rstream.read(position: stream.position, length: Int(buf_size))
+                    if stream.isCancel {
+                        return
+                    }
+                    assert(data?.count ?? 0 <= Int(buf_size))
+                    if let data, data.count > 0 {
+                        count = data.copyBytes(to: buf_array)
+                        stream.position += Int64(count)
+                        break
+                    }
+
+                    // error, reopen stream
+                    //print("read reopen stream")
+                    stream.stream?.isLive = false
+                    stream.stream = nil
+                    await ritem.cancel()
+                    try? await Task.sleep(for: .seconds(2))
+                    if let item = await CloudFactory.shared.storageList.get(ritem.storage)?.get(fileId: ritem.id) {
+                        stream.remoteItem = nil
+                        stream.remoteItem = item
+                        stream.stream = await item.open()
+                    }
                 }
             }
             semaphore.wait()
@@ -234,15 +249,18 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             if stream.isCancel {
                 return -1
             }
+            guard let ritem = stream.remoteItem else {
+                return -1
+            }
             stream.semaphore.wait()
             defer {
                 stream.semaphore.signal()
             }
             switch whence {
             case 0x10000:
-                count = stream.remotes[stream.idx].size
+                count = ritem.size
             case SEEK_SET:
-                if offset >= 0 && offset <= stream.remotes[stream.idx].size {
+                if offset >= 0 && offset <= ritem.size {
                     stream.position = offset
                     count = offset
                 }
@@ -251,7 +269,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 }
             case SEEK_CUR:
                 let offset2 = offset + stream.position
-                if offset2 >= 0 && offset2 <= stream.remotes[stream.idx].size {
+                if offset2 >= 0 && offset2 <= ritem.size {
                     stream.position = offset2
                     count = offset2
                 }
@@ -259,8 +277,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     count = -1
                 }
             case SEEK_END:
-                let offset2 = stream.remotes[stream.idx].size - offset
-                if offset2 >= 0 && offset2 <= stream.remotes[stream.idx].size {
+                let offset2 = ritem.size + offset
+                if offset2 >= 0 && offset2 <= ritem.size {
                     stream.position = offset2
                     count = offset2
                 }
@@ -490,10 +508,15 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
 
     func setupArtwork(_ i: Int) async {
-        let storage = remotes[i].storage
-        var basename = remotes[i].name
-        var parentId = remotes[i].parent
-        if let subid = remotes[i].subid, let subbase = await CloudFactory.shared.storageList.get(storage)?.get(fileId: subid) {
+        let (storage, fileid) = remotes[i]
+        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) else {
+            artworkImageSender.send(nil)
+            image = nil
+            return
+        }
+        var basename = item.name
+        var parentId = item.parent
+        if let subid = item.subid, let subbase = await CloudFactory.shared.storageList.get(storage)?.get(fileId: subid) {
             basename = subbase.name
             parentId = subbase.parent
         }
@@ -611,8 +634,34 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             }
             curIdx = idx
             isCancel = false
-            stream = await remotes[idx].open()
-            name = remotes[idx].name
+            let (storage, fileid) = remotes[idx]
+            guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) else {
+                curIdx += 1
+                continue
+            }
+            if let uti = UTType(filenameExtension: item.ext), uti.conforms(to: .text) {
+                curIdx += 1
+                continue
+            }
+            else if let uti = UTType(filenameExtension: item.ext), uti.conforms(to: .image) {
+                curIdx += 1
+                continue
+            }
+            else if let uti = UTType(filenameExtension: item.ext), uti.conforms(to: .pdf) {
+                curIdx += 1
+                continue
+            }
+            else if item.ext == "conf" {
+                curIdx += 1
+                continue
+            }
+            else if item.ext == "cue" {
+                curIdx += 1
+                continue
+            }
+            remoteItem = item
+            stream = await item.open()
+            name = item.name
             position = 0
             soundPTS = Double.nan
             videoPTS = Double.nan
@@ -632,7 +681,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             await setupArtwork(idx)
 
             var partial_start = Double.nan
-            if !playlist, let p = await CloudFactory.shared.mark.getMark(storage: remotes[idx].storage, targetID: remotes[idx].id) {
+            if !playlist, let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
                 if remotes.count > 1 {
                     if p < 0 || p > 0.99 {
                         curIdx += 1
@@ -699,21 +748,22 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                                 curIdx += 1
                                 if ret >= 0 && !playlist {
                                     if mediaDuration > 0 {
-                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: playPos / mediaDuration)
+                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: playPos / mediaDuration)
                                     }
                                     else {
-                                        await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
+                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
                                     }
                                 }
                             }
                             else {
                                 if ret >= 0 && !playlist {
-                                    await CloudFactory.shared.mark.setMark(storage: remotes[idx].storage, targetID: remotes[idx].id, parentID: remotes[idx].parent, position: 1.0)
+                                    await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
                                 }
                             }
 
                             stream?.isLive = false
-                            await remotes[idx].cancel()
+                            await item.cancel()
+                            remoteItem = nil
                             stream = nil
                             pixelBuffer = nil
                             continuation.resume(returning: ret)

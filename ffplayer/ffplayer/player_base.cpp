@@ -144,7 +144,6 @@ void Player::Quit()
     if(!param) return;
     struct stream_param *p = (struct stream_param *)param;
     quit = true;
-    setPause(p->sound_stop(p->stream) != 1);
     clear_soundbufer();
     {
         std::unique_lock<std::mutex> lk(video.pictq_mutex);
@@ -177,7 +176,6 @@ void Player::Finalize()
     Quit();
     if(!param) return;
     struct stream_param *p = (struct stream_param *)param;
-    p->sound_stop(p->stream);
 
     if(parse_thread.joinable()){
         parse_thread.join();
