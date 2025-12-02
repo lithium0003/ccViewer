@@ -747,8 +747,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                             if idx == curIdx {
                                 curIdx += 1
                                 if ret >= 0 && !playlist {
-                                    if mediaDuration > 0 {
-                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: playPos / mediaDuration)
+                                    if mediaDuration > 0, playPos > 0 {
+                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, playPos / mediaDuration)))
                                     }
                                     else {
                                         await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
@@ -1019,7 +1019,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
     }
     
-    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
+    public func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        setPlaying playing: Bool
+    ) {
         if playPos >= mediaDuration { return }
         pause = !playing
         Task { await onPause(pause) }

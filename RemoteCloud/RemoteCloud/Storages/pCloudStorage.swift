@@ -637,20 +637,6 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         return nil
     }
 
-    @MainActor
-    func getParentPath(parentId: String) -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
-    }
-    
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if fromParentId == toParentId {
             return nil
@@ -711,7 +697,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "uploadFile(pCloud:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
 
-                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                 let fileSize = attr[.size] as! UInt64
 
                 var parentPath = "\(storageName ?? ""):/"

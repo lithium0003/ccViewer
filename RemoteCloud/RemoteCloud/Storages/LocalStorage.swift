@@ -182,7 +182,6 @@ public class LocalStorage: RemoteStorageBase {
         }
     }
     
-    @MainActor
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 
@@ -190,24 +189,24 @@ public class LocalStorage: RemoteStorageBase {
             return nil
         }
 
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
         let fromURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         let name = fromURL.lastPathComponent
         var targetURL = documentsURL
         var parentPath = ""
         if toParentId != "" {
             targetURL = documentsURL.appendingPathComponent(toParentId, conformingTo: .folder)
-            let viewContext = CloudFactory.shared.data.viewContext
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
-                if let items = result as? [RemoteData] {
-                    parentPath = items.first?.path ?? ""
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
+                if let result = try? viewContext.fetch(fetchRequest) {
+                    if let items = result as? [RemoteData] {
+                        parentPath = items.first?.path ?? ""
+                    }
                 }
             }
         }
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = self.storageName ?? ""
         await viewContext.perform {
             let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
@@ -326,7 +325,6 @@ public class LocalStorage: RemoteStorageBase {
         return await NetworkRemoteItem(path: path)
     }
     
-    @MainActor
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var newURL = documentsURL
@@ -335,15 +333,17 @@ public class LocalStorage: RemoteStorageBase {
         }
         newURL = newURL.appendingPathComponent(uploadname, conformingTo: .data)
         
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
         var parentPath = ""
         if parentId != "" {
-            let viewContext = CloudFactory.shared.data.viewContext
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
-                if let items = result as? [RemoteData] {
-                    parentPath = items.first?.path ?? ""
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
+                if let result = try? viewContext.fetch(fetchRequest) {
+                    if let items = result as? [RemoteData] {
+                        parentPath = items.first?.path ?? ""
+                    }
                 }
             }
         }
@@ -354,7 +354,6 @@ public class LocalStorage: RemoteStorageBase {
         
         try FileManager.default.moveItem(at: target, to: newURL)
         
-        let viewContext = CloudFactory.shared.data.viewContext
         self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
         let id = self.getIdFromURL(url: newURL)
         await viewContext.perform {

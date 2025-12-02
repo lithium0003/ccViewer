@@ -164,7 +164,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return $0
         })
     }
-    
+
     func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
         let formatter = ISO8601DateFormatter()
         
@@ -230,7 +230,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             else {
                 url = "https://api.dropboxapi.com/2/files/list_folder/continue"
             }
-            
+
             var request: URLRequest = URLRequest(url: URL(string: url)!)
             request.httpMethod = "POST"
             request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
@@ -396,7 +396,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return false
         }
     }
-    
+
     public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
@@ -438,7 +438,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-    
+
     override func deleteItem(fileId: String) async -> Bool {
         do {
             let ret = try await callWithRetry(action: { [self] in
@@ -496,17 +496,19 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return false
         }
     }
-    
-    @MainActor
+
     override func renameItem(fileId: String, newname: String) async -> String? {
         var parentId: String? = nil
         let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
         
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-            if let item = result.first {
-                parentId = item.parent
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
+                if let item = result.first {
+                    parentId = item.parent
+                }
             }
         }
         if let parentId = parentId {
@@ -521,7 +523,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func renameItem(fileId: String, parentId: String, newname: String, callCount: Int = 0) async -> String? {
+    func renameItem(fileId: String, parentId: String, newname: String) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "renameItem(dropbox:\(storageName ?? "") \(fileId) \(newname)")
@@ -579,8 +581,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-    
-    @MainActor
+
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if fromParentId == toParentId {
             return nil
@@ -588,12 +589,14 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         var orgname: String? = nil
         
         let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-            if let item = result.first {
-                orgname = item.name
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
+                if let item = result.first {
+                    orgname = item.name
+                }
             }
         }
         if let orgname = orgname {
@@ -674,8 +677,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
     public override func getRaw(path: String) async -> RemoteItem? {
         return await NetworkRemoteItem(path: path)
     }
-    
-    @MainActor
+
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
@@ -685,11 +687,13 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
         var parentPath = ""
         let viewContext = CloudFactory.shared.data.viewContext
         
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                parentPath = items.first?.path ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
+            if let result = try? viewContext.fetch(fetchRequest) {
+                if let items = result as? [RemoteData] {
+                    parentPath = items.first?.path ?? ""
+                }
             }
         }
         let p = "\(self.storageName ?? ""):"
@@ -713,9 +717,9 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
             return try await callWithRetry(action: { [self] in
                 let attr = try FileManager.default.attributesOfItem(atPath: target.path)
                 let fileSize = attr[.size] as! UInt64
-                
+
                 let url = "https://content.dropboxapi.com/2/files/upload"
-                
+
                 var request: URLRequest = URLRequest(url: URL(string: url)!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
@@ -772,7 +776,7 @@ public class DropBoxStorage: NetworkStorage, URLSessionDataDelegate {
     func uploadLongFile(parentId: String, parentPath: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         do {
             return try await callWithRetry(action: { [self] in
-                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                 let fileSize = attr[.size] as! UInt64
 
                 let handle = try FileHandle(forReadingFrom: target)

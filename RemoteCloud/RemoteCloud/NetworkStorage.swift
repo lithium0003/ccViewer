@@ -261,8 +261,8 @@ public class NetworkRemoteItem: RemoteItem {
 }
 
 public class SlotStream: RemoteStream {
-    static let slotcount = 10
-    static let slotadvance: Int64 = 2
+    static let slotcount = 20
+    static let slotadvance: Int64 = 5
     static let bufSize:Int64 = 1*1024*1024
     var error = false
 

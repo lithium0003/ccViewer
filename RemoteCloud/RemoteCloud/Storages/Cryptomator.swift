@@ -1070,21 +1070,7 @@ public class Cryptomator: ChildStorage {
         }
         return true
     }
-    
-    @MainActor
-    func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
-    }
-    
+
     override func renameItem(fileId: String, newname: String) async -> String? {
         let newname = newname.precomposedStringWithCanonicalMapping
         guard fileId != "" else {
@@ -1388,19 +1374,20 @@ public class Cryptomator: ChildStorage {
         return fileId
     }
 
-    @MainActor
     func getOrgName(fileId: String) async -> String? {
         var orgname: String? = nil
-
         let viewContext = CloudFactory.shared.data.viewContext
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-            if let item = items.first {
-                orgname = item.name
+        let storage = storageName ?? ""
+        return await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                if let item = items.first {
+                    orgname = item.name
+                }
             }
+            return orgname
         }
-        return orgname
     }
     
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {

@@ -421,7 +421,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             continuation?.resume(returning: nil)
         }
     }
-    
+
     func listFolder(path: String) async -> [[String:Any]]? {
         do {
             return try await callWithRetry(action: { [self] in
@@ -1020,20 +1020,6 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
     }
 
-    @MainActor
-    func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
-    }
-
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if toParentId == fromParentId {
             return nil
@@ -1347,7 +1333,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             try? FileManager.default.removeItem(at: target)
         }
 
-        let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+        let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
         let fileSize = attr[.size] as! UInt64
         try await progress?(0, Int64(fileSize))
 

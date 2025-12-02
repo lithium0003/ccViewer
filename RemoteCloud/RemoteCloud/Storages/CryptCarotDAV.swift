@@ -337,15 +337,15 @@ public class CryptCarotDAV: ChildStorage {
         let plain = Data(bytes: outBytes, count: outLength)
         return String(data: plain, encoding: .utf8)?.replacingOccurrences(of: "\0", with: "")
     }
-    
+
     public override func getRaw(fileId: String) async -> RemoteItem? {
         return await CryptCarotDAVRemoteItem(storage: storageName ?? "", id: fileId)
     }
-    
+
     public override func getRaw(path: String) async -> RemoteItem? {
         return await CryptCarotDAVRemoteItem(path: path)
     }
-    
+
     override func processFile(target: URL) -> URL? {
         let crypttarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
         
@@ -415,7 +415,7 @@ public class CryptCarotDAV: ChildStorage {
                 return nil
             }
             ivbuf.replaceSubrange(0..<ivbuf.count, with: outBytes[outLength-ivbuf.count..<outLength])
-            
+
             guard outLength == output.write(&outBytes, maxLength: outLength) else {
                 return nil
             }
@@ -438,7 +438,6 @@ public class CryptCarotDAV: ChildStorage {
         return crypttarget
     }
 }
-
 
 public class CryptCarotDAVRemoteItem: RemoteItem {
     let remoteStorage: CryptCarotDAV
@@ -464,7 +463,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
     let salt: Data
     let key: Data
     let IV: Data
-    
+
     init(remote: CryptCarotDAVRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
@@ -524,7 +523,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         }
         return Data(bytes: outBytes, count: outLength)
     }
-    
+
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
             error = true

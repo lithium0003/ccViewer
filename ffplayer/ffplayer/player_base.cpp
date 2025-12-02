@@ -142,7 +142,6 @@ void Player::setPause(bool value)
 void Player::Quit()
 {
     if(!param) return;
-    struct stream_param *p = (struct stream_param *)param;
     quit = true;
     clear_soundbufer();
     {
@@ -175,7 +174,6 @@ void Player::Finalize()
 {
     Quit();
     if(!param) return;
-    struct stream_param *p = (struct stream_param *)param;
 
     if(parse_thread.joinable()){
         parse_thread.join();
@@ -1874,12 +1872,12 @@ int subtitle_thread(Player *is)
         av_packet_unref(inpkt);
         if (got_frame == 0) continue;
 
-        av_log(NULL, AV_LOG_INFO, "subtitle pts %lld\n", sub.pts);
+        // av_log(NULL, AV_LOG_INFO, "subtitle pts %lld\n", sub.pts);
         if (sub.pts != AV_NOPTS_VALUE) {
             pts = sub.pts * av_q2d(AV_TIME_BASE_Q);
             pts -= av_q2d(AV_TIME_BASE_Q) * ((is->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : is->pFormatCtx->start_time);
         }
-        av_log(NULL, AV_LOG_INFO, "subtitle time %f\n", pts);
+        // av_log(NULL, AV_LOG_INFO, "subtitle time %f\n", pts);
         std::shared_ptr<SubtitlePicture> sp(new SubtitlePicture);
         sp->pts = pts;
         sp->serial = av_gettime();

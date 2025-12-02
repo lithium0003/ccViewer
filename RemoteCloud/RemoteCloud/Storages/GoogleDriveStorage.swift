@@ -728,7 +728,6 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
 
-    @MainActor
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if toParentId == fromParentId {
             return nil
@@ -766,12 +765,14 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
 
                 if toParentId != "" {
                     let viewContext = CloudFactory.shared.data.viewContext
-                    
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        if let items = result as? [RemoteData] {
-                            toParentPath = items.first?.path ?? ""
+                    let storage = storageName ?? ""
+                    await viewContext.perform {
+                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
+                        if let result = try? viewContext.fetch(fetchRequest) {
+                            if let items = result as? [RemoteData] {
+                                toParentPath = items.first?.path ?? ""
+                            }
                         }
                     }
                 }
@@ -948,7 +949,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
         return newid
     }
-    
+
     override func changeTime(fileId: String, newdate: Date) async -> String? {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
             return nil
@@ -975,21 +976,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
     public override func getRaw(path: String) async -> RemoteItem? {
         return await NetworkRemoteItem(path: path)
     }
-    
-    @MainActor
-    func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
-    }
-    
+
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
@@ -1028,7 +1015,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     try? handle.close()
                 }
 
-                let attr = try FileManager.default.attributesOfItem(atPath: target.path)
+                let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                 let fileSize = attr[.size] as! UInt64
                 try await progress?(0, Int64(fileSize))
 

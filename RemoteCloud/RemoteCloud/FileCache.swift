@@ -186,7 +186,7 @@ public class FileCache {
                     }
 
                     // hit check
-                    if let target = item.filename?.uuidString, size == item.chunkSize {
+                    if let target = item.filename?.uuidString, (size < 0 || size == item.chunkSize) {
                         let base = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appending(path: "NetCache")
                         let target_path = base.appending(path: target.prefix(2)).appending(path: target.prefix(4).suffix(2)).appending(path: target)
                         if FileManager.default.fileExists(atPath: target_path.path(percentEncoded: false)) {

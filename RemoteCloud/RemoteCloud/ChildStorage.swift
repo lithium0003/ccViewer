@@ -77,16 +77,17 @@ public class ChildStorage: RemoteStorageBase {
         return size
     }
     
-    @MainActor
     func getBaseList(baseStorage: String, baseFileId: String) async -> [RemoteData] {
         let viewContext = CloudFactory.shared.data.viewContext
 
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", baseFileId, baseStorage)
-        if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-            return items
+        return await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", baseFileId, baseStorage)
+            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
+                return items
+            }
+            return []
         }
-        return []
     }
     
     override func listChildren(fileId: String, path: String) async {
@@ -280,20 +281,6 @@ public class ChildStorage: RemoteStorageBase {
         return true
     }
 
-    @MainActor
-    func getParentPath(parentId: String) -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
-    }
-    
     override func renameItem(fileId: String, newname: String) async -> String? {
         guard fileId != "" else {
             return nil

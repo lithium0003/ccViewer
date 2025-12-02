@@ -63,7 +63,7 @@ public class ArchiveBridge {
                     }
                     await myself.setBuffer(try? stream.read(position: myself.offset, length: 1*1024*1024))
                 }
-                if semaphore.wait(timeout: .now() + 10) == .timedOut {
+                if semaphore.wait(timeout: .now() + 30) == .timedOut {
                     return -1
                 }
                 if let buf = myself.buffer {

@@ -36,6 +36,7 @@
 		BE186E592E9A4A82002F6CC8 /* SMBClient in Frameworks */ = {isa = PBXBuildFile; productRef = BE186E582E9A4A82002F6CC8 /* SMBClient */; };
 		BE2D3D022EAFB806006DF15C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D012EAFB806006DF15C /* GoogleSignIn */; };
 		BE2D3D042EAFB806006DF15C /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = BE2D3D032EAFB806006DF15C /* GoogleSignInSwift */; };
+		BEEE31342EDB5A1F00760308 /* FilenStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEE31332EDB5A1F00760308 /* FilenStorage.swift */; };
 		BEEF7BFC2ECA735C000F6F3E /* cache.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7BFA2ECA735C000F6F3E /* cache.xcdatamodeld */; };
 		BEEF7BFF2ECA74B5000F6F3E /* playmark.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7BFD2ECA74B5000F6F3E /* playmark.xcdatamodeld */; };
 		BEEF7C012ECA7544000F6F3E /* PlayMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF7C002ECA7544000F6F3E /* PlayMark.swift */; };
@@ -71,6 +72,7 @@
 		BE0C16B92EC89E1400C78FEC /* archive_entry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive_entry.h; sourceTree = "<group>"; };
 		BE0C16C52EC8A0BC00C78FEC /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = usr/lib/libarchive.tbd; sourceTree = SDKROOT; };
 		BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SambaStorage.swift; sourceTree = "<group>"; };
+		BEEE31332EDB5A1F00760308 /* FilenStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilenStorage.swift; sourceTree = "<group>"; };
 		BEEF7BFB2ECA735C000F6F3E /* cache.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = cache.xcdatamodel; sourceTree = "<group>"; };
 		BEEF7BFE2ECA74B5000F6F3E /* playmark.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = playmark.xcdatamodel; sourceTree = "<group>"; };
 		BEEF7C002ECA7544000F6F3E /* PlayMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayMark.swift; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				3C400921224190920028A45A /* OneDriveStorage.swift */,
 				3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */,
 				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
+				BEEE31332EDB5A1F00760308 /* FilenStorage.swift */,
 				BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */,
 				3FE215872394F39300CD2A19 /* FilesStorage.swift */,
 			);
@@ -262,6 +265,7 @@
 				3CF14614223B29360025081A /* CryptRclone.swift in Sources */,
 				3FA46CE223849615007ACC82 /* FileCache.swift in Sources */,
 				BEEF7C042ECA7670000F6F3E /* remote.xcdatamodeld in Sources */,
+				BEEE31342EDB5A1F00760308 /* FilenStorage.swift in Sources */,
 				BEEF7BFC2ECA735C000F6F3E /* cache.xcdatamodeld in Sources */,
 				3CA2C951223495E700481DB5 /* RemoteStorage.swift in Sources */,
 				3C14C452225CE19E0044E4A7 /* CueSheet.swift in Sources */,

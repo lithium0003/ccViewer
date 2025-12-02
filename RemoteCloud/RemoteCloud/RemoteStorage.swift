@@ -33,6 +33,7 @@ public enum CloudStorages: Hashable, Identifiable, CaseIterable {
     case CryptCarotDAV
     case CryptRclone
     case Cryptomator
+    case Filen
 }
 
 public protocol RemoteStorage {
@@ -356,6 +357,8 @@ public class CloudFactory {
             return UIImage(named: "local", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .Files:
             return UIImage(named: "files", in: Bundle(for: type(of: self)), compatibleWith: nil)
+        case .Filen:
+            return UIImage(named: "filen", in: Bundle(for: type(of: self)), compatibleWith: nil)
         }
     }
 
@@ -383,6 +386,8 @@ public class CloudFactory {
             return "Local"
         case .Files:
             return "Files"
+        case .Filen:
+            return "Filen"
         }
     }
     
@@ -410,6 +415,8 @@ public class CloudFactory {
             return LocalStorage(name: tagname)
         case .Files:
             return FilesStorage(name: tagname)
+        case .Filen:
+            return FilenStorage(name: tagname)
         }
     }
 
@@ -803,20 +810,22 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         }
     }
 
-    @MainActor
     public func mkdir(parentId: String, newname: String) async -> String? {
         if parentId == "" {
             return await makeFolder(parentId: parentId, parentPath: "", newname: newname)
         }
         else{
             var path = ""
+            let storage = storageName ?? ""
             let viewContext = CloudFactory.shared.data.viewContext
             
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, self.storageName ?? "")
-            if let result = try? viewContext.fetch(fetchRequest) {
-                if let items = result as? [RemoteData] {
-                    path = items.first?.path ?? ""
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
+                if let result = try? viewContext.fetch(fetchRequest) {
+                    if let items = result as? [RemoteData] {
+                        path = items.first?.path ?? ""
+                    }
                 }
             }
             if path != "" {
@@ -852,7 +861,23 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         return nil
     }
-    
+
+    func getParentPath(parentId: String) async -> String? {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let storage = storageName ?? ""
+
+        return await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
+            if let result = try? viewContext.fetch(fetchRequest) {
+                if let items = result as? [RemoteData] {
+                    return items.first?.path ?? ""
+                }
+            }
+            return nil
+        }
+    }
+
     func getKeyChain(key: String) async -> String? {
         let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrAccount as String: key,

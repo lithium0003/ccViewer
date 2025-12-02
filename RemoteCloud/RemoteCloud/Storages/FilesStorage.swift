@@ -441,7 +441,6 @@ public class FilesStorage: RemoteStorageBase  {
     }
 
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        
         do {
             if fromParentId == toParentId {
                 return nil
@@ -459,7 +458,15 @@ public class FilesStorage: RemoteStorageBase  {
             }
             
             // Use the URL here.
-            
+            var targetURL = url
+            var parentPath = ""
+            if toParentId != "" {
+                targetURL = url.appending(path: toParentId)
+                parentPath = await getParentPath(parentId: toParentId) ?? ""
+            }
+            let fromURL = url.appending(path: fileId)
+            let name = fromURL.lastPathComponent
+
             // Start accessing a security-scoped resource.
             guard url.startAccessingSecurityScopedResource() else {
                 // Handle the failure here.
@@ -484,25 +491,8 @@ public class FilesStorage: RemoteStorageBase  {
                     // Make sure you release the security-scoped resource when you are done.
                     defer { url.stopAccessingSecurityScopedResource() }
                     
-                    let fromURL = url.appendingPathComponent(fileId)
-                    let name = fromURL.lastPathComponent
-                    var targetURL = url
-                    var parentPath = ""
-                    if toParentId != "" {
-                        targetURL = url.appendingPathComponent(toParentId, isDirectory: true)
-                        Task { @MainActor in
-                            let viewContext = CloudFactory.shared.data.viewContext
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, self.storageName ?? "")
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                if let items = result as? [RemoteData] {
-                                    parentPath = items.first?.path ?? ""
-                                }
-                            }
-                        }
-                    }
                     let viewContext = CloudFactory.shared.data.viewContext
-                    viewContext.perform {
+                    viewContext.performAndWait {
                         let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
                         fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
                         if let result = try? viewContext.fetch(fetchRequest2) {
@@ -771,20 +761,6 @@ public class FilesStorage: RemoteStorageBase  {
             print(error)
             return nil
         }
-    }
-
-    @MainActor
-    func getParentPath(parentId: String) -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
-        
-        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storageName ?? "")
-        if let result = try? viewContext.fetch(fetchRequest) {
-            if let items = result as? [RemoteData] {
-                return items.first?.path ?? ""
-            }
-        }
-        return nil
     }
 
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
