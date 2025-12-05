@@ -1183,11 +1183,11 @@ int video_present_thread(Player *is)
             continue;
         }
         
-        if(!__builtin_isfinite(is->video.frame_last_pts) || is->video.frame_last_pts < vp->pts) {
-            is->video.frame_last_pts = vp->pts;
+        if(!__builtin_isfinite(is->video.frame_last_pts) || is->video.frame_last_pts < vp->pts + param->latency) {
+            is->video.frame_last_pts = vp->pts + param->latency;
         }
         //printf("pts:%f\n",vp->pts);
-        double diff = is->video.frame_last_pts - is->get_master_clock() - param->latency;
+        double diff = is->video.frame_last_pts - is->get_master_clock();
 
         //printf("diff:%f\n",diff);
         if (diff < 0) {
@@ -1214,7 +1214,7 @@ int video_present_thread(Player *is)
             if((av_gettime() - start_tic) / 1000000.0 > diff) {
                 break;
             }
-            double delay = is->video.frame_last_pts - is->get_master_clock() - param->latency;
+            double delay = is->video.frame_last_pts - is->get_master_clock();
             //printf("delay:%f\n",delay);
             if (delay > AV_SYNC_THRESHOLD) {
                 //printf("wait:%f\n", delay);
