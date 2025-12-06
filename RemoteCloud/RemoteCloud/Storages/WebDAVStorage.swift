@@ -27,9 +27,13 @@ struct WebDAVLoginView: View {
             Form {
                 Section("URL") {
                     TextField("https://localhost/webdav/", text: $textURI)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                 }
                 Section("Username") {
                     TextField("(Optional)", text: $textUser)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                 }
                 Section("Password") {
                     SecureField("(Optional)", text: $textPass)

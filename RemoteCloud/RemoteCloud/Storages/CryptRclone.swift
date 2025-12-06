@@ -191,6 +191,8 @@ struct PasswordRcloneView: View {
                     HStack {
                         if showPassword {
                             TextField("password", text: $password)
+                                .textInputAutocapitalization(.never)
+                                .disableAutocorrection(true)
                         }
                         else {
                             SecureField("password", text: $password)
@@ -254,6 +256,8 @@ struct PasswordRcloneView: View {
                     HStack {
                         if showSalt {
                             TextField("salt", text: $salt)
+                                .textInputAutocapitalization(.never)
+                                .disableAutocorrection(true)
                         }
                         else {
                             SecureField("salt", text: $salt)
@@ -324,6 +328,8 @@ struct PasswordRcloneView: View {
                         Text("Filename suffix")
                         Spacer()
                         TextField("suffix", text: $suffix)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
                             .frame(maxWidth: 100)
                             .multilineTextAlignment(.trailing)
                             .textFieldStyle(.roundedBorder)

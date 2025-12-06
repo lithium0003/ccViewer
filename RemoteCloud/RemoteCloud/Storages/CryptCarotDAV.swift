@@ -30,6 +30,8 @@ struct PasswordCarotView: View {
                     HStack {
                         if showPassword {
                             TextField("password", text: $password)
+                                .textInputAutocapitalization(.never)
+                                .disableAutocorrection(true)
                         }
                         else {
                             SecureField("password", text: $password)

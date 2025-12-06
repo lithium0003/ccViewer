@@ -29,9 +29,13 @@ struct SambaLoginView: View {
             Form {
                 Section("Host") {
                     TextField("localhost", text: $textHost)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                 }
                 Section("Username") {
                     TextField("(Optional)", text: $textUser)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                 }
                 Section("Password") {
                     SecureField("(Optional)", text: $textPass)

@@ -17,7 +17,7 @@ internal import UniformTypeIdentifiers
 
 struct FilenLoginView: View {
     let authContinuation: CheckedContinuation<Bool, Never>
-    let callback: (String, String, String) async -> Bool
+    let callback: (String, String, String) async -> String?
     let onDismiss: () -> Void
     @State var ok = false
 
@@ -25,12 +25,16 @@ struct FilenLoginView: View {
     @State var textPass = ""
     @State var textCode = ""
     @State var useTwoFactorCode = false
+    @State var errorMessage = ""
+    @State var isPresent = false
 
     var body: some View {
         ZStack {
             Form {
                 Section("email") {
                     TextField("user@example.com", text: $textEmail)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                 }
                 Section("Password") {
                     SecureField("password", text: $textPass)
@@ -38,6 +42,8 @@ struct FilenLoginView: View {
                 Section("twoFactorCode") {
                     Toggle("Use twoFactor Login", isOn: $useTwoFactorCode)
                     TextField("XXXXXX", text: $textCode)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
                         .disabled(!useTwoFactorCode)
                 }
                 Button("Connect") {
@@ -49,17 +55,25 @@ struct FilenLoginView: View {
                     }
                     ok = true
                     Task {
-                        if await callback(textEmail, textPass, textCode) {
-                            authContinuation.resume(returning: true)
+                        if let error = await callback(textEmail, textPass, textCode) {
+                            errorMessage = error
+                            isPresent.toggle()
                         }
                         else {
-                            authContinuation.resume(returning: false)
+                            authContinuation.resume(returning: true)
                         }
                     }
                 }
                 .buttonStyle(.borderedProminent)
             }
             .disabled(ok)
+            .alert("Error", isPresented: $isPresent) {
+                Button(role: .confirm) {
+                    ok = false
+                }
+            } message: {
+                Text(errorMessage)
+            }
 
             if ok {
                 ProgressView()
@@ -337,37 +351,37 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         return nil
     }
     
-    func authCallcack(_ email: String, _ pass: String, _ code: String) async -> Bool {
-        let data = await getAuthInfo(email: email)
+    func authCallcack(_ email: String, _ pass: String, _ code: String) async -> String? {
+        let (data, message) = await getAuthInfo(email: email)
         guard let authVersion = data["authVersion"] as? Int, authVersion == 2 else {
-            return false
+            return message + " authVersion is not 2"
         }
         guard let salt = data["salt"] as? String else {
-            return false
+            return message + " salt error"
         }
         let saltData = salt.data(using: .utf8)!
         let derivedKey = pbkdf2(password: pass, salt: saltData, iterations: 200000)
         let derivedMasterKeys = data2hex(derivedKey[0..<derivedKey.count/2])
         let derivedPassword = derivedKey[derivedKey.count/2..<derivedKey.count]
         let hashedPassword = sha512(data2hex(derivedPassword))
-        let data2 = await login(email: email, password: data2hex(hashedPassword), twoFactorCode: code, authVersion: authVersion)
+        let (data2, message2) = await login(email: email, password: data2hex(hashedPassword), twoFactorCode: code, authVersion: authVersion)
         guard let apiKey = data2["apiKey"] as? String else {
-            return false
+            return message2 + " apiKey error"
         }
         guard let masterKeys = data2["masterKeys"] as? String else {
-            return false
+            return message2 + " masterKeys error"
         }
         guard let plainMasterKeys = await decodeMetadata(key: derivedMasterKeys, metadata: masterKeys) else {
-            return false
+            return message2 + " masterKeys decode error"
         }
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessApiKey", value: apiKey)
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessDerivedMasterKeys", value: derivedMasterKeys)
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessMasterKeys", value: plainMasterKeys)
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessBaseFolder", value: await getBaseFolder())
-        return true
+        return nil
     }
     
-    func login(email: String, password: String, twoFactorCode: String, authVersion: Int) async -> [String: Any] {
+    func login(email: String, password: String, twoFactorCode: String, authVersion: Int) async -> ([String: Any], String) {
         var request: URLRequest = URLRequest(url: URL(string: "https://gateway.filen.io/v3/login")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -379,52 +393,54 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             "authVersion": authVersion,
         ]
         guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-            return [:]
+            return ([:], "internal error")
         }
         request.httpBody = postData
         
         guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-            return [:]
+            return ([:], "network error")
         }
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-            return [:]
+            return ([:], "response error")
         }
         guard let json = object as? [String: Any] else {
-            return [:]
+            return ([:], "response error")
         }
+        let message = json["message"] as? String ?? "unknown error"
         guard let code = json["code"] as? String, code == "login_success" else {
-            return [:]
+            return ([:], message)
         }
         guard let d = json["data"] as? [String: Any] else {
-            return [:]
+            return ([:], message)
         }
-        return d
+        return (d, message)
     }
     
-    func getAuthInfo(email: String) async -> [String: Any] {
+    func getAuthInfo(email: String) async -> ([String: Any], String) {
         var request: URLRequest = URLRequest(url: URL(string: "https://gateway.filen.io/v3/auth/info")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let jsondata: [String: Any] = ["email": email]
         guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-            return [:]
+            return ([:], "internal error")
         }
         request.httpBody = postData
         
         guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-            return [:]
+            return ([:], "network error")
         }
         guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-            return [:]
+            return ([:], "response error")
         }
         guard let json = object as? [String: Any] else {
-            return [:]
+            return ([:], "response error")
         }
+        let message = json["message"] as? String ?? "unknown error"
         guard let dataField = json["data"] as? [String: Any] else {
-            return [:]
+            return ([:], message)
         }
-        return dataField
+        return (dataField, message)
     }
     
     public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {

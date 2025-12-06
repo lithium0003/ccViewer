@@ -65,6 +65,8 @@ struct TutorialUIView: View {
                 VStack {
                     Text("If you plan to add encrypted folder, register base storage before add the crypto storage.")
                         .padding()
+                    Text("(Filen.io has cryption storage its own, so just add it.)")
+                        .padding()
                     HStack {
                         Image("tutorial4")
                             .resizable()
