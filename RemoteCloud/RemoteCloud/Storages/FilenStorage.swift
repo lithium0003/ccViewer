@@ -205,21 +205,24 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     func pbkdf2(password: String, salt: Data, iterations: UInt32) -> Data {
+        let passwordUtf8 = password.data(using: .utf8)!
         let saltBuffer = [UInt8](salt)
         let hashedLen = Int(CC_SHA512_DIGEST_LENGTH)
         var hashed = Data(count: hashedLen)
         
         let result = hashed.withUnsafeMutableBytes { (body: UnsafeMutableRawBufferPointer) -> Int32 in
-            if let baseAddress = body.baseAddress, body.count > 0 {
-                let data = baseAddress.assumingMemoryBound(to: UInt8.self)
-                return CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
-                                            password, password.count,
-                                            saltBuffer, saltBuffer.count,
-                                            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
-                                            iterations,
-                                            data, hashedLen)
+            return passwordUtf8.withUnsafeBytes { pass in
+                if let baseAddress = body.baseAddress, body.count > 0 {
+                    let data = baseAddress.assumingMemoryBound(to: UInt8.self)
+                    return CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
+                                                pass.baseAddress!, passwordUtf8.count,
+                                                saltBuffer, saltBuffer.count,
+                                                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+                                                iterations,
+                                                data, hashedLen)
+                }
+                return Int32(kCCMemoryFailure)
             }
-            return Int32(kCCMemoryFailure)
         }
         
         guard result == kCCSuccess else { fatalError("pbkdf2 error") }
