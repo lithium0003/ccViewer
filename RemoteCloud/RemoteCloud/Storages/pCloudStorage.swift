@@ -41,8 +41,28 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         return [:]
     }
 
+    var cache_hostname: String = ""
+    func hostname() async -> String {
+        if cache_hostname != "" {
+            return cache_hostname
+        }
+        if let name = storageName {
+            if let host = await getKeyChain(key: "\(name)_hostname") {
+                cache_hostname = host
+            }
+            return cache_hostname
+        }
+        else {
+            return "api.pcloud.com"
+        }
+    }
+
     override func signIn(_ successURL: URL) async throws -> Bool {
         let oauthToken = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "code"}).first
+        let hostname = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "hostname"}).first
+        if let hostnameString = hostname?.value {
+            _ = await setKeyChain(key: "\(storageName!)_hostname", value: hostnameString)
+        }
         
         if let oauthTokenString = oauthToken?.value {
             return await getToken(oauthToken: oauthTokenString)
@@ -53,7 +73,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     override func getToken(oauthToken: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "getToken(pCloud:\(storageName ?? ""))")
 
-        var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/oauth2_token")!)
+        var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/oauth2_token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
 
@@ -105,6 +125,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     public override func logout() async {
         if let name = storageName {
             let _ = await delKeyChain(key: "\(name)_accountId")
+            let _ = await delKeyChain(key: "\(name)_hostname")
         }
         await super.logout()
     }
@@ -112,7 +133,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     override func revokeToken(token: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "revokeToken(pCloud:\(storageName ?? ""))")
     
-        var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/logout")!)
+        var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/logout")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
     
@@ -135,7 +156,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     }
 
     override func isAuthorized() async -> Bool {
-        var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/userinfo")!)
+        var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/userinfo")!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
 
@@ -160,7 +181,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "listFolder(pCloud:\(storageName ?? ""))")
 
-                let url = "https://api.pcloud.com/listfolder?folderid=\(folderId)&timeformat=timestamp"
+                let url = "https://\(await hostname())/listfolder?folderid=\(folderId)&timeformat=timestamp"
 
                 var request: URLRequest = URLRequest(url: URL(string: url)!)
                 request.httpMethod = "GET"
@@ -307,7 +328,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "readFile(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
 
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/getfilelink?fileid=\(id)")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/getfilelink?fileid=\(id)")!)
                 request.httpMethod = "GET"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
 
@@ -368,7 +389,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         do {
             return try await callWithRetry(action: { [self] in
                 let body = "folderid=\(folderid)&name=\(name)&timeformat=timestamp"
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/createfolder")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/createfolder")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
@@ -421,7 +442,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         do {
             return try await callWithRetry(action: { [self] in
                 let body = "folderid=\(folderId)"
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefolderrecursive")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/deletefolderrecursive")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
@@ -449,7 +470,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         do {
             return try await callWithRetry(action: { [self] in
                 let body = "fileid=\(fileId)"
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/deletefile")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/deletefile")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
@@ -537,7 +558,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 if let toName = toName {
                     rename += "&toname=\(toName)"
                 }
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefile")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/renamefile")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = rename.data(using: .utf8)
@@ -578,7 +599,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 if let toName = toName {
                     rename += "&toname=\(toName)"
                 }
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/renamefolder")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/renamefolder")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = rename.data(using: .utf8)
@@ -710,7 +731,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 }
                 let tmpurl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(Int.random(in: 0...0xffffffff))")
                 
-                var request: URLRequest = URLRequest(url: URL(string: "https://api.pcloud.com/uploadfile")!)
+                var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/uploadfile")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 let boundary = "Boundary-\(UUID().uuidString)"

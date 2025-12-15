@@ -27,7 +27,7 @@ struct WebLoginView: View {
                 try? await Task.sleep(for: .seconds(1))
                 do {
                      // Perform the authentication and await the result.
-                    let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callback: callback, additionalHeaderFields: additionalHeaderFields)
+                    let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callback: callback, preferredBrowserSession: .ephemeral, additionalHeaderFields: additionalHeaderFields)
                      // Call the method that completes the authentication using the
                      // returned URL.
                     guard try await signIn(urlWithToken) else {
