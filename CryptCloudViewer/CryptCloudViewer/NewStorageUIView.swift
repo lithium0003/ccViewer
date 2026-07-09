@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RemoteCloud
+internal import AuthenticationServices
 
 struct NewStorageUIView: View {
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession

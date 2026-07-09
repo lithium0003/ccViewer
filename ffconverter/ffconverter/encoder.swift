@@ -180,10 +180,10 @@ class Encoder {
         }
         
         let properties = [
-            kVTCompressionPropertyKey_AverageBitRate: 10*1024*1024,
+            kVTCompressionPropertyKey_AverageBitRate: 5*1024*1024,
             kVTCompressionPropertyKey_AllowOpenGOP: false,
             kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_High_4_1,
-            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 1.0,
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 3.0,
             ] as CFDictionary
         status = VTSessionSetProperties(self.compressionSession!, propertyDictionary: properties)
         guard status == noErr else {
@@ -230,7 +230,7 @@ class Encoder {
                 } catch {
                     return
                 }
-                let wt = WebVTTwriter(dest: p, split_time: 10.0, time_hint: 20.0)
+                let wt = WebVTTwriter(dest: p, split_time: 20.0, time_hint: 20.0)
                 subwriter += [wt]
             }
         }

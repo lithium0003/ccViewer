@@ -49,7 +49,7 @@ class Store {
     @MainActor
     static func clearProductCount() {
         for id in products {
-            NSUbiquitousKeyValueStore.default.set(0, forKey: id)
+            NSUbiquitousKeyValueStore.default.set(Int64(0), forKey: id)
         }
     }
 

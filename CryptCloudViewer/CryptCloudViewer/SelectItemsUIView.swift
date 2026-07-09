@@ -208,7 +208,10 @@ struct SelectItemsUIView: View {
                             while let last = env.path.last, case .select(_, _) = last {
                                 env.path.removeLast()
                             }
-                            env.continuation?.resume(returning: true)
+                            if let continuation = env.continuation {
+                                env.continuation = nil
+                                continuation.resume(returning: true)
+                            }
                         } label: {
                             Image(systemName: "checkmark")
                         }

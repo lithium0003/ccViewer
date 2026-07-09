@@ -35,16 +35,15 @@ import Combine
 }
 
 struct AuthProxyView: View {
-    @Binding var authView: (any View)?
-    @Binding var continuation: CheckedContinuation<Bool, Never>?
+    @Binding var env: UserEnvObject
     
     var body: some View {
-        if let authView {
+        if let authView = env.authView {
             AnyView(authView)
                 .task {
-                    if let continuation {
+                    if let continuation = env.continuation {
+                        env.continuation = nil
                         continuation.resume(returning: true)
-                        self.continuation = nil
                     }
                 }
         }
@@ -106,7 +105,7 @@ enum HomePath: Hashable {
         case .storage:
             NewStorageUIView(env: env)
         case .auth:
-            AuthProxyView(authView: env.authView, continuation: env.continuation)
+            AuthProxyView(env: env)
         case let .playlist(name: name):
             PlaylistUIView(playlistName: name, env: env)
         case .shop:
