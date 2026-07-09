@@ -172,28 +172,24 @@ public class CryptCarotDAV: ChildStorage {
     let KeySize = 256
     let CryptHeaderByte = 64
     let CryptFooterByte = 64
-    
+
     func pbkdf2(password: String, salt: Data, iterations: UInt32) -> Data {
         let hashedcount = (BlockSize+KeySize)/8
-        var hashed = Data(count: hashedcount)
+        var hashed = [UInt8](repeating: 0, count: hashedcount)
         let saltBuffer = [UInt8](salt)
         
-        let result = hashed.withUnsafeMutableBytes { (body: UnsafeMutableRawBufferPointer) -> Int32 in
-            if let baseAddress = body.baseAddress, body.count > 0 {
-                let data = baseAddress.assumingMemoryBound(to: UInt8.self)
-                return CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
-                                 password, password.count,
-                                 saltBuffer, saltBuffer.count,
-                                 CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
-                                 iterations,
-                                 data, hashedcount)
-            }
-            return Int32(kCCMemoryFailure)
-        }
+        let result = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            password, password.count,
+            saltBuffer, saltBuffer.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
+            iterations,
+            &hashed, hashedcount
+        )
         
         guard result == kCCSuccess else { fatalError("pbkdf2 error") }
         
-        return hashed
+        return Data(hashed)
     }
     
     func generateKey() async {
@@ -208,27 +204,25 @@ public class CryptCarotDAV: ChildStorage {
         let plain = input.data(using: .utf8)!
         var padplain = plain
         padplain.append(Data(count: BlockSizeByte - (plain.count % BlockSizeByte)))
+        
         var outLength = Int(0)
         var outBytes = [UInt8](repeating: 0, count: padplain.count + kCCBlockSizeAES128)
-        var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
-        padplain.withUnsafeBytes { (plainBytes: UnsafeRawBufferPointer)->Void in
-            IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
-                key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
-                    status = CCCrypt(CCOperation(kCCEncrypt),
-                                     CCAlgorithm(kCCAlgorithmAES),
-                                     0,
-                                     keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     key.count,
-                                     ivBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     plainBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     padplain.count,
-                                     &outBytes,
-                                     outBytes.count,
-                                     &outLength)
-                }
-            }
-        }
- 
+        
+        let keyArray = [UInt8](key)
+        let ivArray = [UInt8](IV)
+        let plainArray = [UInt8](padplain)
+        
+        let status = CCCrypt(
+            CCOperation(kCCEncrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            0,
+            keyArray, keyArray.count,
+            ivArray,
+            plainArray, plainArray.count,
+            &outBytes, outBytes.count,
+            &outLength
+        )
+        
         guard status == kCCSuccess else {
             return ""
         }
@@ -255,7 +249,7 @@ public class CryptCarotDAV: ChildStorage {
         base64 = base64.replacingOccurrences(of: "=", with: "")
         return header_str + base64
     }
-    
+
     func decryptFilename(input: String) -> String? {
         if !input.hasPrefix(header_str) {
             return nil
@@ -279,6 +273,8 @@ public class CryptCarotDAV: ChildStorage {
             return nil
         }
         
+        let keyArray = [UInt8](key)
+
         if crypt.count > BlockSizeByte {
             let lastlen = (crypt.count - 1) % BlockSizeByte + 1
             let pos = crypt.count - BlockSizeByte - lastlen
@@ -287,22 +283,19 @@ public class CryptCarotDAV: ChildStorage {
             
             var outLength = Int(0)
             var outBytes = [UInt8](repeating: 0, count: cryptbuf2.count)
-            var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
-            cryptbuf2.withUnsafeBytes { (cryptBytes: UnsafeRawBufferPointer)->Void in
-                key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
-                    status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES),
-                                     CCOptions(kCCOptionECBMode),
-                                     keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     key.count,
-                                     nil,
-                                     cryptBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     cryptbuf2.count,
-                                     &outBytes,
-                                     outBytes.count,
-                                     &outLength)
-                }
-            }
+            
+            let cryptArray2 = [UInt8](cryptbuf2)
+            var status = CCCrypt(
+                CCOperation(kCCDecrypt),
+                CCAlgorithm(kCCAlgorithmAES),
+                CCOptions(kCCOptionECBMode),
+                keyArray, keyArray.count,
+                nil,
+                cryptArray2, cryptArray2.count,
+                &outBytes, outBytes.count,
+                &outLength
+            )
+            
             guard status == kCCSuccess else {
                 return nil
             }
@@ -315,24 +308,20 @@ public class CryptCarotDAV: ChildStorage {
         
         var outLength = Int(0)
         var outBytes = [UInt8](repeating: 0, count: input.count + kCCBlockSizeAES128)
-        var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
-        crypt.withUnsafeBytes { (cryptBytes: UnsafeRawBufferPointer)->Void in
-            IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
-                key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
-                    status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES),
-                                     0,
-                                     keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     key.count,
-                                     ivBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     cryptBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     crypt.count,
-                                     &outBytes,
-                                     outBytes.count,
-                                     &outLength)
-                }
-            }
-        }
+        
+        let cryptArray = [UInt8](crypt)
+        let ivArray = [UInt8](IV)
+        let status = CCCrypt(
+            CCOperation(kCCDecrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            0,
+            keyArray, keyArray.count,
+            ivArray,
+            cryptArray, cryptArray.count,
+            &outBytes, outBytes.count,
+            &outLength
+        )
+        
         guard status == kCCSuccess else {
             return nil
         }
@@ -502,21 +491,19 @@ public class RemoteCryptCarotDAVStream: SlotStream {
     func decode(input: Data, IV: Data) -> Data? {
         var outLength = Int(0)
         var outBytes = [UInt8](repeating: 0, count: input.count + kCCBlockSizeAES128)
-        var status: CCCryptorStatus = CCCryptorStatus(kCCSuccess)
-        input.withUnsafeBytes { (cryptBytes: UnsafeRawBufferPointer)->Void in
-            IV.withUnsafeBytes { (ivBytes: UnsafeRawBufferPointer)->Void in
-                key.withUnsafeBytes { (keyBytes: UnsafeRawBufferPointer)->Void in
-                    status = CCCrypt(CCOperation(kCCDecrypt),
-                                     CCAlgorithm(kCCAlgorithmAES),
-                                     0,
-                                     keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     key.count,
-                                     ivBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     cryptBytes.bindMemory(to: UInt8.self).baseAddress,
-                                     input.count,
-                                     &outBytes,
-                                     outBytes.count,
-                                     &outLength)
+        let status = input.withUnsafeBytes { cryptBytes in
+            IV.withUnsafeBytes { ivBytes in
+                key.withUnsafeBytes { keyBytes in
+                    CCCrypt(
+                        CCOperation(kCCDecrypt),
+                        CCAlgorithm(kCCAlgorithmAES),
+                        0,
+                        keyBytes.baseAddress, key.count,
+                        ivBytes.baseAddress,
+                        cryptBytes.baseAddress, input.count,
+                        &outBytes, outBytes.count,
+                        &outLength
+                    )
                 }
             }
         }

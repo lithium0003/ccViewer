@@ -1153,7 +1153,7 @@ void audio_thread(Converter *is, int index)
                     if (pts_t0 != AV_NOPTS_VALUE) {
                         if(is->audio_info[index]->audio_start_pts != AV_NOPTS_VALUE && is->audio_info[index]->audio_start_pts > 0x1FFFFFFFF && pts_t0 < is->audio_info[index]->audio_start_pts) {
                             av_log(NULL, AV_LOG_INFO, "audio %d pts wrap-around %lld->%lld\n", index, is->audio_info[index]->audio_start_pts, pts_t0);
-
+                            
                             pts_t0 += 0x1FFFFFFFF;
                         }
                         while(is->main_video < 0) {
@@ -1215,74 +1215,57 @@ void audio_thread(Converter *is, int index)
                     //av_log(NULL, AV_LOG_INFO, "audio %d delta sample %lld\n", index, delta_sample);
                     
                     is->audio_info[index]->present = true;
-
+                    
                     if (!__builtin_isfinite(pts)) {
                         is->audio_info[index]->frame_count += out_samples;
-
                         encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
+                        av_frame_unref(&audio_frame_out);
+                        continue;
+                    }
+                    double expected_pts = (double)is->audio_info[index]->frame_count / audio_out_sample_rate;
+                    double drift_sec = pts - expected_pts;
+                    int64_t drift_samples = drift_sec * audio_out_sample_rate;
 
-                        av_frame_unref(&audio_frame_out);
-                        continue;
+                    if (drift_samples > 20 * audio_out_sample_rate) {
+                        av_log(NULL, AV_LOG_INFO, "audio %d drift %f > 20s, clamping\n", index, drift_sec);
+                        drift_samples = 20 * audio_out_sample_rate;
                     }
-                    if(delta_sample + out_samples < 0) {
-                        av_log(NULL, AV_LOG_INFO, "audio %d skip\n", index);
-                        av_frame_unref(&audio_frame_out);
-                        continue;
-                    }
-                    if (abs(delta_sample) < audio_out_sample_rate / 2) {
-                        pts += (double)(out_samples) / audio_out_sample_rate;
+                    
+                    if (abs(drift_samples) < 1024) {
+                        encode(stream, expected_pts, (uint8_t *)audio_buf, out_size, index);
                         is->audio_info[index]->frame_count += out_samples;
-
-                        is->audio_info[index]->audio_last_pts_t = pts_t0;
-                        is->audio_info[index]->audio_last_pts = pts;
-
-                        //av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
-
-                        encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
+                    }
+                    else if (drift_samples > 0) {
+                        av_log(NULL, AV_LOG_INFO, "audio %d padding silence %lld samples\n", index, drift_samples);
+                        int pad_size = (int)(sizeof(float) * drift_samples * audio_out_channel_layout.nb_channels);
+                        if (silence_buflen < pad_size) {
+                            delete [] silence_buf;
+                            silence_buf = new uint8_t[pad_size];
+                            silence_buflen = pad_size;
+                            memset(silence_buf, 0, pad_size);
+                        }
+                        encode(stream, expected_pts, silence_buf, pad_size, index);
+                        is->audio_info[index]->frame_count += drift_samples;
+                        
+                        expected_pts = (double)is->audio_info[index]->frame_count / audio_out_sample_rate;
+                        encode(stream, expected_pts, (uint8_t *)audio_buf, out_size, index);
+                        is->audio_info[index]->frame_count += out_samples;
                     }
                     else {
-                        if(delta_sample < 0) {
-                            av_log(NULL, AV_LOG_INFO, "audio %d 0 delta %lld < 0\n", index, delta_sample);
-
-                            int offset = int(-delta_sample);
-                            int fix_out_size = sizeof(float) * int(out_samples+delta_sample) * audio_out_channel_layout.nb_channels;
-                            pts += (double)(out_samples+delta_sample) / audio_out_sample_rate;
-                            is->audio_info[index]->frame_count += out_samples+delta_sample;
-                            
-                            is->audio_info[index]->audio_last_pts_t = pts_t0;
-                            is->audio_info[index]->audio_last_pts = pts;
-                            //av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
-
-                            encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)&audio_buf[offset*audio_out_channel_layout.nb_channels], fix_out_size, index);
-                        }
-                        else {
-                            av_log(NULL, AV_LOG_INFO, "audio %d 0 delta %lld > 0\n", index, delta_sample);
-                            
-                            int pad_size = sizeof(float) * int(delta_sample) * audio_out_channel_layout.nb_channels;
-                            if (silence_buflen < pad_size) {
-                                delete [] silence_buf;
-                                silence_buf = new uint8_t[pad_size];
-                                silence_buflen = pad_size;
-                                memset(silence_buf, 0, pad_size);
-                            }
-                            
-                            pts += (double)(delta_sample) / audio_out_sample_rate;
-                            is->audio_info[index]->frame_count += delta_sample;
-                            encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, silence_buf, pad_size, index);
-
-                            av_log(NULL, AV_LOG_INFO, "audio %d silence pad %lld\n", index, delta_sample);
-
-                            pts += (double)(out_samples) / audio_out_sample_rate;
-                            is->audio_info[index]->frame_count += out_samples;
-                            
-                            is->audio_info[index]->audio_last_pts_t = pts_t0;
-                            is->audio_info[index]->audio_last_pts = pts;
-
-                            av_log(NULL, AV_LOG_INFO, "audio %d last pts %lld\n", index, pts_t0);
-
-                            encode(stream, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, (uint8_t *)audio_buf, out_size, index);
+                        av_log(NULL, AV_LOG_INFO, "audio %d dropping %lld samples\n", index, -drift_samples);
+                        int drop_samples = -drift_samples;
+                        if (drop_samples >= out_samples) {
+                        } else {
+                            int keep_samples = out_samples - drop_samples;
+                            int offset = drop_samples * audio_out_channel_layout.nb_channels;
+                            int keep_size = sizeof(float) * keep_samples * audio_out_channel_layout.nb_channels;
+                            encode(stream, expected_pts, (uint8_t *)&audio_buf[offset], keep_size, index);
+                            is->audio_info[index]->frame_count += keep_samples;
                         }
                     }
+                    
+                    is->audio_info[index]->audio_last_pts_t = pts_t0;
+                    is->audio_info[index]->audio_last_pts = pts;
                     av_frame_unref(&audio_frame_out);
 
                     //printf("%d,%f,%f,%lld\n", index, (double)is->audio_info[index]->frame_count / audio_out_sample_rate, pts, pts_t0);
@@ -1291,13 +1274,13 @@ void audio_thread(Converter *is, int index)
                     if(is->audio_info[index]->main_audio) {
                         for(int i = 0; i < is->audio_info.size(); i++) {
                             if(i == index) continue;
-                           
+                            
                             if(is->audio_info[i]->absent) {
                                 // sync main audio and output same content
                                 is->audio_info[i]->audio_last_pts_t = is->audio_info[index]->audio_last_pts_t;
                                 is->audio_info[i]->audio_clock_start = is->audio_info[index]->audio_clock_start;
                                 is->audio_info[i]->audio_start_pts = is->audio_info[index]->audio_start_pts;
-
+                                
                                 if (silence_buflen < out_size) {
                                     delete [] silence_buf;
                                     silence_buf = new uint8_t[out_size];
@@ -1665,26 +1648,26 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
                         displvp = displvp + y / 2 * output.linesize[2];
                         for(int x = s_x, sx = 0; x < output.width && sx < s_w; x++, sx++){
                             uint8_t *subp = &sublp[sx * 4];
-                            double dispy = displyp[x] / 255.0;
-                            double dispu = (displup[x/2] - 128.0) / 255.0;
-                            double dispv = (displvp[x/2] - 128.0) / 255.0;
-                            double a = subp[3] / 255.0;
-                            double r = subp[2] / 255.0;
-                            double g = subp[1] / 255.0;
-                            double b = subp[0] / 255.0;
-                            double r1 = 1.0 * dispy                 + 1.402 * dispv;
-                            double g1 = 1.0 * dispy - 0.344 * dispu - 0.714 * dispv;
-                            double b1 = 1.0 * dispy + 1.772 * dispu;
-                            double r2 = r1*(1-a) + r*a;
-                            double g2 = g1*(1-a) + g*a;
-                            double b2 = b1*(1-a) + b*a;
-                            double Y =  0.299 * r2 + 0.587 * g2 + 0.114 * b2;
-                            double U = -0.169 * r2 - 0.331 * g2 + 0.500 * b2;
-                            double V =  0.500 * r2 - 0.419 * g2 - 0.081 * b2;
-                            displyp[x] = Y * 255;
+                            float dispy = displyp[x] / 255.0f;
+                            float dispu = (displup[x/2] - 128.0f) / 255.0f;
+                            float dispv = (displvp[x/2] - 128.0f) / 255.0f;
+                            float a = subp[3] / 255.0f;
+                            float r = subp[2] / 255.0f;
+                            float g = subp[1] / 255.0f;
+                            float b = subp[0] / 255.0f;
+                            float r1 = 1.0f * dispy                  + 1.402f * dispv;
+                            float g1 = 1.0f * dispy - 0.344f * dispu - 0.714f * dispv;
+                            float b1 = 1.0f * dispy + 1.772f * dispu;
+                            float r2 = r1*(1.0f-a) + r*a;
+                            float g2 = g1*(1.0f-a) + g*a;
+                            float b2 = b1*(1.0f-a) + b*a;
+                            float Y =  0.299f * r2 + 0.587f * g2 + 0.114f * b2;
+                            float U = -0.169f * r2 - 0.331f * g2 + 0.500f * b2;
+                            float V =  0.500f * r2 - 0.419f * g2 - 0.081f * b2;
+                            displyp[x] = Y * 255.0f;
                             if (y % 2 == 1 && x % 2 == 1) {
-                                displup[x/2] = U * 255 + 128;
-                                displvp[x/2] = V * 255 + 128;
+                                displup[x/2] = U * 255.0f + 128.0f;
+                                displvp[x/2] = V * 255.0f + 128.0f;
                             }
                         }
                     }

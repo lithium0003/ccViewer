@@ -310,10 +310,8 @@ public class ArchiveStream: SlotStream {
     }
     
     override func fillHeader() async {
-        defer {
-            Task { await super.fillHeader() }
-        }
         itemData = await getDataFromArchive(item: remote.baseItem, file: remote.filepath)
+        await super.fillHeader()
     }
 
     override func firstFill() async {

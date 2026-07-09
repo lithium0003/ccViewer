@@ -80,19 +80,18 @@ public class CueSheetStream: SlotStream {
     }
 
     override func fillHeader() async {
-        defer {
-            Task { await super.fillHeader() }
-        }
         let frames = remote.subend - remote.substart
         let stream = await remote.wavitem.open()
         guard let wavfile = await RemoteWaveFile(stream: stream, size: remote.wavitem.size) else {
             error = true
+            await super.fillHeader()
             return
         }
         stream.isLive = false
         header = wavfile.getHeader(frames: frames)
         guard let header = header else {
             error = true
+            await super.fillHeader()
             return
         }
         let bytesPerSec = wavfile.wavFormat.BitsPerSample/8 * wavfile.wavFormat.SampleRate * wavfile.wavFormat.NumChannels
@@ -101,6 +100,7 @@ public class CueSheetStream: SlotStream {
         size = Int64(bytesPerFrame * Int(frames) + header.count)
         
         wavOffset = wavfile.wavOffset + Int(remote.substart) * bytesPerFrame
+        await super.fillHeader()
     }
 
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
@@ -137,6 +137,13 @@ public class CueSheetStream: SlotStream {
                 }
             }
         }
+    }
+}
+
+extension Data {
+    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+        var le = value.littleEndian
+        Swift.withUnsafeBytes(of: &le) { self.append(contentsOf: $0) }
     }
 }
 
@@ -181,38 +188,29 @@ class RemoteWaveFile {
             return nil
         }
     }
-    
+
     func getHeader(frames: Int64) -> Data {
         let bytesPerSec = wavFormat.BitsPerSample/8 * wavFormat.SampleRate * wavFormat.NumChannels
         let bytesPerFrame = bytesPerSec / 75
-
         let wavbytes = Int(frames) * bytesPerFrame
         
         var ret = Data()
         ret += "RIFF".data(using: .ascii)!
-        var ChunkSize = UInt32(wavbytes + 36)
-        withUnsafePointer(to: &ChunkSize, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        ret += "WAVE".data(using: .ascii)!
+        ret.appendLittleEndian(UInt32(wavbytes + 36))
         
+        ret += "WAVE".data(using: .ascii)!
         ret += "fmt ".data(using: .ascii)!
-        var SubChunk1Size = UInt32(16)
-        withUnsafePointer(to: &SubChunk1Size, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var AudioFormat = UInt16(1)
-        withUnsafePointer(to: &AudioFormat, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var NumChannels = UInt16(wavFormat.NumChannels)
-        withUnsafePointer(to: &NumChannels, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var SampleRate = UInt32(wavFormat.SampleRate)
-        withUnsafePointer(to: &SampleRate, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var ByteRate = UInt32(wavFormat.ByteRate)
-        withUnsafePointer(to: &ByteRate, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var BlockAlign = UInt16(wavFormat.BlockAlign)
-        withUnsafePointer(to: &BlockAlign, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-        var BitsPerSample = UInt16(wavFormat.BitsPerSample)
-        withUnsafePointer(to: &BitsPerSample, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
-
+        
+        ret.appendLittleEndian(UInt32(16)) // SubChunk1Size
+        ret.appendLittleEndian(UInt16(1))  // AudioFormat (PCM)
+        ret.appendLittleEndian(UInt16(wavFormat.NumChannels))
+        ret.appendLittleEndian(UInt32(wavFormat.SampleRate))
+        ret.appendLittleEndian(UInt32(wavFormat.ByteRate))
+        ret.appendLittleEndian(UInt16(wavFormat.BlockAlign))
+        ret.appendLittleEndian(UInt16(wavFormat.BitsPerSample))
+        
         ret += "data".data(using: .ascii)!
-        var SubChunk2Size = UInt32(wavbytes)
-        withUnsafePointer(to: &SubChunk2Size, { ret.append(UnsafeBufferPointer(start: $0, count: 1)) })
+        ret.appendLittleEndian(UInt32(wavbytes)) // SubChunk2Size
         
         return ret
     }
@@ -226,7 +224,7 @@ class RemoteWaveFile {
         guard String(data: ChunkID, encoding: .ascii) == "RIFF" else {
             return
         }
-        ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+        ChunkSize = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) }
         let Format = data.subdata(in: 8..<12)
         guard String(data: Format, encoding: .ascii) == "WAVE" else {
             return
@@ -240,7 +238,7 @@ class RemoteWaveFile {
             return
         }
         let ChunkID = data.subdata(in: 0..<4)
-        let ChunkSize = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+        let ChunkSize = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) }
         if String(data: ChunkID, encoding: .ascii) == "fmt " {
             await loadFmtSubChunk(pos: pos+8, ChunkSize: ChunkSize)
         }
@@ -262,16 +260,18 @@ class RemoteWaveFile {
             return
         }
 
-        let AudioFormat = data.subdata(in: 0..<2).withUnsafeBytes { $0.load(as: UInt16.self) }
-        guard AudioFormat == 1 else { // PCM == 1
-            return
+        data.withUnsafeBytes { ptr in
+            let AudioFormat = ptr.loadUnaligned(fromByteOffset: 0, as: UInt16.self)
+            guard AudioFormat == 1 else { return } // PCM == 1
+            
+            let NumChannels = ptr.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
+            let SampleRate = ptr.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+            let ByteRate = ptr.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+            let BlockAlign = ptr.loadUnaligned(fromByteOffset: 12, as: UInt16.self)
+            let BitsPerSample = ptr.loadUnaligned(fromByteOffset: 14, as: UInt16.self)
+            
+            wavFormat = WaveFormatData(AudioFormat: Int(AudioFormat), NumChannels: Int(NumChannels), SampleRate: Int(SampleRate), ByteRate: Int(ByteRate), BlockAlign: Int(BlockAlign), BitsPerSample: Int(BitsPerSample))
         }
-        let NumChannels = data.subdata(in: 2..<4).withUnsafeBytes { $0.load(as: UInt16.self) }
-        let SampleRate = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
-        let ByteRate = data.subdata(in: 8..<12).withUnsafeBytes { $0.load(as: UInt32.self) }
-        let BlockAlign = data.subdata(in: 12..<14).withUnsafeBytes { $0.load(as: UInt16.self) }
-        let BitsPerSample = data.subdata(in: 14..<16).withUnsafeBytes { $0.load(as: UInt16.self) }
-        wavFormat = WaveFormatData(AudioFormat: Int(AudioFormat), NumChannels: Int(NumChannels), SampleRate: Int(SampleRate), ByteRate: Int(ByteRate), BlockAlign: Int(BlockAlign), BitsPerSample: Int(BitsPerSample))
     }
 }
 

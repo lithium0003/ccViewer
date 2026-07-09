@@ -36,34 +36,31 @@ struct RawTextUIView: View {
 
     @concurrent
     func convertData(type: Int, data: Data, offset: Int) async -> String {
-        func convertAscii(c: UInt8) -> String {
-            switch c {
-            case 0x09, 0x0a, 0x0d, 0x20..<0x7f:
-                return String(bytes: [c], encoding: .ascii)!
-            default:
-                return "."
-            }
-        }
-
         switch type {
         case 0:
-            return data.map { convertAscii(c: $0) }.joined()
+            let asciiBytes = data.map { c -> UInt8 in
+                switch c {
+                case 0x09, 0x0a, 0x0d, 0x20..<0x7f:
+                    return c
+                default:
+                    return 0x2E
+                }
+            }
+            return String(bytes: asciiBytes, encoding: .ascii) ?? ""
         case 1:
             var str = ""
-            data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
-                let bytes = p.bindMemory(to: UInt8.self)
-                for i in 0 ..< data.count {
-                    if i == 0 {
-                        str += String(format: "0x%08x : ", i + offset)
-                        str += String(repeating: "   ", count: Int((i + offset) % 16))
-                    }
-                    else if (i + offset) % 16 == 0 {
-                        str += String(format: "0x%08x : ", i + offset)
-                    }
-                    str += String(format: "%02x ", bytes[i])
-                    if (i + offset) % 16 == 15 {
-                        str += "\n"
-                    }
+            for i in 0 ..< data.count {
+                if i == 0 {
+                    str += String(format: "0x%08x : ", i + offset)
+                    str += String(repeating: "   ", count: Int((i + offset) % 16))
+                }
+                else if (i + offset) % 16 == 0 {
+                    str += String(format: "0x%08x : ", i + offset)
+                }
+                str += String(format: "%02x ", data[i])
+                
+                if (i + offset) % 16 == 15 {
+                    str += "\n"
                 }
             }
             return str
@@ -79,7 +76,7 @@ struct RawTextUIView: View {
             return "invalid"
         }
     }
-
+    
     func loadBuffer() async {
         isLoading = true
         defer {

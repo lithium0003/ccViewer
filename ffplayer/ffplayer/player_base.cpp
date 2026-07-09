@@ -575,11 +575,12 @@ int Player::stream_component_open(int stream_index)
         }
     }
 
-    if (avcodec_open2(codecCtx.get(), codec, &opts) < 0) {
+    int ret = avcodec_open2(codecCtx.get(), codec, &opts);
+    av_dict_free(&opts);
+    if (ret < 0) {
         av_log(NULL, AV_LOG_PANIC, "Unsupported codec!\n");
         return -1;
     }
-    av_dict_free(&opts);
 
     AVDictionaryEntry *lang = av_dict_get(pFormatCtx->streams[stream_index]->metadata, "language", NULL,0);
     pFormatCtx->streams[stream_index]->discard = AVDISCARD_DEFAULT;
@@ -679,6 +680,10 @@ void Player::stream_component_close(int stream_index)
                 video_thread.join();
             video.videoq.clear();
             destory_pictures();
+            if (video.img_convert_ctx) {
+                sws_freeContext(video.img_convert_ctx);
+                video.img_convert_ctx = NULL;
+            }
             break;
         case AVMEDIA_TYPE_SUBTITLE:
             subtitle.subtitleq.AbortQueue();
@@ -1089,23 +1094,22 @@ int Player::queue_picture(AVFrame *pFrame, double pts)
 
     /* We have a place to put our picture on the queue */
     // Convert the image into YUV format that SDL uses
-    auto sws_ctx = sws_getCachedContext(NULL,
-                                        pFrame->width,
-                                        pFrame->height,
-                                        (AVPixelFormat)pFrame->format,
-                                        video.video_width,
-                                        video.video_height,
-                                        AV_PIX_FMT_YUV420P,
-                                        SWS_BICUBIC,
-                                        NULL, NULL, NULL);
-    if(!sws_ctx) {
+    video.img_convert_ctx = sws_getCachedContext(video.img_convert_ctx,
+                                                 pFrame->width,
+                                                 pFrame->height,
+                                                 (AVPixelFormat)pFrame->format,
+                                                 video.video_width,
+                                                 video.video_height,
+                                                 AV_PIX_FMT_YUV420P,
+                                                 SWS_BICUBIC,
+                                                 NULL, NULL, NULL);
+    if(!video.img_convert_ctx) {
         av_log(NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
         return -1;
     }
-    sws_scale(sws_ctx, pFrame->data,
+    sws_scale(video.img_convert_ctx, pFrame->data,
               pFrame->linesize, 0, pFrame->height,
               vp->bmp.data, vp->bmp.linesize);
-    sws_freeContext(sws_ctx);
     vp->pts = pts;
     vp->serial = video.pictq_active_serial;
     vp->width = video.video_width;
@@ -1985,26 +1989,26 @@ void Player::subtitle_display(VideoPicture *vp)
                         displvp = displvp + y / 2 * vp->bmp.linesize[2];
                         for(int x = s_x, sx = 0; x < vp->width && sx < s_w; x++, sx++){
                             uint8_t *subp = &sublp[sx * 4];
-                            double dispy = displyp[x] / 255.0;
-                            double dispu = (displup[x/2] - 128.0) / 255.0;
-                            double dispv = (displvp[x/2] - 128.0) / 255.0;
-                            double a = subp[3] / 255.0;
-                            double r = subp[2] / 255.0;
-                            double g = subp[1] / 255.0;
-                            double b = subp[0] / 255.0;
-                            double r1 = 1.0 * dispy                 + 1.402 * dispv;
-                            double g1 = 1.0 * dispy - 0.344 * dispu - 0.714 * dispv;
-                            double b1 = 1.0 * dispy + 1.772 * dispu;
-                            double r2 = r1*(1-a) + r*a;
-                            double g2 = g1*(1-a) + g*a;
-                            double b2 = b1*(1-a) + b*a;
-                            double Y =  0.299 * r2 + 0.587 * g2 + 0.114 * b2;
-                            double U = -0.169 * r2 - 0.331 * g2 + 0.500 * b2;
-                            double V =  0.500 * r2 - 0.419 * g2 - 0.081 * b2;
-                            displyp[x] = Y * 255;
+                            float dispy = displyp[x] / 255.0f;
+                            float dispu = (displup[x/2] - 128.0f) / 255.0f;
+                            float dispv = (displvp[x/2] - 128.0f) / 255.0f;
+                            float a = subp[3] / 255.0f;
+                            float r = subp[2] / 255.0f;
+                            float g = subp[1] / 255.0f;
+                            float b = subp[0] / 255.0f;
+                            float r1 = 1.0f * dispy                  + 1.402f * dispv;
+                            float g1 = 1.0f * dispy - 0.344f * dispu - 0.714f * dispv;
+                            float b1 = 1.0f * dispy + 1.772f * dispu;
+                            float r2 = r1*(1.0f-a) + r*a;
+                            float g2 = g1*(1.0f-a) + g*a;
+                            float b2 = b1*(1.0f-a) + b*a;
+                            float Y =  0.299f * r2 + 0.587f * g2 + 0.114f * b2;
+                            float U = -0.169f * r2 - 0.331f * g2 + 0.500f * b2;
+                            float V =  0.500f * r2 - 0.419f * g2 - 0.081f * b2;
+                            displyp[x] = Y * 255.0f;
                             if (y % 2 == 1 && x % 2 == 1) {
-                                displup[x/2] = U * 255 + 128;
-                                displvp[x/2] = V * 255 + 128;
+                                displup[x/2] = U * 255.0f + 128.0f;
+                                displvp[x/2] = V * 255.0f + 128.0f;
                             }
                         }
                     }

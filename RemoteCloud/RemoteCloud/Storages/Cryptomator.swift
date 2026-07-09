@@ -197,48 +197,6 @@ public class Cryptomator: ChildStorage {
         }
     }
 
-    func HMACSign(_ message: [UInt8], key: [UInt8], alg: String) -> [UInt8] {
-        guard ["HS256", "HS384", "HS512"].contains(alg) else {
-            return []
-        }
-        
-        var commonCryptoAlgorithm: CCHmacAlgorithm {
-            switch alg {
-            case "HS256":
-                return CCHmacAlgorithm(kCCHmacAlgSHA256)
-            case "HS384":
-                return CCHmacAlgorithm(kCCHmacAlgSHA384)
-            case "HS512":
-                return CCHmacAlgorithm(kCCHmacAlgSHA512)
-            default:
-                fatalError()
-            }
-        }
-
-        var commonCryptoDigestLength: Int32 {
-            switch alg {
-            case "HS256":
-                return CC_SHA256_DIGEST_LENGTH
-            case "HS384":
-                return CC_SHA384_DIGEST_LENGTH
-            case "HS512":
-                return CC_SHA512_DIGEST_LENGTH
-            default:
-                fatalError()
-            }
-        }
-        
-        let context = UnsafeMutablePointer<CCHmacContext>.allocate(capacity: 1)
-        defer { context.deallocate() }
-
-        CCHmacInit(context, commonCryptoAlgorithm, key, size_t(key.count))
-        CCHmacUpdate(context, message, size_t(message.count))
-        var hmac = [UInt8](repeating: 0, count: Int(commonCryptoDigestLength))
-        CCHmacFinal(context, &hmac)
-
-        return hmac
-    }
-
     func checkVaultVersion(versionMac: String, version: Int, macKey: [UInt8]) -> Bool {
         guard let storedVersionMac = Data(base64Encoded: versionMac), storedVersionMac.count == CC_SHA256_DIGEST_LENGTH else {
             return false
@@ -316,12 +274,19 @@ public class Cryptomator: ChildStorage {
             return false
         }
         let signatureInput = "\(segments[0]).\(segments[1])"
-
+        
         guard let signature = base64URLDecode(String(segments[2])) else {
             return false
         }
+        
+        let mac = HMACSign([UInt8](signatureInput.data(using: .utf8)!), key: key, alg: alg)
 
-        return HMACSign([UInt8](signatureInput.data(using: .utf8)!), key: key, alg: alg).elementsEqual(signature)
+        guard mac.count == signature.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<mac.count {
+            diff |= mac[i] ^ signature[i]
+        }
+        return diff == 0
     }
 
     func generateMasterKey(password: String) -> (masterKey: [String: Any], vault: String)? {
@@ -2076,48 +2041,50 @@ class BASE32 {
         var resultBuffer = [Int8](repeating: 0, count: resultBufferSize)
         var base32Encoded: String?
         input.withUnsafeBytes { data in
-            var bytes = data.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            let bytes = data.bindMemory(to: UInt8.self)
             var encoded = [Int8](repeating: 0, count: 9)
             
             var length = input.count
-            var offset = 0
-
+            var inOffset = 0
+            var outOffset = 0
+            
             // encode regular blocks
             while length >= 5 {
-                encoded[0] = table[Int(bytes[0] >> 3)]
-                encoded[1] = table[Int((bytes[0] & 0b00000111) << 2 | bytes[1] >> 6)]
-                encoded[2] = table[Int((bytes[1] & 0b00111110) >> 1)]
-                encoded[3] = table[Int((bytes[1] & 0b00000001) << 4 | bytes[2] >> 4)]
-                encoded[4] = table[Int((bytes[2] & 0b00001111) << 1 | bytes[3] >> 7)]
-                encoded[5] = table[Int((bytes[3] & 0b01111100) >> 2)]
-                encoded[6] = table[Int((bytes[3] & 0b00000011) << 3 | bytes[4] >> 5)]
-                encoded[7] = table[Int((bytes[4] & 0b00011111))]
+                encoded[0] = table[Int(bytes[inOffset] >> 3)]
+                encoded[1] = table[Int((bytes[inOffset] & 0b00000111) << 2 | bytes[inOffset+1] >> 6)]
+                encoded[2] = table[Int((bytes[inOffset+1] & 0b00111110) >> 1)]
+                encoded[3] = table[Int((bytes[inOffset+1] & 0b00000001) << 4 | bytes[inOffset+2] >> 4)]
+                encoded[4] = table[Int((bytes[inOffset+2] & 0b00001111) << 1 | bytes[inOffset+3] >> 7)]
+                encoded[5] = table[Int((bytes[inOffset+3] & 0b01111100) >> 2)]
+                encoded[6] = table[Int((bytes[inOffset+3] & 0b00000011) << 3 | bytes[inOffset+4] >> 5)]
+                encoded[7] = table[Int((bytes[inOffset+4] & 0b00011111))]
+                
                 length -= 5
-                bytes = bytes.advanced(by: 5)
-                resultBuffer[offset..<(offset+8)] = encoded[0..<8]
-                offset += 8
+                inOffset += 5
+                resultBuffer[outOffset..<(outOffset+8)] = encoded[0..<8]
+                outOffset += 8
             }
-
+            
             // encode last block
             var byte0, byte1, byte2, byte3, byte4: UInt8
             (byte0, byte1, byte2, byte3, byte4) = (0,0,0,0,0)
             switch length {
             case 4:
-                byte3 = bytes[3]
+                byte3 = bytes[inOffset+3]
                 encoded[6] = table[Int((byte3 & 0b00000011) << 3 | byte4 >> 5)]
                 encoded[5] = table[Int((byte3 & 0b01111100) >> 2)]
                 fallthrough
             case 3:
-                byte2 = bytes[2]
+                byte2 = bytes[inOffset+2]
                 encoded[4] = table[Int((byte2 & 0b00001111) << 1 | byte3 >> 7)]
                 fallthrough
             case 2:
-                byte1 = bytes[1]
+                byte1 = bytes[inOffset+1]
                 encoded[3] = table[Int((byte1 & 0b00000001) << 4 | byte2 >> 4)]
                 encoded[2] = table[Int((byte1 & 0b00111110) >> 1)]
                 fallthrough
             case 1:
-                byte0 = bytes[0]
+                byte0 = bytes[inOffset]
                 encoded[1] = table[Int((byte0 & 0b00000111) << 2 | byte1 >> 6)]
                 encoded[0] = table[Int(byte0 >> 3)]
             default: break
@@ -2128,7 +2095,7 @@ class BASE32 {
             switch length {
             case 0:
                 encoded[0] = 0
-                resultBuffer[offset..<(offset+1)] = encoded[0..<1]
+                resultBuffer[outOffset..<(outOffset+1)] = encoded[0..<1]
             case 1:
                 encoded[2] = pad
                 encoded[3] = pad
@@ -2145,7 +2112,7 @@ class BASE32 {
                 fallthrough
             default:
                 encoded[8] = 0
-                resultBuffer[offset..<(offset+9)] = encoded[0..<9]
+                resultBuffer[outOffset..<(outOffset+9)] = encoded[0..<9]
                 break
             }
             base32Encoded = String(validatingUTF8: resultBuffer)
@@ -2211,20 +2178,22 @@ class BASE32 {
         
         let inputdata = input.map { UInt8($0.unicodeScalars.first!.value) }
         return inputdata.withUnsafeBytes { indata in
-            var encoded = indata.baseAddress!.assumingMemoryBound(to: UInt8.self)
+            let encoded = indata.bindMemory(to: UInt8.self)
             var decoded = [UInt8](repeating: 0, count: 5)
             
             // decode regular blocks
             var value = [UInt8](repeating: 0, count: 8)
+            var inOffset = 0
+
             while remainEncodedLength >= 8 {
-                value[0] = table[Int(encoded[0])]
-                value[1] = table[Int(encoded[1])]
-                value[2] = table[Int(encoded[2])]
-                value[3] = table[Int(encoded[3])]
-                value[4] = table[Int(encoded[4])]
-                value[5] = table[Int(encoded[5])]
-                value[6] = table[Int(encoded[6])]
-                value[7] = table[Int(encoded[7])]
+                value[0] = table[Int(encoded[inOffset])]
+                value[1] = table[Int(encoded[inOffset+1])]
+                value[2] = table[Int(encoded[inOffset+2])]
+                value[3] = table[Int(encoded[inOffset+3])]
+                value[4] = table[Int(encoded[inOffset+4])]
+                value[5] = table[Int(encoded[inOffset+5])]
+                value[6] = table[Int(encoded[inOffset+6])]
+                value[7] = table[Int(encoded[inOffset+7])]
                 
                 guard value.allSatisfy({ $0 < 32 }) else {
                     return nil
@@ -2237,7 +2206,7 @@ class BASE32 {
                 decoded[4] = value[6] << 5 | value[7]
                 
                 remainEncodedLength -= 8
-                encoded = encoded.advanced(by: 8)
+                inOffset += 8
                 result.append(contentsOf: decoded)
             }
             
@@ -2246,28 +2215,28 @@ class BASE32 {
             (value0, value1, value2, value3, value4, value5, value6) = (0,0,0,0,0,0,0)
             switch remainEncodedLength {
             case 7:
-                value6 = table[Int(encoded[6])]
-                value5 = table[Int(encoded[5])]
+                value6 = table[Int(encoded[inOffset+6])]
+                value5 = table[Int(encoded[inOffset+5])]
                 guard value6 < 32, value5 < 32 else {
                     return nil
                 }
                 fallthrough
             case 5:
-                value4 = table[Int(encoded[4])]
+                value4 = table[Int(encoded[inOffset+4])]
                 guard value4 < 32 else {
                     return nil
                 }
                 fallthrough
             case 4:
-                value3 = table[Int(encoded[3])]
-                value2 = table[Int(encoded[2])]
+                value3 = table[Int(encoded[inOffset+3])]
+                value2 = table[Int(encoded[inOffset+2])]
                 guard value3 < 32, value2 < 32 else {
                     return nil
                 }
                 fallthrough
             case 2:
-                value1 = table[Int(encoded[1])]
-                value0 = table[Int(encoded[0])]
+                value1 = table[Int(encoded[inOffset+1])]
+                value0 = table[Int(encoded[inOffset+0])]
                 guard value1 < 32, value0 < 32 else {
                     return nil
                 }
@@ -2679,13 +2648,12 @@ func HMACSign(_ message: [UInt8], key: [UInt8], alg: String) -> [UInt8] {
         }
     }
     
-    let context = UnsafeMutablePointer<CCHmacContext>.allocate(capacity: 1)
-    defer { context.deallocate() }
+    var context = CCHmacContext()
 
-    CCHmacInit(context, commonCryptoAlgorithm, key, size_t(key.count))
-    CCHmacUpdate(context, message, size_t(message.count))
+    CCHmacInit(&context, commonCryptoAlgorithm, key, size_t(key.count))
+    CCHmacUpdate(&context, message, size_t(message.count))
     var hmac = [UInt8](repeating: 0, count: Int(commonCryptoDigestLength))
-    CCHmacFinal(context, &hmac)
+    CCHmacFinal(&context, &hmac)
 
     return hmac
 }

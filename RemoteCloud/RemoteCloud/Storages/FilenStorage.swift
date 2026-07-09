@@ -205,52 +205,40 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     func pbkdf2(password: String, salt: Data, iterations: UInt32) -> Data {
-        let passwordUtf8 = password.data(using: .utf8)!
+        let passwordArray = Array(password.utf8)
         let saltBuffer = [UInt8](salt)
-        let hashedLen = Int(CC_SHA512_DIGEST_LENGTH)
-        var hashed = Data(count: hashedLen)
+        var hashed = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         
-        let result = hashed.withUnsafeMutableBytes { (body: UnsafeMutableRawBufferPointer) -> Int32 in
-            return passwordUtf8.withUnsafeBytes { pass in
-                if let baseAddress = body.baseAddress, body.count > 0 {
-                    let data = baseAddress.assumingMemoryBound(to: UInt8.self)
-                    return CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
-                                                pass.baseAddress!, passwordUtf8.count,
-                                                saltBuffer, saltBuffer.count,
-                                                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
-                                                iterations,
-                                                data, hashedLen)
-                }
-                return Int32(kCCMemoryFailure)
-            }
-        }
+        let result = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            passwordArray, passwordArray.count,
+            saltBuffer, saltBuffer.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+            iterations,
+            &hashed, hashed.count
+        )
         
         guard result == kCCSuccess else { fatalError("pbkdf2 error") }
-        
-        return hashed
+        return Data(hashed)
     }
     
     func pbkdf2(key: String) -> Data {
-        let saltBuffer = [UInt8](key.data(using: .utf8)!)
+        let keyArray = Array(key.utf8)
+        let saltBuffer = keyArray
         let hashedLen = Int(CC_SHA256_DIGEST_LENGTH)
-        var hashed = Data(count: hashedLen)
+        var hashed = [UInt8](repeating: 0, count: hashedLen)
         
-        let result = hashed.withUnsafeMutableBytes { (body: UnsafeMutableRawBufferPointer) -> Int32 in
-            if let baseAddress = body.baseAddress, body.count > 0 {
-                let data = baseAddress.assumingMemoryBound(to: UInt8.self)
-                return CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
-                                            key, key.count,
-                                            saltBuffer, saltBuffer.count,
-                                            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
-                                            1,
-                                            data, hashedLen)
-            }
-            return Int32(kCCMemoryFailure)
-        }
+        let result = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            keyArray, keyArray.count,
+            saltBuffer, saltBuffer.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+            1,
+            &hashed, hashedLen
+        )
         
         guard result == kCCSuccess else { fatalError("pbkdf2 error") }
-        
-        return hashed
+        return Data(hashed)
     }
     
     func sha512(_ str: String) -> Data {
@@ -260,7 +248,9 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     func sha512(_ data: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         data.withUnsafeBytes { bytes in
-            _ = CC_SHA512(bytes.baseAddress!, CC_LONG(data.count), &digest)
+            if let baseAddress = bytes.baseAddress {
+                _ = CC_SHA512(baseAddress, CC_LONG(data.count), &digest)
+            }
         }
         return Data(digest)
     }
@@ -272,7 +262,9 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     func sha1(_ data: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
         data.withUnsafeBytes { bytes in
-            _ = CC_SHA1(bytes.baseAddress!, CC_LONG(data.count), &digest)
+            if let baseAddress = bytes.baseAddress {
+                _ = CC_SHA1(baseAddress, CC_LONG(data.count), &digest)
+            }
         }
         return Data(digest)
     }
@@ -1218,7 +1210,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "moveDir(Filen:\(storageName ?? "")) \(toParentId)")
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://gateway.filen.io/v3/dir/move")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1252,7 +1244,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     func encryptData(data: Data, key: String) -> Data? {
         var version = 3
         if key.count != 64 || !key.allSatisfy({ "0123456789ABCDEFabcdef".contains($0) }) {
@@ -1261,7 +1253,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         if version == 2 {
             let iv = generateRandomString(12)
             let ivBuffer = iv.data(using: .utf8)!
-
+            
             guard let cipher = try? AES.GCM.seal(data, using: .init(data: key.data(using: .utf8)!), nonce: .init(data: ivBuffer)) else { return nil }
             let ciphertext = cipher.ciphertext + cipher.tag
             
@@ -1296,10 +1288,10 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         defer {
             output.close()
         }
-
+        
         var context = CC_SHA512_CTX()
         CC_SHA512_Init(&context)
-
+        
         // body
         var buffer = [UInt8](repeating: 0, count: 1*1024*1024)
         var len = 0
@@ -1313,13 +1305,13 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             }
             let plainData = Data(buffer[0..<len])
             CC_SHA512_Update(&context, &buffer, CC_LONG(len))
-
+            
             guard let encryptedData = encryptData(data: plainData, key: key) else {
                 return nil
             }
             pos.append(encryptedLen)
             encryptedLen += encryptedData.count
-
+            
             let outLength = encryptedData.withUnsafeBytes { ptr in
                 output.write(ptr.baseAddress!, maxLength: encryptedData.count)
             }
@@ -1328,13 +1320,13 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             }
         } while len == 1*1024*1024
         pos.append(encryptedLen)
-
+        
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         CC_SHA512_Final(&digest, &context)
         
         return (url: crypttarget, pos: pos, digest: digest)
     }
-
+    
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
@@ -1354,7 +1346,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         let rm = generateRandomString(32)
         let uploadKey = generateRandomString(32)
         let parentId = await parentId == "" ? getBaseFolder() : parentId
-
+        
         guard let (url, pos, hash) = processFile(target: target, key: encryptionKey) else { return nil }
         defer {
             try? FileManager.default.removeItem(at: url)
@@ -1389,7 +1381,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                         .init(name: "uploadKey", value: uploadKey),
                         .init(name: "hash", value: chunkHash),
                     ])
-
+                    
                     var request: URLRequest = URLRequest(url: url)
                     request.httpMethod = "POST"
                     request.setValue("Bearer \(api_key)", forHTTPHeaderField: "Authorization")
@@ -1435,7 +1427,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             }
         }
         guard chunks == doneCount else { return nil }
-
+        
         guard let nameEncrypted = await encodeMetadata(key: encryptionKey, metadata: uploadname) else { return nil }
         guard let mimeEncrypted = await encodeMetadata(key: encryptionKey, metadata: mimeType) else { return nil }
         guard let sizeEncrypted = await encodeMetadata(key: encryptionKey, metadata: "\(fileSize)") else { return nil }
@@ -1453,7 +1445,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         }
         guard let metadata = await encodeMetadata(key: key, metadata: String(data: metadataData, encoding: .utf8)!) else { return nil }
         let hashFilename = hashFn(uploadname)
-
+        
         var request: URLRequest = URLRequest(url: URL(string: "https://gateway.filen.io/v3/upload/done")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

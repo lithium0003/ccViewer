@@ -89,7 +89,6 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     var pipController: AVPictureInPictureController?
     var displayLayer: AVSampleBufferDisplayLayer!
     
-    var pixelBuffer: CVPixelBuffer?
     var bufWidth = 0
     var bufHeight = 0
     
@@ -97,7 +96,6 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     let semaphore = DispatchSemaphore(value: 1)
     var param: UnsafeMutableRawPointer?
     
-    var nameCStr: [CChar]? = nil
     var userBreak = false
 
     var cancellables: Set<AnyCancellable> = []
@@ -310,51 +308,40 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 guard let displayLayer = stream.displayLayer else {
                     return
                 }
-                if stream.pixelBuffer == nil || stream.bufWidth != width || stream.bufHeight != height {
-                    stream.pixelBuffer = nil
-                    stream.bufWidth = Int(width)
-                    stream.bufHeight = Int(height)
-                    let options = [
-                        kCVPixelBufferIOSurfacePropertiesKey: [:],
-                    ]
-                    CVPixelBufferCreate(kCFAllocatorDefault, Int(width), Int(height), kCVPixelFormatType_420YpCbCr8Planar, options as CFDictionary, &stream.pixelBuffer)
-                }
-                guard stream.pixelBuffer != nil else {
-                    return
-                }
+                var pixelBuffer: CVPixelBuffer?
+                CVPixelBufferCreate(kCFAllocatorDefault, Int(width), Int(height), kCVPixelFormatType_420YpCbCr8Planar, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixelBuffer)
+                guard let validPixelBuffer = pixelBuffer else { return }
                 do {
-                    CVPixelBufferLockBaseAddress(stream.pixelBuffer!, [])
-                    defer {
-                        CVPixelBufferUnlockBaseAddress(stream.pixelBuffer!, [])
-                    }
-                    let yp = CVPixelBufferGetBaseAddressOfPlane(stream.pixelBuffer!, 0)
+                    CVPixelBufferLockBaseAddress(validPixelBuffer, [])
+                    defer { CVPixelBufferUnlockBaseAddress(validPixelBuffer, []) }
+                    let yp = CVPixelBufferGetBaseAddressOfPlane(validPixelBuffer, 0)
                     guard let ysrc = images[0] else { return }
                     let sline = Int(linesizes[0])
-                    let dline = CVPixelBufferGetBytesPerRowOfPlane(stream.pixelBuffer!, 0)
+                    let dline = CVPixelBufferGetBytesPerRowOfPlane(validPixelBuffer, 0)
                     for y in 0..<Int(height) {
                         memcpy(yp! + dline * y, ysrc + sline * y, Int(width))
                     }
-                    let up = CVPixelBufferGetBaseAddressOfPlane(stream.pixelBuffer!, 1)
+                    let up = CVPixelBufferGetBaseAddressOfPlane(validPixelBuffer, 1)
                     guard let usrc = images[1] else { return }
                     let sline2 = Int(linesizes[1])
-                    let dline2 = CVPixelBufferGetBytesPerRowOfPlane(stream.pixelBuffer!, 1)
+                    let dline2 = CVPixelBufferGetBytesPerRowOfPlane(validPixelBuffer, 1)
                     for y in 0..<Int(height) / 2 {
                         memcpy(up! + dline2 * y, usrc + sline2 * y, Int(width)/2)
                     }
-                    let vp = CVPixelBufferGetBaseAddressOfPlane(stream.pixelBuffer!, 2)
+                    let vp = CVPixelBufferGetBaseAddressOfPlane(validPixelBuffer, 2)
                     guard let vsrc = images[2] else { return }
                     let sline3 = Int(linesizes[2])
-                    let dline3 = CVPixelBufferGetBytesPerRowOfPlane(stream.pixelBuffer!, 2)
+                    let dline3 = CVPixelBufferGetBytesPerRowOfPlane(validPixelBuffer, 2)
                     for y in 0..<Int(height) / 2 {
                         memcpy(vp! + dline3 * y, vsrc + sline3 * y, Int(width)/2)
                     }
                 }
                 var formatDescription: CMFormatDescription?
-                CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: stream.pixelBuffer!, formatDescriptionOut: &formatDescription)
+                CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: validPixelBuffer, formatDescriptionOut: &formatDescription)
                 guard let formatDescription else {
                     return
                 }
-                guard let sampleBuf = try? CMSampleBuffer(imageBuffer: stream.pixelBuffer!, formatDescription: formatDescription, sampleTiming: CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: displayLayer.sampleBufferRenderer.timebase.time, decodeTimeStamp: .invalid)) else {
+                guard let sampleBuf = try? CMSampleBuffer(imageBuffer: validPixelBuffer, formatDescription: formatDescription, sampleTiming: CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: displayLayer.sampleBufferRenderer.timebase.time, decodeTimeStamp: .invalid)) else {
                     return
                 }
                 sampleBuf.sampleAttachments[0][.displayImmediately] = true
@@ -449,8 +436,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 if asstext.first == "," {
                     asstext = asstext.dropFirst()
                 }
-                let cmdremoved = asstext.replacingOccurrences(of: "{\\.*}", with: "", options: .regularExpression, range: asstext.range(of: asstext))
-                let result = cmdremoved.replacingOccurrences(of: "\\\\[Nn]", with: "\n", options: .regularExpression, range: cmdremoved.range(of: cmdremoved))
+                let cmdremoved = asstext.replacingOccurrences(of: "{\\.*}", with: "", options: .regularExpression)
+                let result = cmdremoved.replacingOccurrences(of: "\\\\[Nn]", with: "\n", options: .regularExpression)
                 ret += result
             }
             return ret
@@ -562,7 +549,6 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         sound?.stop()
         stream = nil
         pipController = nil
-        pixelBuffer = nil
     }
     
     public func onSeek(_ pos: Double) {
@@ -669,7 +655,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             soundOnlySender.send(false)
             titleSender.send(name)
 
-            nameCStr = name.cString(using: .utf8)
+            let cNamePtr = strdup(name)
             var start_skip = Double.nan
             if skip > 0 {
                 start_skip = Double(skip)
@@ -694,81 +680,79 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 }
             }
             
-            if var nameCStr {
-                ret = await withCheckedContinuation { continuation in
-                    nameCStr.withUnsafeMutableBufferPointer { itemname in
-                        let latency = AVAudioSession.sharedInstance().outputLatency
-                        print(latency)
-                        param = make_arg(
-                            itemname.baseAddress,
-                            latency,
-                            partial_start,
-                            start_skip,
-                            stop_limit,
-                            aribText ? 1: 0,
-                            selfref,
-                            read_packet,
-                            seek,
-                            cancel,
-                            draw_pict,
-                            setDuration,
-                            setSoundOnly,
-                            sound_play,
-                            sound_stop,
-                            wait_stop,
-                            wait_start,
-                            send_pause,
-                            skip_media,
-                            cc_draw,
-                            change_lang)
-                        
-                        Task {
-                            do {
-                                try AVAudioSession.sharedInstance().setActive(true)
-                            } catch {
-                                print(error)
-                            }
+            ret = await withCheckedContinuation { continuation in
+                let latency = AVAudioSession.sharedInstance().outputLatency
+                print(latency)
+                param = make_arg(
+                    cNamePtr,
+                    latency,
+                    partial_start,
+                    start_skip,
+                    stop_limit,
+                    aribText ? 1: 0,
+                    selfref,
+                    read_packet,
+                    seek,
+                    cancel,
+                    draw_pict,
+                    setDuration,
+                    setSoundOnly,
+                    sound_play,
+                    sound_stop,
+                    wait_stop,
+                    wait_start,
+                    send_pause,
+                    skip_media,
+                    cc_draw,
+                    change_lang)
+                
+                Task {
+                    defer {
+                        free(cNamePtr)
+                    }
+                    do {
+                        try AVAudioSession.sharedInstance().setActive(true)
+                    } catch {
+                        print(error)
+                    }
 
-                            initDoneSender.send(true)
-                            run_play(param!)
-                            sound?.play()
-                            let task = Task {
-                                while true {
-                                    try await Task.sleep(for: .seconds(1))
-                                    updateMediaInfo()
-                                }
-                            }
-                            var ret = Int(run_finish(param!))
-                            param = nil
-                            if userBreak {
-                                ret = 1
-                            }
-                            task.cancel()
-                            if idx == curIdx {
-                                curIdx += 1
-                                if ret >= 0 && !playlist {
-                                    if mediaDuration > 0, playPos > 0 {
-                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, playPos / mediaDuration)))
-                                    }
-                                    else {
-                                        await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
-                                    }
-                                }
-                            }
-                            else {
-                                if ret >= 0 && !playlist {
-                                    await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
-                                }
-                            }
-
-                            stream?.isLive = false
-                            await item.cancel()
-                            remoteItem = nil
-                            stream = nil
-                            pixelBuffer = nil
-                            continuation.resume(returning: ret)
+                    initDoneSender.send(true)
+                    run_play(param!)
+                    sound?.play()
+                    let task = Task {
+                        while true {
+                            try await Task.sleep(for: .seconds(1))
+                            updateMediaInfo()
                         }
                     }
+                    var ret = Int(run_finish(param!))
+                    param = nil
+                    if userBreak {
+                        ret = 1
+                    }
+                    task.cancel()
+                    if idx == curIdx {
+                        curIdx += 1
+                        if ret >= 0 && !playlist {
+                            if mediaDuration > 0, playPos > 0 {
+                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, playPos / mediaDuration)))
+                            }
+                            else {
+                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
+                            }
+                        }
+                    }
+                    else {
+                        if ret >= 0 && !playlist {
+                            await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
+                        }
+                    }
+
+                    stream?.isLive = false
+                    await item.cancel()
+                    remoteItem = nil
+                    stream = nil
+                    continuation.resume(returning: ret)
                 }
             }
             initDoneSender.send(false)

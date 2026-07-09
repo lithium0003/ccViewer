@@ -163,6 +163,8 @@ public:
         double          frame_last_pts = std::nan("");
         double          frame_last_delay = 10e-3;
 
+        struct SwsContext *img_convert_ctx = NULL;
+
         VideoInfo(Player *parent) : videoq(parent) {}
     } VideoInfo;
     VideoInfo video;

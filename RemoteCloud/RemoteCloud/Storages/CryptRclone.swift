@@ -1598,14 +1598,12 @@ class Poly1305 {
         r4 = 0
 
         key.withUnsafeBytes { kp in
-            let keyPointer = kp.baseAddress!
-            r0 = UInt64((keyPointer).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff)
-            r1 = UInt64(((keyPointer+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffff03)
-            r2 = UInt64(((keyPointer+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffc0ff)
-            r3 = UInt64(((keyPointer+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3f03fff)
-            r4 = UInt64(((keyPointer+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) & 0x00fffff)
+            r0 = UInt64(kp.loadUnaligned(fromByteOffset: 0, as: UInt32.self) & 0x3ffffff)
+            r1 = UInt64((kp.loadUnaligned(fromByteOffset: 3, as: UInt32.self) >> 2) & 0x3ffff03)
+            r2 = UInt64((kp.loadUnaligned(fromByteOffset: 6, as: UInt32.self) >> 4) & 0x3ffc0ff)
+            r3 = UInt64((kp.loadUnaligned(fromByteOffset: 9, as: UInt32.self) >> 6) & 0x3f03fff)
+            r4 = UInt64((kp.loadUnaligned(fromByteOffset: 12, as: UInt32.self) >> 8) & 0x00fffff)
         }
-        
         
         let R1 = r1 * 5
         let R2 = r2 * 5
@@ -1616,12 +1614,11 @@ class Poly1305 {
         while len - offset >= TagSize {
             // h += msg
             msg.withUnsafeBytes { mp in
-                let msg_p = mp.baseAddress!
-                h0 += (msg_p+offset).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
-                h1 += ((msg_p+offset+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
-                h2 += ((msg_p+offset+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
-                h3 += ((msg_p+offset+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
-                h4 += ((msg_p+offset+12).assumingMemoryBound(to: UInt32.self).pointee >> 8) | (1 << 24)
+                h0 += mp.loadUnaligned(fromByteOffset: offset, as: UInt32.self) & 0x3ffffff
+                h1 += (mp.loadUnaligned(fromByteOffset: offset + 3, as: UInt32.self) >> 2) & 0x3ffffff
+                h2 += (mp.loadUnaligned(fromByteOffset: offset + 6, as: UInt32.self) >> 4) & 0x3ffffff
+                h3 += (mp.loadUnaligned(fromByteOffset: offset + 9, as: UInt32.self) >> 6) & 0x3ffffff
+                h4 += (mp.loadUnaligned(fromByteOffset: offset + 12, as: UInt32.self) >> 8) | (1 << 24)
             }
 
             // h *= r
@@ -1651,12 +1648,11 @@ class Poly1305 {
             
             // h += msg
             block.withUnsafeBytes { u in
-                let up = u.baseAddress!
-                h0 += (up).assumingMemoryBound(to: UInt32.self).pointee & 0x3ffffff
-                h1 += ((up+3).assumingMemoryBound(to: UInt32.self).pointee >> 2) & 0x3ffffff
-                h2 += ((up+6).assumingMemoryBound(to: UInt32.self).pointee >> 4) & 0x3ffffff
-                h3 += ((up+9).assumingMemoryBound(to: UInt32.self).pointee >> 6) & 0x3ffffff
-                h4 += ((up+12).assumingMemoryBound(to: UInt32.self).pointee >> 8)
+                h0 += u.loadUnaligned(fromByteOffset: 0, as: UInt32.self) & 0x3ffffff
+                h1 += (u.loadUnaligned(fromByteOffset: 3, as: UInt32.self) >> 2) & 0x3ffffff
+                h2 += (u.loadUnaligned(fromByteOffset: 6, as: UInt32.self) >> 4) & 0x3ffffff
+                h3 += (u.loadUnaligned(fromByteOffset: 9, as: UInt32.self) >> 6) & 0x3ffffff
+                h4 += (u.loadUnaligned(fromByteOffset: 12, as: UInt32.self) >> 8)
             }
 
             // h *= r
@@ -1719,24 +1715,24 @@ class Poly1305 {
         // s: the s part of the key
         // tag = (h + s) % (2^128)
         key.withUnsafeBytes { kp in
-            let keyPointer = kp.baseAddress!
-            
-            var t = UInt64(h0)+UInt64((keyPointer+16).load(as: UInt32.self))
+            var t = UInt64(h0) + UInt64(kp.loadUnaligned(fromByteOffset: 16, as: UInt32.self))
             h0 = UInt32(t & 0xffffffff)
-            t = UInt64(h1) + UInt64((keyPointer+20).load(as: UInt32.self)) + (t >> 32)
+            
+            t = UInt64(h1) + UInt64(kp.loadUnaligned(fromByteOffset: 20, as: UInt32.self)) + (t >> 32)
             h1 = UInt32(t & 0xffffffff)
-            t = UInt64(h2) + UInt64((keyPointer+24).load(as: UInt32.self)) + (t >> 32)
+            
+            t = UInt64(h2) + UInt64(kp.loadUnaligned(fromByteOffset: 24, as: UInt32.self)) + (t >> 32)
             h2 = UInt32(t & 0xffffffff)
-            t = UInt64(h3) + UInt64((keyPointer+28).load(as: UInt32.self)) + (t >> 32)
+            
+            t = UInt64(h3) + UInt64(kp.loadUnaligned(fromByteOffset: 28, as: UInt32.self)) + (t >> 32)
             h3 = UInt32(t & 0xffffffff)
         }
         
         tag.withUnsafeMutableBytes { tp in
-            let tagp = (tp.baseAddress!).bindMemory(to: UInt32.self, capacity: 4)
-            tagp[0] = h0
-            tagp[1] = h1
-            tagp[2] = h2
-            tagp[3] = h3
+            tp.storeBytes(of: h0, toByteOffset: 0, as: UInt32.self)
+            tp.storeBytes(of: h1, toByteOffset: 4, as: UInt32.self)
+            tp.storeBytes(of: h2, toByteOffset: 8, as: UInt32.self)
+            tp.storeBytes(of: h3, toByteOffset: 12, as: UInt32.self)
         }
     }
     
@@ -1788,26 +1784,22 @@ class Secretbox {
         input.withUnsafeBytes { inputBytes in
             k.withUnsafeBytes { kBytes in
                 c.withUnsafeBytes { cBytes in
-                    let inputUInt32 = inputBytes.bindMemory(to: UInt32.self)
-                    let kUInt32 = kBytes.bindMemory(to: UInt32.self)
-                    let cUInt32 = cBytes.bindMemory(to: UInt32.self)
-                    
-                    x0 = cUInt32[0]
-                    x1 = kUInt32[0]
-                    x2 = kUInt32[1]
-                    x3 = kUInt32[2]
-                    x4 = kUInt32[3]
-                    x5 = cUInt32[1]
-                    x6 = inputUInt32[0]
-                    x7 = inputUInt32[1]
-                    x8 = inputUInt32[2]
-                    x9 = inputUInt32[3]
-                    x10 = cUInt32[2]
-                    x11 = kUInt32[4]
-                    x12 = kUInt32[5]
-                    x13 = kUInt32[6]
-                    x14 = kUInt32[7]
-                    x15 = cUInt32[3]
+                    x0 = cBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x1 = kBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x2 = kBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x3 = kBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x4 = kBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+                    x5 = cBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x6 = inputBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x7 = inputBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x8 = inputBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x9 = inputBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+                    x10 = cBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x11 = kBytes.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
+                    x12 = kBytes.loadUnaligned(fromByteOffset: 20, as: UInt32.self)
+                    x13 = kBytes.loadUnaligned(fromByteOffset: 24, as: UInt32.self)
+                    x14 = kBytes.loadUnaligned(fromByteOffset: 28, as: UInt32.self)
+                    x15 = cBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
                 }
             }
         }
@@ -1889,15 +1881,14 @@ class Secretbox {
 
         var ret = [UInt8](repeating: 0, count: 32)
         ret.withUnsafeMutableBytes { retBytes in
-            let retUInt32 = retBytes.bindMemory(to: UInt32.self)
-            retUInt32[0] = x0
-            retUInt32[1] = x5
-            retUInt32[2] = x10
-            retUInt32[3] = x15
-            retUInt32[4] = x6
-            retUInt32[5] = x7
-            retUInt32[6] = x8
-            retUInt32[7] = x9
+            retBytes.storeBytes(of: x0, toByteOffset: 0, as: UInt32.self)
+            retBytes.storeBytes(of: x5, toByteOffset: 4, as: UInt32.self)
+            retBytes.storeBytes(of: x10, toByteOffset: 8, as: UInt32.self)
+            retBytes.storeBytes(of: x15, toByteOffset: 12, as: UInt32.self)
+            retBytes.storeBytes(of: x6, toByteOffset: 16, as: UInt32.self)
+            retBytes.storeBytes(of: x7, toByteOffset: 20, as: UInt32.self)
+            retBytes.storeBytes(of: x8, toByteOffset: 24, as: UInt32.self)
+            retBytes.storeBytes(of: x9, toByteOffset: 28, as: UInt32.self)
         }
         return ret
     }
@@ -1933,26 +1924,22 @@ class Secretbox {
         input.withUnsafeBytes { inputBytes in
             k.withUnsafeBytes { kBytes in
                 c.withUnsafeBytes { cBytes in
-                    let inputUInt32 = inputBytes.bindMemory(to: UInt32.self)
-                    let kUInt32 = kBytes.bindMemory(to: UInt32.self)
-                    let cUInt32 = cBytes.bindMemory(to: UInt32.self)
-                    
-                    x0 = cUInt32[0]
-                    x1 = kUInt32[0]
-                    x2 = kUInt32[1]
-                    x3 = kUInt32[2]
-                    x4 = kUInt32[3]
-                    x5 = cUInt32[1]
-                    x6 = inputUInt32[0]
-                    x7 = inputUInt32[1]
-                    x8 = inputUInt32[2]
-                    x9 = inputUInt32[3]
-                    x10 = cUInt32[2]
-                    x11 = kUInt32[4]
-                    x12 = kUInt32[5]
-                    x13 = kUInt32[6]
-                    x14 = kUInt32[7]
-                    x15 = cUInt32[3]
+                    x0 = cBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x1 = kBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x2 = kBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x3 = kBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x4 = kBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+                    x5 = cBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x6 = inputBytes.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
+                    x7 = inputBytes.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+                    x8 = inputBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x9 = inputBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+                    x10 = cBytes.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+                    x11 = kBytes.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
+                    x12 = kBytes.loadUnaligned(fromByteOffset: 20, as: UInt32.self)
+                    x13 = kBytes.loadUnaligned(fromByteOffset: 24, as: UInt32.self)
+                    x14 = kBytes.loadUnaligned(fromByteOffset: 28, as: UInt32.self)
+                    x15 = cBytes.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
                 }
             }
         }
@@ -2067,23 +2054,22 @@ class Secretbox {
 
         var ret = [UInt8](repeating: 0, count: 64)
         ret.withUnsafeMutableBytes { retBytes in
-            let retUInt32 = retBytes.bindMemory(to: UInt32.self)
-            retUInt32[0] = x0
-            retUInt32[1] = x1
-            retUInt32[2] = x2
-            retUInt32[3] = x3
-            retUInt32[4] = x4
-            retUInt32[5] = x5
-            retUInt32[6] = x6
-            retUInt32[7] = x7
-            retUInt32[8] = x8
-            retUInt32[9] = x9
-            retUInt32[10] = x10
-            retUInt32[11] = x11
-            retUInt32[12] = x12
-            retUInt32[13] = x13
-            retUInt32[14] = x14
-            retUInt32[15] = x15
+            retBytes.storeBytes(of: x0, toByteOffset: 0, as: UInt32.self)
+            retBytes.storeBytes(of: x1, toByteOffset: 4, as: UInt32.self)
+            retBytes.storeBytes(of: x2, toByteOffset: 8, as: UInt32.self)
+            retBytes.storeBytes(of: x3, toByteOffset: 12, as: UInt32.self)
+            retBytes.storeBytes(of: x4, toByteOffset: 16, as: UInt32.self)
+            retBytes.storeBytes(of: x5, toByteOffset: 20, as: UInt32.self)
+            retBytes.storeBytes(of: x6, toByteOffset: 24, as: UInt32.self)
+            retBytes.storeBytes(of: x7, toByteOffset: 28, as: UInt32.self)
+            retBytes.storeBytes(of: x8, toByteOffset: 32, as: UInt32.self)
+            retBytes.storeBytes(of: x9, toByteOffset: 36, as: UInt32.self)
+            retBytes.storeBytes(of: x10, toByteOffset: 40, as: UInt32.self)
+            retBytes.storeBytes(of: x11, toByteOffset: 44, as: UInt32.self)
+            retBytes.storeBytes(of: x12, toByteOffset: 48, as: UInt32.self)
+            retBytes.storeBytes(of: x13, toByteOffset: 52, as: UInt32.self)
+            retBytes.storeBytes(of: x14, toByteOffset: 56, as: UInt32.self)
+            retBytes.storeBytes(of: x15, toByteOffset: 60, as: UInt32.self)
         }
         return ret
     }
@@ -2393,16 +2379,46 @@ class Secretbox {
 class SCrypt {
     class func ComputeDerivedKey(key: [UInt8], salt: [UInt8], cost: Int, blockSize: Int, derivedKeyLength: Int) -> [UInt8] {
         let B = MFcrypt(P: key, S: salt, cost: cost, blockSize: blockSize)
-        return pbkdf2.ComputeDerivedKey(key: key, salt: B, iterations: 1, derivedKeyLength: derivedKeyLength)
+        
+        var result = [UInt8](repeating: 0, count: derivedKeyLength)
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            key, key.count,
+            B, B.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            1, // iterations
+            &result, result.count
+        )
+        
+        guard status == kCCSuccess else {
+            print("PBKDF2 Error in ComputeDerivedKey: \(status)")
+            return []
+        }
+        return result
     }
     
     class func MFcrypt(P: [UInt8], S: [UInt8], cost: Int, blockSize: Int) -> [UInt8] {
         let MFLen = blockSize * 128
         
-        var B = pbkdf2.ComputeDerivedKey(key: P, salt: S, iterations: 1, derivedKeyLength: MFLen)
-        B.withUnsafeMutableBytes { bByte in
-            let B32 = bByte.bindMemory(to: UInt32.self)
-            SMix(B: B32, N: UInt32(cost), r: blockSize)
+        var B = [UInt8](repeating: 0, count: MFLen)
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            P, P.count,
+            S, S.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            1, // iterations
+            &B, B.count
+        )
+        
+        guard status == kCCSuccess else {
+            print("PBKDF2 Error in MFcrypt: \(status)")
+            return []
+        }
+        
+        B.withUnsafeMutableBufferPointer { uint8Buffer in
+            uint8Buffer.withMemoryRebound(to: UInt32.self) { uint32Buffer in
+                SMix(B: uint32Buffer, N: UInt32(cost), r: blockSize)
+            }
         }
         return B
     }
@@ -2477,57 +2493,6 @@ class SCrypt {
         }
         for i in 0..<y.count {
             Bp[i] = y[i]
-        }
-    }
-    
-    class pbkdf2 {
-        var key: [UInt8]
-        var salt: [UInt8]
-        var iterations: Int
-        
-        init(key: [UInt8], salt: [UInt8], iterations: Int) {
-            self.key = key
-            self.salt = [UInt8](repeating: 0, count: salt.count+4)
-            self.salt.replaceSubrange(0..<salt.count, with: salt)
-            self.iterations = iterations
-        }
-        
-        func ComputeBlock(pos: UInt32) -> [UInt8] {
-            var p = pos.bigEndian
-            let d = Data(bytes: &p, count: MemoryLayout.size(ofValue: p))
-            salt.replaceSubrange(salt.count-4..<salt.count, with: d)
-            var result = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-            CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA256), &key, key.count, &salt, salt.count, &result)
-            var result_T1 = result
-            for _ in 1..<iterations {
-                var result_T2 = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-                CCHmac(CCHmacAlgorithm(kCCHmacAlgSHA256), &key, key.count, &result_T1, result_T1.count, &result_T2)
-                result_T1 = result_T2
-                result = zip(result, result_T1).map { $0 ^ $1 }
-            }
-            return result
-        }
-        
-        func read(len: Int) -> [UInt8] {
-            var result = [UInt8](repeating: 0, count: len)
-            var offset = 0
-            var pos: UInt32 = 0
-            while offset < len {
-                pos += 1
-                let buf = ComputeBlock(pos: pos)
-                var l = len - offset
-                if l > buf.count {
-                    l = buf.count
-                }
-                result.replaceSubrange(offset..<offset+l, with: buf[0..<l])
-                offset += l
-            }
-            return result
-        }
-        
-        class func ComputeDerivedKey(key: [UInt8], salt: [UInt8], iterations: Int, derivedKeyLength: Int) -> [UInt8] {
-            let pdkdf = pbkdf2(key: key, salt: salt, iterations: iterations)
-            return pdkdf.read(len: derivedKeyLength)
         }
     }
 }

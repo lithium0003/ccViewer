@@ -98,8 +98,10 @@ class TS_writer {
             outfile?.open()
         }
         if let outfile = outfile {
-            data.withUnsafeBytes {
-                let _ = outfile.write($0.baseAddress!.assumingMemoryBound(to: UInt8.self), maxLength: data.count)
+            data.withUnsafeBytes { rawBuffer in
+                if let ptr = rawBuffer.bindMemory(to: UInt8.self).baseAddress {
+                    let _ = outfile.write(ptr, maxLength: data.count)
+                }
             }
         }
     }

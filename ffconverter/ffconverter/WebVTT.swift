@@ -66,9 +66,8 @@ class WebVTTwriter {
             initial_write()
         }
         if let outfile = outfile {
-            data.withUnsafeBytes {
-                let _ = outfile.write($0.baseAddress!.assumingMemoryBound(to: UInt8.self), maxLength: data.count)
-            }
+            let buffer = [UInt8](data)
+            let _ = outfile.write(buffer, maxLength: buffer.count)
         }
     }
 

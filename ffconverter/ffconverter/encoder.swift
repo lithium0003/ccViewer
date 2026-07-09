@@ -162,36 +162,44 @@ class Encoder {
     
     init?(dest: URL) {
         self.dest = dest
-
+        
         var formatHint: CMFormatDescription? = nil
         var status = CMVideoFormatDescriptionCreate(allocator: nil, codecType: kCMVideoCodecType_H264, width: Int32(width), height: Int32(height), extensions: nil, formatDescriptionOut: &formatHint)
         guard status == noErr else {
             return nil
         }
-
+        
         let sourceImageBufferAttributes = [
             kCVPixelBufferPixelFormatTypeKey: Int(kCVPixelFormatType_420YpCbCr8Planar),
             kCVPixelBufferWidthKey: Int(width),
             kCVPixelBufferHeightKey: Int(height),
-            ] as CFDictionary
+        ] as CFDictionary
         status = VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: CMVideoCodecType(kCMVideoCodecType_H264), encoderSpecification: nil, imageBufferAttributes: sourceImageBufferAttributes, compressedDataAllocator: kCFAllocatorDefault, outputCallback: self.vt_compression_callback, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &self.compressionSession)
         guard status == noErr else {
             return nil
         }
         
+        let avgBitRate = 8 * 1024 * 1024
+        let maxBitRate = 12 * 1024 * 1024
+        let dataRateLimits = [
+            NSNumber(value: maxBitRate / 8),
+            NSNumber(value: 1.0)
+        ]
+        
         let properties = [
-            kVTCompressionPropertyKey_AverageBitRate: 5*1024*1024,
+            kVTCompressionPropertyKey_AverageBitRate: avgBitRate,
+            kVTCompressionPropertyKey_DataRateLimits: dataRateLimits as CFArray,
             kVTCompressionPropertyKey_AllowOpenGOP: false,
             kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_High_4_1,
-            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 3.0,
-            ] as CFDictionary
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 2.0,
+        ] as CFDictionary
         status = VTSessionSetProperties(self.compressionSession!, propertyDictionary: properties)
         guard status == noErr else {
             return nil
         }
         
         VTCompressionSessionPrepareToEncodeFrames(self.compressionSession!)
-
+        
         status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_420YpCbCr8Planar, nil, &pxbuffer)
         guard status == noErr else {
             return nil
@@ -213,7 +221,7 @@ class Encoder {
             } catch {
                 return
             }
-            let w = TS_writer(dest: p, split_time: 5.0, time_hint: 5.0)
+            let w = TS_writer(dest: p, split_time: 6.0, time_hint: 6.0)
             if i == 0 {
                 w.set_channel(video: 1, audio: 0)
             }

@@ -234,10 +234,6 @@ class UploadProgressManeger {
             }
             
             Task {
-                defer {
-                    Task { await semaphore.signal() }
-                }
-
                 var wasExpired = false
                 task.expirationHandler = {
                     wasExpired = true
@@ -270,6 +266,7 @@ class UploadProgressManeger {
                     await progressManeger.delete(url: url)
                     await subject.send(progressManeger.count)
                     task.setTaskCompleted(success: !wasExpired)
+                    await semaphore.signal()
                 }
                 catch {
                     print(error)
@@ -277,6 +274,7 @@ class UploadProgressManeger {
                     await progressManeger.error(url: url)
                     await subject.send(progressManeger.count)
                     task.setTaskCompleted(success: false)
+                    await semaphore.signal()
                 }
             }
         }

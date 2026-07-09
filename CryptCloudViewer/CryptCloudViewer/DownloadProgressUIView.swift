@@ -204,57 +204,46 @@ class DownloadProgressManeger {
             }
             
             Task {
-                defer {
-                    Task { await semaphore.signal() }
-                }
                 var wasExpired = false
                 task.expirationHandler = {
                     wasExpired = true
                 }
-
-                // Update progress.
+                
                 let progress = task.progress
                 progress.totalUnitCount = item.size
-
+                
                 await progressManeger.add(url: outUrl, name: item.name)
                 await subject.send(progressManeger.count)
-                defer {
-                    Task {
-                        await progressManeger.delete(url: outUrl)
-                        await subject.send(progressManeger.count)
-                        task.setTaskCompleted(success: !wasExpired)
-                    }
-                }
+                
                 let stream = await item.open()
+                
                 do {
                     try? FileManager.default.removeItem(at: outUrl)
                     guard let outfile = OutputStream(url: outUrl, append: true) else {
                         wasExpired = true
-                        return
+                        throw CancellationError()
                     }
                     outfile.open()
-                    defer {
-                        outfile.close()
-                    }
+                    
                     var offset = 0
                     while !wasExpired, offset < Int(item.size) {
                         let len = min(1*1024*1024, Int(item.size) - offset)
                         guard let data = try await stream.read(position: Int64(offset), length: len, onProgress: { [self] pos in
-                            if await progressManeger.isCenceled(url: outUrl) {
-                                throw CancellationError()
-                            }
-                            if wasExpired {
+                            if await progressManeger.isCenceled(url: outUrl) || wasExpired {
                                 throw CancellationError()
                             }
                         }) else {
-                            try? FileManager.default.removeItem(at: outUrl)
                             wasExpired = true
-                            return
+                            throw CancellationError()
                         }
+                        
                         data.withUnsafeBytes { ptr in
-                            _ = outfile.write(ptr.baseAddress!, maxLength: data.count)
+                            if let baseAddress = ptr.baseAddress {
+                                _ = outfile.write(baseAddress, maxLength: data.count)
+                            }
                         }
                         offset += data.count
+                        
                         let p = min(1, Double(offset) / Double(item.size))
                         await progressManeger.setProgress(url: outUrl, p: p)
                         await subject.send(progressManeger.count)
@@ -262,29 +251,37 @@ class DownloadProgressManeger {
                         let formattedProgress = String(format: "%.2f", progress.fractionCompleted * 100)
                         task.updateTitle(task.title, subtitle: "Downloaded \(formattedProgress)%")
                     }
+                    outfile.close()
+                    
                     if await progressManeger.isCenceled(url: outUrl) {
-                        try? FileManager.default.removeItem(at: outUrl)
                         wasExpired = true
-                        return
+                        throw CancellationError()
                     }
+                    
                     await progressManeger.setProgress(url: outUrl, p: 1)
                     await subject.send(progressManeger.count)
                     task.updateTitle(task.title, subtitle: "Done")
+                    
+                } catch {
+                    print("Task failed or cancelled: \(error)")
+                    try? FileManager.default.removeItem(at: outUrl)
                 }
-                catch {
-                    print(error)
-                    wasExpired = true
-                }
+                
                 stream.isLive = false
+                
+                await progressManeger.delete(url: outUrl)
+                await subject.send(progressManeger.count)
+
+                task.setTaskCompleted(success: !wasExpired)
+                await semaphore.signal()
             }
         }
-
+        
         guard success else {
             try? FileManager.default.removeItem(at: outUrl)
             return
         }
-
-        // Submit the task request.
+        
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
