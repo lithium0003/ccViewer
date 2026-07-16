@@ -136,10 +136,14 @@ public class NetworkStorage: RemoteStorageBase {
             throw RetryError.Failed
         }
         do {
-            defer {
-                Task { await semaphore.signal() }
+            do {
+                let ret = try await action()
+                await semaphore.signal()
+                return ret
             }
-            return try await action()
+            catch {
+                throw error
+            }
         }
         catch RetryError.Retry {
             try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))

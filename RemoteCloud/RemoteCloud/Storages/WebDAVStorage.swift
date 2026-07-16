@@ -177,48 +177,21 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         }
         _ = await accessUsername()
         _ = await accessPassword()
-        var request: URLRequest = URLRequest(url: url)
-        request.httpMethod = "OPTIONS"
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PROPFIND"
+        request.setValue("0", forHTTPHeaderField: "Depth")
+        
         let (_, response) = try await URLSession.shared.data(for: request, delegate: self)
-
         guard let response = response as? HTTPURLResponse else {
             return false
         }
-        guard response.statusCode == 200 else {
-            print(response)
-            return false
-        }
-
-        guard let allow = response.allHeaderFields["Allow"] as? String ?? response.allHeaderFields["allow"] as? String else {
-            print(response)
-            return false
-        }
-        guard allow.lowercased().contains("propfind") else {
-            print(allow)
-            return false
-        }
-        guard let dav = response.allHeaderFields["Dav"] as? String ?? response.allHeaderFields["dav"] as? String ??
-            response.allHeaderFields["DAV"] as? String else {
-            print(response)
-            return false
-        }
-        guard dav.contains("1") else {
-            print(dav)
+        
+        guard (200...299).contains(response.statusCode) else {
+            print("HTTP Status: \(response.statusCode)")
             return false
         }
         
-        request = URLRequest(url: url)
-        request.httpMethod = "HEAD"
-        let (_, response2) = try await URLSession.shared.data(for: request, delegate: self)
-
-        guard let response2 = response2 as? HTTPURLResponse else {
-            return false
-        }
-        guard response2.statusCode == 200 else {
-            print(response2)
-            return false
-        }
-
         return true
     }
 
@@ -259,6 +232,12 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             let _ = await delKeyChain(key: "\(name)_accessPassword")
         }
         await super.logout()
+    }
+
+    override func checkToken() async -> Bool {
+        _ = await accessUsername()
+        _ = await accessPassword()
+        return true
     }
 
     func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) async {
@@ -565,8 +544,8 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     throw RetryError.Retry
                 }
                 guard let accept = response.allHeaderFields["Accept-Ranges"] as? String ?? response.allHeaderFields["accept-ranges"] as? String else {
-                    print(response)
-                    throw RetryError.Retry
+                    acceptRange = false
+                    return
                 }
                 if accept.lowercased().contains("bytes") {
                     acceptRange = true
@@ -574,7 +553,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 else {
                     acceptRange = false
                 }
-            }, semaphore: checkSemaphore)
+            }, semaphore: checkSemaphore, maxCall: 1)
         }
         catch {
             return
