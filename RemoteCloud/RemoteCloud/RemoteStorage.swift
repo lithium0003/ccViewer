@@ -392,7 +392,7 @@ public class CloudFactory {
         case .Filen:
             return "Filen"
         case .CryptGocryptfs:
-            return "Gocryptfs"
+            return "gocryptfs"
         }
     }
     

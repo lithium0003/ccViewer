@@ -1322,7 +1322,7 @@ public class CryptGocryptfs: ChildStorage {
             }
             if encryptedName.count <= 175 {
                 // short name
-                guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: encryptedName, target: crypttarget) else {
+                guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: encryptedName, target: crypttarget, progress: progress) else {
                     return nil
                 }
 
@@ -1395,7 +1395,7 @@ public class CryptGocryptfs: ChildStorage {
                     return nil
                 }
 
-                guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: baseName, target: crypttarget) else {
+                guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: baseName, target: crypttarget, progress: progress) else {
                     return nil
                 }
 
@@ -1447,7 +1447,7 @@ public class CryptGocryptfs: ChildStorage {
         }
         else {
             // raw create
-            guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: uploadname, target: crypttarget) else {
+            guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: uploadname, target: crypttarget, progress: progress) else {
                 return nil
             }
             let decryptSize = { size in
