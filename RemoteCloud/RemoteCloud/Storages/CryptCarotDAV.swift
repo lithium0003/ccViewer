@@ -285,7 +285,7 @@ public class CryptCarotDAV: ChildStorage {
             var outBytes = [UInt8](repeating: 0, count: cryptbuf2.count)
             
             let cryptArray2 = [UInt8](cryptbuf2)
-            var status = CCCrypt(
+            let status = CCCrypt(
                 CCOperation(kCCDecrypt),
                 CCAlgorithm(kCCAlgorithmAES),
                 CCOptions(kCCOptionECBMode),

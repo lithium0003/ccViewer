@@ -34,6 +34,7 @@ public enum CloudStorages: Hashable, Identifiable, CaseIterable {
     case CryptRclone
     case Cryptomator
     case Filen
+    case CryptGocryptfs
 }
 
 public protocol RemoteStorage {
@@ -359,6 +360,8 @@ public class CloudFactory {
             return UIImage(named: "files", in: Bundle(for: type(of: self)), compatibleWith: nil)
         case .Filen:
             return UIImage(named: "filen", in: Bundle(for: type(of: self)), compatibleWith: nil)
+        case .CryptGocryptfs:
+            return UIImage(named: "gocryptfs", in: Bundle(for: type(of: self)), compatibleWith: nil)
         }
     }
 
@@ -388,6 +391,8 @@ public class CloudFactory {
             return "Files"
         case .Filen:
             return "Filen"
+        case .CryptGocryptfs:
+            return "Gocryptfs"
         }
     }
     
@@ -417,6 +422,8 @@ public class CloudFactory {
             return FilesStorage(name: tagname)
         case .Filen:
             return FilenStorage(name: tagname)
+        case .CryptGocryptfs:
+            return await CryptGocryptfs(name: tagname)
         }
     }
 

@@ -651,7 +651,6 @@ public class Cryptomator: ChildStorage {
             else {
                 newitem.path = "\(path)/\(newname)"
             }
-            try? context.save()
         }
     }
     
@@ -1244,7 +1243,6 @@ public class Cryptomator: ChildStorage {
         return retId
     }
 
-    
     override func changeTime(fileId: String, newdate: Date) async -> String? {
         guard fileId != "" else {
             return nil

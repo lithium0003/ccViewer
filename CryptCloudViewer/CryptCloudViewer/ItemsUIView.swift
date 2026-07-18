@@ -135,6 +135,9 @@ struct ItemsUIView: View {
                 await getMarks()
             }
         }
+        else {
+            await CloudFactory.shared.storageList.get(storage)?.list(fileId: "")
+        }
     }
     
     func sortButton(key: LocalizedStringKey, idx: Int) -> some View {

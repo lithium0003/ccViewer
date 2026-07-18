@@ -1310,26 +1310,43 @@ public class RemoteCryptRcloneStream: SlotStream {
 
 class AES_EME {
     let key: [UInt8]
-    let tweek: [UInt8]
+    let globalTweek: [UInt8]
     
     init(key: [UInt8], IV: [UInt8]) {
         self.key = key
-        self.tweek = IV
+        self.globalTweek = IV
     }
-    
+
+    init(key: [UInt8]) {
+        self.key = key
+        self.globalTweek = []
+    }
+
     func encode(input: Data) -> Data? {
         return ([UInt8](input)).withUnsafeBufferPointer { inBuf in
-            return transform(input: inBuf, decode: false)
+            return transform(input: inBuf, tweek: globalTweek, decode: false)
         }
     }
-    
+
+    func encode(input: Data, tweek: [UInt8]) -> Data? {
+        return ([UInt8](input)).withUnsafeBufferPointer { inBuf in
+            return transform(input: inBuf, tweek: tweek, decode: false)
+        }
+    }
+
     func decode(input: Data) -> Data? {
         return ([UInt8](input)).withUnsafeBufferPointer { inBuf in
-            return transform(input: inBuf, decode: true)
+            return transform(input: inBuf, tweek: globalTweek, decode: true)
+        }
+    }
+
+    func decode(input: Data, tweek: [UInt8]) -> Data? {
+        return ([UInt8](input)).withUnsafeBufferPointer { inBuf in
+            return transform(input: inBuf, tweek: tweek, decode: true)
         }
     }
     
-    func transform(input: UnsafeBufferPointer<UInt8>, decode: Bool) -> Data? {
+    func transform(input: UnsafeBufferPointer<UInt8>, tweek: [UInt8], decode: Bool) -> Data? {
         let op = (decode) ? CCOperation(kCCDecrypt) : CCOperation(kCCEncrypt)
         
         guard tweek.count == 16 else {
@@ -1489,7 +1506,6 @@ class AES_EME {
             inout1[i] ^= in2[i]
         }
     }
-    
 
     func MultByTwo(output: UnsafeMutableBufferPointer<UInt8>, input: UnsafeBufferPointer<UInt8>) {
         guard input.count == 16, output.count == 16 else {
@@ -2398,29 +2414,36 @@ class SCrypt {
     }
     
     class func MFcrypt(P: [UInt8], S: [UInt8], cost: Int, blockSize: Int) -> [UInt8] {
-        let MFLen = blockSize * 128
-        
-        var B = [UInt8](repeating: 0, count: MFLen)
-        let status = CCKeyDerivationPBKDF(
-            CCPBKDFAlgorithm(kCCPBKDF2),
-            P, P.count,
-            S, S.count,
-            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-            1, // iterations
-            &B, B.count
-        )
+        let uint32Count = (blockSize * 128) / 4
+        var B_uint32 = [UInt32](repeating: 0, count: uint32Count)
+
+        let status = B_uint32.withUnsafeMutableBytes { bBytes -> Int32 in
+            return CCKeyDerivationPBKDF(
+                CCPBKDFAlgorithm(kCCPBKDF2),
+                P, P.count,
+                S, S.count,
+                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                1, // iterations
+                bBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                bBytes.count
+            )
+        }
         
         guard status == kCCSuccess else {
             print("PBKDF2 Error in MFcrypt: \(status)")
             return []
         }
         
-        B.withUnsafeMutableBufferPointer { uint8Buffer in
-            uint8Buffer.withMemoryRebound(to: UInt32.self) { uint32Buffer in
-                SMix(B: uint32Buffer, N: UInt32(cost), r: blockSize)
+        B_uint32.withUnsafeMutableBufferPointer { uint32Buffer in
+            SMix(B: uint32Buffer, N: UInt32(cost), r: blockSize)
+        }
+        var finalB = [UInt8](repeating: 0, count: blockSize * 128)
+        finalB.withUnsafeMutableBytes { finalBytes in
+            B_uint32.withUnsafeBytes { bBytes in
+                finalBytes.copyMemory(from: bBytes)
             }
         }
-        return B
+        return finalB
     }
     
     class func SMix(B: UnsafeMutableBufferPointer<UInt32>, N: UInt32, r: Int) {
