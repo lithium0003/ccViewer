@@ -5,7 +5,7 @@ iOSアプリ"CryptCloudViewer"のソースコードのレポジトリです。
 https://itunes.apple.com/jp/app/cryptcloudviewer/id1458528598
 
 ## 説明
-暗号化したまま閲覧できるクラウドビューワです。端末のフォルダに加えて、クラウドストレージ: Google Drive, Dropbox, OneDrive, pCloud, Filen.io, WebDAV, Samba、暗号化: rclone, CarotDAV, Cryptomatorに対応しています。iPhoneで再生できるメディアファイルの他、ソフトウエアデコードによりmpeg2等の動画も再生できます。クラウドストレージのファイルを編集することも可能です(アップロード、フォルダ作成、リネーム、移動、削除)。また、端末で自動的にエンコードを行い、Chromecastでデバイスに送信することが可能です。
+暗号化したまま閲覧できるクラウドビューワです。端末のフォルダに加えて、クラウドストレージ: Google Drive, Dropbox, OneDrive, pCloud, Filen.io, WebDAV, Samba、暗号化: rclone, CarotDAV, Cryptomator, gocryptfs に対応しています。iPhoneで再生できるメディアファイルの他、ソフトウエアデコードによりmpeg2等の動画も再生できます。クラウドストレージのファイルを編集することも可能です(アップロード、フォルダ作成、リネーム、移動、削除)。また、端末で自動的にエンコードを行い、Chromecastでデバイスに送信することが可能です。
 
 Ver 1.4.0より、Chromecastをサポートしました。ただしキャスト中は、アプリを切り替えたり画面ロックを行うことができません。
 
