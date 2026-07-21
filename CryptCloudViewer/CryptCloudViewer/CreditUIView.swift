@@ -1126,6 +1126,14 @@ struct CreditUIView: View {
                   destination: URL(string: "https://cryptomator.org/")!
                 )
             }
+            HStack {
+                Text(verbatim: "gocryptfs (cppcryptfs)")
+                Spacer()
+                Link(
+                  "https://github.com/rfjakob/gocryptfs",
+                  destination: URL(string: "https://github.com/rfjakob/gocryptfs")!
+                )
+            }
         } header: {
             Text("Supported encryption algorithms")
         }
