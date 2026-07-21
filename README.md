@@ -3,7 +3,7 @@ This repository is source code of iOS app "CryptCloudViewer"
 https://itunes.apple.com/us/app/cryptcloudviewer/id1458528598
 
 ## description
-This app is iOS cloud viewer with keeping encrypted. App supports device folders and remote storages: Google Drive, Dropbox, OneDrive, pCloud, Filen.io, WebDAV and Samba. Available encryption: rclone, CarotDAV, Cryptomator and gocryptfs. This app can play media files with keeping encrypted. In addition, this app can play non-native media files (ex. mpeg2) with software decoder. You can edit your cloud storages: upload, make folder, rename, move, delete items.
+This app is iOS cloud viewer with keeping encrypted. App supports device folders and remote storages: Google Drive, Dropbox, OneDrive, pCloud, Filen.io, S3, WebDAV and Samba. Available encryption: rclone, CarotDAV, Cryptomator and gocryptfs. This app can play media files with keeping encrypted. In addition, this app can play non-native media files (ex. mpeg2) with software decoder. You can edit your cloud storages: upload, make folder, rename, move, delete items.
 
 In version 1.4.0, Chromecast support added. Please keep the app foreground and not lock the device while casting to Chromecast.
 
