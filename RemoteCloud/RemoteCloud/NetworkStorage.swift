@@ -123,6 +123,9 @@ public class NetworkStorage: RemoteStorageBase {
         if callcount > maxCall {
             throw RetryError.Failed
         }
+        if cancelTime.timeIntervalSinceNow > 0 {
+            throw CancellationError()
+        }
         if await semaphore.wait(timeout: .seconds(5)) == .timeout {
             if cancelTime.timeIntervalSinceNow > 0 {
                 cancelTime = Date(timeIntervalSinceNow: 0.5)
@@ -142,6 +145,7 @@ public class NetworkStorage: RemoteStorageBase {
                 return ret
             }
             catch {
+                await semaphore.signal()
                 throw error
             }
         }
@@ -268,7 +272,14 @@ public class SlotStream: RemoteStream {
     static let slotcount = 20
     static let slotadvance: Int64 = 5
     static let bufSize:Int64 = 1*1024*1024
-    var error = false
+    var error = false {
+        didSet {
+            setError(error)
+        }
+    }
+
+    func setError(_ isError: Bool) {
+    }
 
     let waitlist = WaitListManager()
     let initialized = InitialManager()
@@ -515,7 +526,6 @@ public class SlotStream: RemoteStream {
             catch {
                 print(error)
                 self.error = true
-                isLive = false
                 return nil
             }
         }
@@ -538,6 +548,7 @@ public class SlotStream: RemoteStream {
         }
         let length = length < 0 ? size - position : min(size - position, Int64(length))
         for p in stride(from: position, to: position + length, by: 32 * 1024) {
+            try Task.checkCancellation()
             let len = min(position + length - p, 32*1024)
             if !isLive { return nil }
             guard let d = try await subRead(position: p, length: Int(len)) else {
@@ -567,6 +578,12 @@ public class RemoteNetworkStream: SlotStream {
         }
     }
 
+    override func setError(_ isError: Bool) {
+        if isError {
+            isLive = false
+        }
+    }
+    
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard pos.lowerBound >= 0 else { return }
         if isLive, await !buffer.dataAvailable(pos: pos) {

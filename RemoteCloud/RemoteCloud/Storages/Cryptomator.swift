@@ -1960,6 +1960,12 @@ public class RemoteCryptomatorStream: SlotStream {
         }
     }
 
+    override func setError(_ isError: Bool) {
+        if isError {
+            isLive = false
+        }
+    }
+    
     override func fillHeader() async {
         guard let data = try? await remote.read(start: 0, length: Int64(CryptomatorCryptor.headerSize)) else {
             print("error on header null")

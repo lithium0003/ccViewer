@@ -79,6 +79,20 @@ public class CueSheetStream: SlotStream {
         await super.init(size: remote.size)
     }
 
+    override func setLive(_ live: Bool) {
+        if !live {
+            Task {
+                await remote.cancel()
+            }
+        }
+    }
+
+    override func setError(_ isError: Bool) {
+        if isError {
+            isLive = false
+        }
+    }
+
     override func fillHeader() async {
         let frames = remote.subend - remote.substart
         let stream = await remote.wavitem.open()

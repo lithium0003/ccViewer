@@ -213,12 +213,9 @@ struct ImageShowUIView: View {
                 remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
                 guard let remoteItem else { return }
                 let total = remoteItem.size
+                let remoteData = await remoteItem.open()
                 do {
-                    let remoteData = await remoteItem.open()
-                    defer {
-                        remoteData.isLive = false
-                    }
-                    let data = try? await remoteData.read(onProgress: { p in
+                    let data = try await remoteData.read(onProgress: { p in
                         if total > 0 {
                             progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
                         }
@@ -234,6 +231,10 @@ struct ImageShowUIView: View {
                     else {
                         return
                     }
+                }
+                catch {
+                    print(error)
+                    remoteData.isLive = false
                 }
             }
             
@@ -268,14 +269,15 @@ struct ImageShowUIView: View {
                                             let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
                                             try Task.checkCancellation()
                                             if let remoteData = await item?.open() {
-                                                defer {
-                                                    remoteData.isLive = false
+                                                do {
+                                                    let data = try await remoteData.read()
+                                                    if let data, let im = UIImage(data: data) {
+                                                        return (curIdx + k, im)
+                                                    }
                                                 }
-                                                try Task.checkCancellation()
-                                                let data = try? await remoteData.read()
-                                                try Task.checkCancellation()
-                                                if let data, let im = UIImage(data: data) {
-                                                    return (curIdx + k, im)
+                                                catch {
+                                                    print(error)
+                                                    remoteData.isLive = false
                                                 }
                                             }
                                             return nil
@@ -302,14 +304,15 @@ struct ImageShowUIView: View {
                                             let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
                                             try Task.checkCancellation()
                                             if let remoteData = await item?.open() {
-                                                defer {
-                                                    remoteData.isLive = false
+                                                do {
+                                                    let data = try await remoteData.read()
+                                                    if let data, let im = UIImage(data: data) {
+                                                        return (curIdx - k, im)
+                                                    }
                                                 }
-                                                try Task.checkCancellation()
-                                                let data = try? await remoteData.read()
-                                                try Task.checkCancellation()
-                                                if let data, let im = UIImage(data: data) {
-                                                    return (curIdx - k, im)
+                                                catch {
+                                                    print(error)
+                                                    remoteData.isLive = false
                                                 }
                                             }
                                             return nil

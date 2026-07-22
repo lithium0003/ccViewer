@@ -1013,7 +1013,7 @@ public actor Semaphore {
             let v = await group.next()!
             group.cancelAll()
             if v == .timeout {
-                value += 1
+                OSAtomicIncrement64(&value)
                 if let i = idlist.firstIndex(of: id) {
                     idlist.remove(at: i)
                 }
