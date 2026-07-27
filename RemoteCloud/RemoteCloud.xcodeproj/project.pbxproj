@@ -28,6 +28,8 @@
 		3FA46CE223849615007ACC82 /* FileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA46CE123849615007ACC82 /* FileCache.swift */; };
 		3FAF14D32387131F0052AFAB /* WebDAVStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */; };
 		3FE215882394F39300CD2A19 /* FilesStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE215872394F39300CD2A19 /* FilesStorage.swift */; };
+		BE012EFD3014B2960017B7B6 /* DVDItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE012EFC3014B2960017B7B6 /* DVDItem.swift */; };
+		BE012EFF3015E7F10017B7B6 /* ISOItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE012EFE3015E7F10017B7B6 /* ISOItem.swift */; };
 		BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */; };
 		BE0C16BA2EC89E1400C78FEC /* archive_entry.h in Headers */ = {isa = PBXBuildFile; fileRef = BE0C16B92EC89E1400C78FEC /* archive_entry.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BE0C16BB2EC89E1400C78FEC /* archive.h in Headers */ = {isa = PBXBuildFile; fileRef = BE0C16B82EC89E1400C78FEC /* archive.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -69,6 +71,8 @@
 		3FA46CE123849615007ACC82 /* FileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCache.swift; sourceTree = "<group>"; };
 		3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVStorage.swift; sourceTree = "<group>"; };
 		3FE215872394F39300CD2A19 /* FilesStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesStorage.swift; sourceTree = "<group>"; };
+		BE012EFC3014B2960017B7B6 /* DVDItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVDItem.swift; sourceTree = "<group>"; };
+		BE012EFE3015E7F10017B7B6 /* ISOItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ISOItem.swift; sourceTree = "<group>"; };
 		BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessArchive.swift; sourceTree = "<group>"; };
 		BE0C16B82EC89E1400C78FEC /* archive.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive.h; sourceTree = "<group>"; };
 		BE0C16B92EC89E1400C78FEC /* archive_entry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = archive_entry.h; sourceTree = "<group>"; };
@@ -101,6 +105,8 @@
 			children = (
 				3C14C44E225C69410044E4A7 /* SubItem.swift */,
 				3C14C451225CE19E0044E4A7 /* CueSheet.swift */,
+				BE012EFC3014B2960017B7B6 /* DVDItem.swift */,
+				BE012EFE3015E7F10017B7B6 /* ISOItem.swift */,
 				BE0C16B22EC88FD000C78FEC /* ProcessArchive.swift */,
 			);
 			path = SubItem;
@@ -282,7 +288,9 @@
 				BE2E4D92300F4D0F005E17A2 /* S3Storage.swift in Sources */,
 				3F3ABABD2273119D002A8D16 /* pCloudStorage.swift in Sources */,
 				3C0654A52238D66D003BD932 /* NetworkStorage.swift in Sources */,
+				BE012EFF3015E7F10017B7B6 /* ISOItem.swift in Sources */,
 				3CA2C96022355A0300481DB5 /* RemoteItem.swift in Sources */,
+				BE012EFD3014B2960017B7B6 /* DVDItem.swift in Sources */,
 				3C0654A322384CD0003BD932 /* ChildStorage.swift in Sources */,
 				BEEF7BFF2ECA74B5000F6F3E /* playmark.xcdatamodeld in Sources */,
 				BE0C16B32EC88FD000C78FEC /* ProcessArchive.swift in Sources */,

@@ -60,64 +60,6 @@ struct OpenfileUIView: View {
                 }
                 await Task.yield()
                 if storages.count > 1 {
-//                    var ffplay = false
-//                    if UserDefaults.standard.bool(forKey: "FFplayer"), UserDefaults.standard.bool(forKey: "firstFFplayer") {
-//                        await withTaskGroup { group in
-//                            for (storage, fileid) in zip(storages, fileids) {
-//                                group.addTask { ()->(String, String)? in
-//                                    if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-//                                        if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
-//                                        }
-//                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
-//                                        }
-//                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
-//                                        }
-//                                        else {
-//                                            ffplay = true
-//                                            return (storage, fileid)
-//                                        }
-//                                    }
-//                                    return nil
-//                                }
-//                            }
-//                            for await item in group {
-//                                if let (storage, fileid) = item {
-//                                    passStorages.append(storage)
-//                                    passFileids.append(fileid)
-//                                }
-//                            }
-//                        }
-//                    }
-//                    else {
-//                        await withTaskGroup { group in
-//                            for (storage, fileid) in zip(storages, fileids) {
-//                                group.addTask { ()->(String, String)? in
-//                                    if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-//                                        if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
-//                                        }
-//                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {
-//                                        }
-//                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .pdf) {
-//                                        }
-//                                        else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie), UserDefaults.standard.bool(forKey: "MediaViewer") {
-//                                            return (storage, fileid)
-//                                        }
-//                                        else {
-//                                            ffplay = true
-//                                            return (storage, fileid)
-//                                        }
-//                                    }
-//                                    return nil
-//                                }
-//                            }
-//                            for await item in group {
-//                                if let (storage, fileid) = item {
-//                                    passStorages.append(storage)
-//                                    passFileids.append(fileid)
-//                                }
-//                            }
-//                        }
-//                    }
                     passStorages = storages
                     passFileids = fileids
                     if UserDefaults.standard.bool(forKey: "FFplayer") {
@@ -129,7 +71,7 @@ struct OpenfileUIView: View {
                     }
                     return
                 }
-                if let storage = storages.first, let fileid = fileids.first, let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                if let storage = storages.first, let fileid = fileids.first, let remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() {
                     if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                         dispType = .txt
                     }

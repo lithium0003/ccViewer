@@ -11,6 +11,7 @@
 
 struct convert_param {
     char *name;
+    char *paletteStr;
     void *stream;
     void *converter;
     double start;

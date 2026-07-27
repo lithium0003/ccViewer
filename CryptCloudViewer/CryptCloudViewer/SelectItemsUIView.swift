@@ -74,18 +74,13 @@ struct SelectItemsUIView: View {
     }
 
     func reload() async {
-        if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-            title = item.path
-            if item.isFolder {
-                await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                doSort()
-            }
-            else {
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                doSort()
-            }
+        items = await CloudFactory.shared.data.list(storage: storage, targetID: fileid)
+        doSort()
+        if fileid.contains("\t") {
+            title = fileid.components(separatedBy: "\t").last ?? ""
+        }
+        else if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
+            title = item.path ?? ""
         }
     }
     

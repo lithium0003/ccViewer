@@ -35,6 +35,47 @@ class PlaylistDocument: UIDocument {
 }
 
 public class dataItems {
+    public func list(storage: String, targetID: String, force: Bool = false) async -> [RemoteData] {
+        guard let service = await CloudFactory.shared.storageList.get(storage) else {
+            return []
+        }
+        if targetID == "" {
+            if force {
+                await service.list(fileId: "")
+            }
+            let items = await CloudFactory.shared.data.listData(storage: storage, parentID: "")
+            if items.isEmpty, !force {
+                await service.list(fileId: "")
+                return await CloudFactory.shared.data.listData(storage: storage, parentID: "")
+            }
+            return items
+        }
+        if let itemdata = await getData(storage: storage, fileId: targetID) {
+            if force {
+                await RemoteItem.removeSubitem(storage: storage, id: targetID)
+            }
+            if let item = await itemdata.getItem() {
+                return await item.list(force: force)
+            }
+            return []
+        }
+        else {
+            let comp = targetID.components(separatedBy: "\t")
+            if force {
+                await service.list(fileId: comp[0])
+            }
+            var results = await CloudFactory.shared.data.listData(storage: storage, parentID: comp[0])
+            if results.isEmpty, !force {
+                await service.list(fileId: comp[0])
+                results = await CloudFactory.shared.data.listData(storage: storage, parentID: comp[0])
+            }
+            for i in 1..<comp.count {
+                results = await list(storage: storage, targetID: comp[0..<i].joined(separator: "\t"), force: force)
+            }
+            return results
+        }
+    }
+    
     public func listData(storage: String, parentID: String) async -> [RemoteData]  {
         let viewContext = viewContext
         return await viewContext.perform {

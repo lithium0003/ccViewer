@@ -43,6 +43,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     var idx = 0
     var remoteItem: RemoteItem?
     var stream: RemoteStream?
+    var paletteStr = ""
     var position: Int64
     var soundPTS: Double
     var videoPTS: Double
@@ -220,16 +221,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     }
 
                     // error, reopen stream
-                    //print("read reopen stream")
-                    stream.stream?.isLive = false
+                    print("read reopen stream")
                     stream.stream = nil
-                    await ritem.cancel()
                     try? await Task.sleep(for: .seconds(2))
-                    if let item = await CloudFactory.shared.storageList.get(ritem.storage)?.get(fileId: ritem.id) {
-                        stream.remoteItem = nil
-                        stream.remoteItem = item
-                        stream.stream = await item.open()
-                    }
+                    stream.stream = await stream.remoteItem?.open()
                 }
             }
             semaphore.wait()
@@ -496,17 +491,13 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
 
     func setupArtwork(_ i: Int) async {
         let (storage, fileid) = remotes[i]
-        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) else {
+        guard let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() else {
             artworkImageSender.send(nil)
             image = nil
             return
         }
         var basename = item.name
-        var parentId = item.parent
-        if let subid = item.subid, let subbase = await CloudFactory.shared.storageList.get(storage)?.get(fileId: subid) {
-            basename = subbase.name
-            parentId = subbase.parent
-        }
+        let parentId = item.parent
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
             components.removeLast()
@@ -514,7 +505,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
         
         if let imageitem = await CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
-            if let imagestream = await CloudFactory.shared.storageList.get(storage)?.get(fileId: imageitem.id ?? "")?.open() {
+            if let imagestream = await CloudFactory.shared.data.getData(storage: storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
                 
                 if let data = try? await imagestream.read(), let image = UIImage(data: data) {
                     self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
@@ -559,6 +550,28 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
     
     public func onSeekChapter(_ inc: Int) {
+        if let dvdItem = remoteItem as? DVDRemoteItem {
+            dvdItem.chapterIdx += inc
+            if dvdItem.chapterIdx >= 0, dvdItem.chapterIdx < dvdItem.chapters.count {
+                stream = nil
+                semaphore.wait()
+                if let param {
+                    run_restart(param)
+                }
+                position = 0
+                soundPTS = Double.nan
+                videoPTS = Double.nan
+                mediaDuration = 0
+                playPos = 0.0
+                Task {
+                    stream = await dvdItem.open()
+                    semaphore.signal()
+                }
+                return
+            }
+            if dvdItem.chapterIdx < 0 { dvdItem.chapterIdx = 0 }
+            if dvdItem.chapterIdx >= dvdItem.chapters.count { dvdItem.chapterIdx = dvdItem.chapters.count - 1 }
+        }
         if let param {
             run_seek_chapter(param, Int32(inc))
         }
@@ -621,7 +634,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             curIdx = idx
             isCancel = false
             let (storage, fileid) = remotes[idx]
-            guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) else {
+            guard let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() else {
                 curIdx += 1
                 continue
             }
@@ -646,6 +659,11 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 continue
             }
             remoteItem = item
+            if let dvdItem = item as? DVDRemoteItem {
+                if dvdItem.chapterIdx < dvdItem.chapters.count {
+                    paletteStr = dvdItem.chapters[dvdItem.chapterIdx].2
+                }
+            }
             stream = await item.open()
             name = item.name
             position = 0
@@ -656,6 +674,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             titleSender.send(name)
 
             let cNamePtr = strdup(name)
+            let cPalettePtr = strdup(paletteStr)
             var start_skip = Double.nan
             if skip > 0 {
                 start_skip = Double(skip)
@@ -685,6 +704,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 print(latency)
                 param = make_arg(
                     cNamePtr,
+                    cPalettePtr,
                     latency,
                     partial_start,
                     start_skip,
@@ -709,6 +729,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 Task {
                     defer {
                         free(cNamePtr)
+                        free(cPalettePtr)
                     }
                     do {
                         try AVAudioSession.sharedInstance().setActive(true)

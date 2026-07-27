@@ -71,6 +71,7 @@ struct EditItemsUIView: View {
     @State private var photoPresented = false
     @State var selectedPhotoItems: [PhotosPickerItem] = []
     @State var isLoading = false
+    @State var progStr = ""
     @State var downloading = false
     @State var uploading = false
 
@@ -134,34 +135,15 @@ struct EditItemsUIView: View {
     }
 
     func reload(_ force: Bool = false) async {
+        items = await CloudFactory.shared.data.list(storage: storage, targetID: fileid, force: force)
+        doSort()
         if fileid.contains("\t") {
             editable = false
             title = fileid.components(separatedBy: "\t").last ?? ""
-            items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-            doSort()
         }
-        else if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-            title = item.path
-            if item.isFolder {
-                if force {
-                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
-                }
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                if items.isEmpty, !force {
-                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
-                    items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                }
-                doSort()
-            }
-            else {
-                editable = false
-                if force {
-                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.removeSubitem(fileId: fileid)
-                }
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                doSort()
-            }
+        else if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
+            title = item.path ?? ""
+            editable = item.folder
         }
     }
 
@@ -543,6 +525,7 @@ struct EditItemsUIView: View {
                         
                         Button {
                             Task {
+                                await Task.yield()
                                 let ret = await withCheckedContinuation { continuation in
                                     env.storage = nil
                                     env.fileid = nil
@@ -553,15 +536,24 @@ struct EditItemsUIView: View {
                                     return
                                 }
                                 isLoading = true
+                                progStr = "\(0) / \(selection.count)"
+                                await Task.yield()
                                 defer {
                                     isLoading = false
+                                    progStr = ""
                                 }
                                 guard let toRemoteStrage = await CloudFactory.shared.storageList.get(toStorage) else {
                                     return
                                 }
-                                await Task.yield()
-                                await withTaskGroup { group in
-                                    for fid in selection {
+                                let maxConcurrentTasks = 5
+                                await withTaskGroup(of: Void.self) { group in
+                                    for (index,fid) in selection.enumerated() {
+                                        isLoading = true
+                                        progStr = "\(index) / \(selection.count)"
+                                        if index >= maxConcurrentTasks {
+                                            await group.next()
+                                            await Task.yield()
+                                        }
                                         group.addTask {
                                             guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
                                                 return
@@ -576,7 +568,10 @@ struct EditItemsUIView: View {
                                             }
                                         }
                                     }
+                                    await group.waitForAll()
                                 }
+                                isLoading = true
+                                progStr = "\(selection.count) / \(selection.count)"
                                 try? await Task.sleep(for: .seconds(1))
                                 selection.removeAll()
                                 await reload(true)
@@ -689,64 +684,66 @@ struct EditItemsUIView: View {
                     Text(title)
                 }
                 ForEach(searchedItems, id: \.self) { item in
-                    if item.folder {
-                        HStack {
-                            if selection.contains(item.id ?? "") {
-                                Image(systemName: "checkmark.square.fill")
-                            }
-                            else {
-                                Image(systemName: "square")
-                            }
-                            VStack(alignment: .leading) {
-                                Text(verbatim: item.name ?? "")
-                                    .font(.headline)
-                                if let mdate = item.mdate {
-                                    Text(verbatim: "\(f.string(from: mdate))\tfolder")
-                                        .font(.footnote)
+                    if item.id != nil {
+                        if item.folder {
+                            HStack {
+                                if selection.contains(item.id ?? "") {
+                                    Image(systemName: "checkmark.square.fill")
                                 }
                                 else {
-                                    Text(verbatim: "\tfolder")
-                                        .font(.footnote)
+                                    Image(systemName: "square")
+                                }
+                                VStack(alignment: .leading) {
+                                    Text(verbatim: item.name ?? "")
+                                        .font(.headline)
+                                    if let mdate = item.mdate {
+                                        Text(verbatim: "\(f.string(from: mdate))\tfolder")
+                                            .font(.footnote)
+                                    }
+                                    else {
+                                        Text(verbatim: "\tfolder")
+                                            .font(.footnote)
+                                    }
                                 }
                             }
-                        }
-                        .onTapGesture {
-                            if selection.contains(item.id ?? "") {
-                                selection.remove(at: selection.firstIndex(of: item.id ?? "")!)
-                            }
-                            else {
-                                selection.append(item.id ?? "")
-                            }
-                        }
-                        .listRowBackground(Color("FolderColor"))
-                    }
-                    else {
-                        HStack {
-                            if selection.contains(item.id ?? "") {
-                                Image(systemName: "checkmark.square.fill")
-                            }
-                            else {
-                                Image(systemName: "square")
-                            }
-                            VStack(alignment: .leading) {
-                                Text(verbatim: item.name ?? "")
-                                    .font(.headline)
-                                if let mdate = item.mdate {
-                                    Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                        .font(.footnote)
+                            .onTapGesture {
+                                if selection.contains(item.id ?? "") {
+                                    selection.remove(at: selection.firstIndex(of: item.id ?? "")!)
                                 }
                                 else {
-                                    Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                        .font(.footnote)
+                                    selection.append(item.id ?? "")
                                 }
                             }
+                            .listRowBackground(Color("FolderColor"))
                         }
-                        .onTapGesture {
-                            if selection.contains(item.id ?? "") {
-                                selection.remove(at: selection.firstIndex(of: item.id ?? "")!)
+                        else {
+                            HStack {
+                                if selection.contains(item.id ?? "") {
+                                    Image(systemName: "checkmark.square.fill")
+                                }
+                                else {
+                                    Image(systemName: "square")
+                                }
+                                VStack(alignment: .leading) {
+                                    Text(verbatim: item.name ?? "")
+                                        .font(.headline)
+                                    if let mdate = item.mdate {
+                                        Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                            .font(.footnote)
+                                    }
+                                    else {
+                                        Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                            .font(.footnote)
+                                    }
+                                }
                             }
-                            else {
-                                selection.append(item.id ?? "")
+                            .onTapGesture {
+                                if selection.contains(item.id ?? "") {
+                                    selection.remove(at: selection.firstIndex(of: item.id ?? "")!)
+                                }
+                                else {
+                                    selection.append(item.id ?? "")
+                                }
                             }
                         }
                     }
@@ -760,14 +757,22 @@ struct EditItemsUIView: View {
             }
 
             if isLoading {
-                ProgressView()
-                    .padding(30)
-                    .background {
-                        Color(uiColor: .systemBackground)
-                            .opacity(0.9)
+                VStack {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(30)
+                        .scaleEffect(3)
+                    
+                    if !progStr.isEmpty {
+                        Text(verbatim: progStr)
+                            .padding()
                     }
-                    .scaleEffect(3)
-                    .cornerRadius(10)
+                }
+                .background {
+                    Color(uiColor: .black)
+                        .opacity(0.9)
+                }
+                .cornerRadius(10)
             }
         }
         .task {

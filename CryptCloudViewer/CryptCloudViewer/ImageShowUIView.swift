@@ -210,7 +210,7 @@ struct ImageShowUIView: View {
                 defer {
                     isLoading = false
                 }
-                remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
+                remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem()
                 guard let remoteItem else { return }
                 let total = remoteItem.size
                 let remoteData = await remoteItem.open()
@@ -266,7 +266,7 @@ struct ImageShowUIView: View {
                                 group0.addTask {
                                     try? await withThrowingTaskGroup { group in
                                         group.addTask { ()->(Int, UIImage)? in
-                                            let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
+                                            let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
                                             try Task.checkCancellation()
                                             if let remoteData = await item?.open() {
                                                 do {
@@ -301,7 +301,7 @@ struct ImageShowUIView: View {
                                 group0.addTask {
                                     try? await withThrowingTaskGroup { group in
                                         group.addTask { ()->(Int, UIImage)? in
-                                            let item = await CloudFactory.shared.storageList.get(remoteItem.storage)?.get(fileId: id)
+                                            let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
                                             try Task.checkCancellation()
                                             if let remoteData = await item?.open() {
                                                 do {

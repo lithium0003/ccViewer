@@ -577,7 +577,6 @@ class StreamBridgeConvert {
             self.sdlparam = sdlparam
         }
     }
-    var nameCStr: [CChar]? = nil
     
     func abort() {
         isCancel = true
@@ -587,8 +586,11 @@ class StreamBridgeConvert {
     
     func run() async -> Bool {
         var basename = remote.name
-        if let subid = remote.subid, let subbase = await CloudFactory.shared.storageList.get(remote.storage)?.get(fileId: subid) {
-            basename = subbase.name
+        var paletteStr = ""
+        if let dvdItem = remote as? DVDRemoteItem {
+            if dvdItem.chapterIdx < dvdItem.chapters.count {
+                paletteStr = dvdItem.chapters[dvdItem.chapterIdx].2
+            }
         }
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
@@ -603,21 +605,25 @@ class StreamBridgeConvert {
         if let d = info.playduration {
             duration = d
         }
-        nameCStr = self.name.cString(using: .utf8)
         let ret = await withCheckedContinuation { continuation in
-            nameCStr?.withUnsafeMutableBufferPointer { itemname in
-                sdlparam = makeconvert_arg(itemname.baseAddress, selfref,
-                                           start, duration,
-                                           UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text_cast") ? 1: 0,
-                                           set_duration,
-                                           read_packet, seek, cancel,
-                                           encode, encode_sound, encode_text, finish,
-                                           stream_count, select_stream)
-                run_play(sdlparam)
-                let ret = run_finish(self.sdlparam) == 0 ? true : false
-                self.encoder.finish_encode()
-                continuation.resume(returning: ret)
+            let pNamePtr = strdup(name)
+            let pPalettePtr = strdup(paletteStr)
+            defer {
+                free(pNamePtr)
+                free(pPalettePtr)
             }
+            sdlparam = makeconvert_arg(pNamePtr, pPalettePtr,
+                                       selfref,
+                                       start, duration,
+                                       UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text_cast") ? 1: 0,
+                                       set_duration,
+                                       read_packet, seek, cancel,
+                                       encode, encode_sound, encode_text, finish,
+                                       stream_count, select_stream)
+            run_play(sdlparam)
+            let ret = run_finish(self.sdlparam) == 0 ? true : false
+            self.encoder.finish_encode()
+            continuation.resume(returning: ret)
         }
         isCancel = true
         stream.isLive = false

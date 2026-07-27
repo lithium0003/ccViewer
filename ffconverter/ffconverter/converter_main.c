@@ -24,6 +24,7 @@ int averror_eof = AVERROR_EOF;
 int averror_exit = AVERROR_EXIT;
 
 void *makeconvert_arg(char *name,
+                      char *paletteStr,
                       void *object,
                       double start,
                       double duration,
@@ -41,6 +42,7 @@ void *makeconvert_arg(char *name,
 {
     struct convert_param *param = (struct convert_param *)av_malloc(sizeof(struct convert_param));
     param->name = name;
+    param->paletteStr = paletteStr;
     param->stream = object;
     param->start = start;
     param->duration = duration;

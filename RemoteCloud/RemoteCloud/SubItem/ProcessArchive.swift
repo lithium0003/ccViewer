@@ -8,6 +8,7 @@
 
 import Foundation
 internal import UniformTypeIdentifiers
+import CoreData
 
 public class ArchiveBridge {
     let item: RemoteItem
@@ -254,21 +255,63 @@ func getDataFromArchive(item: RemoteItem, file: String) async -> Data? {
     return nil
 }
 
-public class ArchiveRemoteItem: RemoteItem {
+public class ArchiveRemoteItem: RemoteSubItem {
     let baseItem: RemoteItem
     let filepath: String
 
     override init?(storage: String, id: String) async {
         let section = id.components(separatedBy: "\t")
-        if section.count < 2 {
+        guard section.count > 1, let path = section.last else {
             return nil
         }
-        filepath = section[1]
-        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: section[0]) else {
+        filepath = path
+        guard let item = await CloudFactory.shared.data.getData(storage: storage, fileId: section.dropLast().joined(separator: "\t"))?.getItem() else {
             return nil
         }
         baseItem = item
         await super.init(storage: storage, id: id)
+    }
+
+    class func Create(from item: RemoteItem) async -> RemoteItem? {
+        let itemid = item.id
+        let storage = item.storage
+        let viewContext = CloudFactory.shared.data.viewContext
+        guard await CloudFactory.shared.data.listData(storage: storage, parentID: itemid).isEmpty else {
+            return item
+        }
+
+        let content = await processArchive(item: item)
+        for (subItem, subInfo) in content {
+            let id = "\(item.id)\t\(subItem)"
+            let comp = subItem.components(separatedBy: "/").filter({ !$0.isEmpty })
+            let name = comp.last ?? ""
+            let parent: String
+            if comp.count > 1 {
+                parent = "\(item.id)\t\(comp.dropLast().joined(separator: "/"))/"
+            }
+            else {
+                parent = item.id
+            }
+            
+            let newitem = RemoteData(context: viewContext)
+            newitem.storage = storage
+            newitem.id = id
+            newitem.name = name
+            newitem.ext = name.components(separatedBy: ".").last ?? ""
+            newitem.cdate = subInfo.cdata
+            newitem.mdate = subInfo.mdate
+            newitem.folder = subItem.hasSuffix("/")
+            newitem.size = subInfo.size
+            newitem.hashstr = ""
+            newitem.parent = parent
+            newitem.parentDate = item.mDate
+            newitem.path = item.path + "/\(subItem)"
+            newitem.subid = "CAB"+item.id
+        }
+        await viewContext.perform {
+            try? viewContext.save()
+        }
+        return item
     }
     
     public override func open() async -> RemoteStream {

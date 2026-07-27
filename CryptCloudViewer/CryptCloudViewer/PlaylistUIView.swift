@@ -90,11 +90,7 @@ struct PlaylistUIView: View {
                 newIds.append(uuid)
             }
             else {
-                await CloudFactory.shared.storageList.get(storage)?.list(path: path)
-                if fileid.contains("\t") {
-                    let baseFileid = fileid.components(separatedBy: "\t")[0]
-                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: baseFileid)
-                }
+                _ = await CloudFactory.shared.data.list(storage: storage, targetID: fileid, force: true)
                 if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
                     newItems[uuid] = item
                     newIds.append(uuid)

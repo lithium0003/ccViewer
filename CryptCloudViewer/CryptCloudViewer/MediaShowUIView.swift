@@ -34,7 +34,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
             }
             Task {
                 if item == nil {
-                    item = await CloudFactory.shared.storageList.get(storageName)?.get(fileId: String(fileId))
+                    item = await CloudFactory.shared.data.getData(storage: storageName, fileId: String(fileId))?.getItem()
                 }
                 guard let item else {
                     loadingRequest.finishLoading(with: URLError(URLError.Code.cannotOpenFile))
@@ -107,7 +107,7 @@ class CustomAVARLDelegate: NSObject, AVAssetResourceLoaderDelegate {
                 }
                 await item.cancel()
                 try? await Task.sleep(for: .seconds(2))
-                if let item = await CloudFactory.shared.storageList.get(item.storage)?.get(fileId: item.id) {
+                if let item = await CloudFactory.shared.data.getData(storage: item.storage, fileId: item.id)?.getItem() {
                     self.item = nil
                     self.item = item
                     stream = await item.open()
@@ -171,7 +171,7 @@ class CustomPlayer: NSObject {
         let item = playItems[itemIndex]
         let storage = item["storage"] as! String
         let id = item["id"] as! String
-        guard let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: id), let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie) || uti.conforms(to: .video) || uti.conforms(to: .audio) else {
+        guard let remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: id)?.getItem(), let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie) || uti.conforms(to: .video) || uti.conforms(to: .audio) else {
             return
         }
         let url = getURL(storage: storage, fileId: id)
@@ -254,10 +254,6 @@ class CustomPlayer: NSObject {
     func getArtimage(item: RemoteItem) async -> UIImage? {
         var basename = item.name
         var parentId = item.parent
-        if let subid = item.subid, let subbase = await CloudFactory.shared.storageList.get(item.storage)?.get(fileId: subid) {
-            basename = subbase.name
-            parentId = subbase.parent
-        }
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
             components.removeLast()
@@ -265,7 +261,7 @@ class CustomPlayer: NSObject {
         }
         
         if let imageitem = await CloudFactory.shared.data.getImage(storage: item.storage, parentId: parentId, baseName: basename) {
-            if let imagestream = await CloudFactory.shared.storageList.get(item.storage)?.get(fileId: imageitem.id ?? "")?.open() {
+            if let imagestream = await CloudFactory.shared.data.getData(storage: item.storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
                 let data = try? await imagestream.read()
                 if let data = data, let image = UIImage(data: data) {
                     return image

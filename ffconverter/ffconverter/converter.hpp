@@ -114,6 +114,8 @@ public:
         PacketQueue     subtitleq;
         SubtitlePictureQueue subpictq;
         int64_t         subpictq_active_serial = -1;
+        int             subtitle_width = -1;
+        int             subtitle_height = -1;
 
         SubtitleStreamInfo(Converter *parent): subtitleq(parent), subpictq(parent){
         }

@@ -105,38 +105,14 @@ struct ItemsUIView: View {
     }
     
     func reload(_ force: Bool = false) async {
+        items = await CloudFactory.shared.data.list(storage: storage, targetID: fileid, force: force)
+        doSort()
+        await getMarks()
         if fileid.contains("\t") {
             title = fileid.components(separatedBy: "\t").last ?? ""
-            items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-            doSort()
-            await getMarks()
         }
-        else if let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
-            title = item.path
-            if item.isFolder {
-                if force {
-                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
-                }
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                if items.isEmpty, !force {
-                    await CloudFactory.shared.storageList.get(storage)?.list(fileId: fileid)
-                    items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                }
-                doSort()
-                await getMarks()
-            }
-            else {
-                if force {
-                    await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.removeSubitem(fileId: fileid)
-                }
-                await (CloudFactory.shared.storageList.get(storage) as? RemoteSubItem)?.listSubitem(fileId: fileid)
-                items = await CloudFactory.shared.data.listData(storage: storage, parentID: fileid)
-                doSort()
-                await getMarks()
-            }
-        }
-        else {
-            await CloudFactory.shared.storageList.get(storage)?.list(fileId: "")
+        else if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
+            title = item.path ?? ""
         }
     }
     
@@ -170,93 +146,95 @@ struct ItemsUIView: View {
             List {
                 Section {
                     ForEach(searchedItems, id: \.self) { item in
-                        if item.folder {
-                            NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
-                                VStack(alignment: .leading) {
-                                    Text(verbatim: item.name ?? "")
-                                        .font(.headline)
-                                    if let mdate = item.mdate {
-                                        Text(verbatim: "\(f.string(from: mdate))\tfolder")
-                                            .font(.footnote)
-                                    }
-                                    else {
-                                        Text(verbatim: "\tfolder")
-                                            .font(.footnote)
-                                    }
-                                }
-                            }
-                            .listRowBackground(Color("FolderColor"))
-                        }
-                        else if item.hasSubitems {
-                            NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
-                                VStack(alignment: .leading) {
-                                    Text(verbatim: item.name ?? "")
-                                        .font(.headline)
-                                    if let mdate = item.mdate {
-                                        Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                            .font(.footnote)
-                                    }
-                                    else {
-                                        Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                            .font(.footnote)
-                                    }
-                                }
-                            }
-                            .listRowBackground(Color("CueColor"))
-                        }
-                        else {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(verbatim: item.name ?? "")
-                                        .font(.headline)
-                                    if let mdate = item.mdate {
-                                        Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                            .font(.footnote)
-                                    }
-                                    else {
-                                        Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
-                                            .font(.footnote)
-                                    }
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if Converter.IsCasting() {
-                                    isLoading = true
-                                    Task {
-                                        defer {
-                                            isLoading = false
-                                        }
-                                        await playConverter(storages: [storage], fileids: [item.id ?? ""])
-                                    }
-                                }
-                                else {
-                                    env.path.append(HomePath.open(storages: [storage], fileids: [item.id ?? ""], playlist: false))
-                                }
-                            }
-                            .listRowBackground(itemMark[item.id ?? ""] != nil ? backgroundColor(item) : nil)
-                            .swipeActions {
-                                if UserDefaults.standard.bool(forKey: "savePlaypos") {
-                                    Button {
-                                        Task {
-                                            isLoading = true
-                                            if itemMark[item.id ?? ""] != nil  {
-                                                await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: nil)
-                                            }
-                                            else {
-                                                await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: 1.0)
-                                            }
-                                            await getMarks()
-                                            isLoading = false
-                                        }
-                                    } label: {
-                                        if itemMark[item.id ?? ""] != nil {
-                                            Label("Unmark", systemImage: "eraser")
+                        if item.id != nil {
+                            if item.folder {
+                                NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
+                                    VStack(alignment: .leading) {
+                                        Text(verbatim: item.name ?? "")
+                                            .font(.headline)
+                                        if let mdate = item.mdate {
+                                            Text(verbatim: "\(f.string(from: mdate))\tfolder")
+                                                .font(.footnote)
                                         }
                                         else {
-                                            Label("Mark", systemImage: "checkmark.circle")
-                                                .tint(.green)
+                                            Text(verbatim: "\tfolder")
+                                                .font(.footnote)
+                                        }
+                                    }
+                                }
+                                .listRowBackground(Color("FolderColor"))
+                            }
+                            else if item.hasSubitems {
+                                NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
+                                    VStack(alignment: .leading) {
+                                        Text(verbatim: item.name ?? "")
+                                            .font(.headline)
+                                        if let mdate = item.mdate {
+                                            Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                                .font(.footnote)
+                                        }
+                                        else {
+                                            Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                                .font(.footnote)
+                                        }
+                                    }
+                                }
+                                .listRowBackground(Color("CueColor"))
+                            }
+                            else {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(verbatim: item.name ?? "")
+                                            .font(.headline)
+                                        if let mdate = item.mdate {
+                                            Text(verbatim: "\(f.string(from: mdate))\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                                .font(.footnote)
+                                        }
+                                        else {
+                                            Text(verbatim: "\t\(formatter2.string(fromByteCount: Int64(item.size))) (\(formatter.string(from: item.size as NSNumber) ?? "0") bytes) \t\(item.subinfo ?? "")")
+                                                .font(.footnote)
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if Converter.IsCasting() {
+                                        isLoading = true
+                                        Task {
+                                            defer {
+                                                isLoading = false
+                                            }
+                                            await playConverter(storages: [storage], fileids: [item.id ?? ""])
+                                        }
+                                    }
+                                    else {
+                                        env.path.append(HomePath.open(storages: [storage], fileids: [item.id ?? ""], playlist: false))
+                                    }
+                                }
+                                .listRowBackground(itemMark[item.id ?? ""] != nil ? backgroundColor(item) : nil)
+                                .swipeActions {
+                                    if UserDefaults.standard.bool(forKey: "savePlaypos") {
+                                        Button {
+                                            Task {
+                                                isLoading = true
+                                                if itemMark[item.id ?? ""] != nil  {
+                                                    await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: nil)
+                                                }
+                                                else {
+                                                    await CloudFactory.shared.mark.setMark(storage: storage, targetID: item.id ?? "", parentID: fileid, position: 1.0)
+                                                }
+                                                await getMarks()
+                                                isLoading = false
+                                            }
+                                        } label: {
+                                            if itemMark[item.id ?? ""] != nil {
+                                                Label("Unmark", systemImage: "eraser")
+                                            }
+                                            else {
+                                                Label("Mark", systemImage: "checkmark.circle")
+                                                    .tint(.green)
+                                            }
                                         }
                                     }
                                 }
@@ -452,7 +430,12 @@ struct ItemsUIView: View {
 
             ToolbarItem(placement: .cancellationAction) {
                 Button {
-                    env.path.removeAll()
+                    Task {
+                        while !env.path.isEmpty {
+                            env.path.removeLast()
+                            await Task.yield()
+                        }
+                    }
                 } label: {
                     Image(systemName: "house")
                 }

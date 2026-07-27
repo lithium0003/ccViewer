@@ -125,6 +125,9 @@ void decode_thread(struct convert_param *stream)
         goto failed_open;
     }
     
+    converter->pFormatCtx->max_analyze_duration = 20 * AV_TIME_BASE;
+    converter->pFormatCtx->probesize = 100 * 1024 * 1024;
+
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information
     if (avformat_find_stream_info(converter->pFormatCtx, NULL) < 0) {
@@ -1211,7 +1214,7 @@ void audio_thread(Converter *is, int index)
                         delta_pts_t = av_rescale_q(20, av_make_q(1,1), is->audio_info[index]->audio_st->time_base);
                     }
                     
-                    auto delta_sample = av_rescale_q(delta_pts_t, is->audio_info[index]->audio_st->time_base, av_make_q(1, audio_out_sample_rate));
+                    //auto delta_sample = av_rescale_q(delta_pts_t, is->audio_info[index]->audio_st->time_base, av_make_q(1, audio_out_sample_rate));
                     //av_log(NULL, AV_LOG_INFO, "audio %d delta sample %lld\n", index, delta_sample);
                     
                     is->audio_info[index]->present = true;
@@ -1504,21 +1507,32 @@ int subtitle_thread(Converter *is, int index)
             while (old_serial >= sp->serial) sp->serial++;
             old_serial = sp->serial;
             sp->sub = sub;
+            sp->subw = subtitle_ctx->width ? subtitle_ctx->width : is->subtitle_info[index]->subtitle_width;
+            sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->subtitle_info[index]->subtitle_height;
             sp->subw = subtitle_ctx->width ? subtitle_ctx->width : is->video_info[is->main_video]->video_ctx->width;
             sp->subh = subtitle_ctx->height ? subtitle_ctx->height : is->video_info[is->main_video]->video_ctx->height;
+
+            int out_width = 1920;
+            int out_height = 1080;
+            double scale_x = (double)out_width / sp->subw;
+            double scale_y = (double)out_height / sp->subh;
+
             for (size_t i = 0; i < sub.num_rects; i++) {
-                sub.rects[i]->x *= is->video_info[is->main_video]->video_aspect;
-                int width = sub.rects[i]->w * is->video_info[is->main_video]->video_aspect;
+                int target_x = sub.rects[i]->x * scale_x;
+                int target_y = sub.rects[i]->y * scale_y;
+                int target_w = sub.rects[i]->w * scale_x;
+                int target_h = sub.rects[i]->h * scale_y;
+
                 uint8_t *data[4];
                 int linesize[4];
-                if (av_image_alloc(data, linesize, width, sub.rects[i]->h, AV_PIX_FMT_BGRA, 16) < 0) {
+                if (av_image_alloc(data, linesize, target_w, target_h, AV_PIX_FMT_RGBA, 16) < 0) {
                     av_log(NULL, AV_LOG_FATAL, "Cannot allocate subtitle data\n");
                     return -1;
                 }
                 auto sub_convert_ctx = sws_getCachedContext(NULL,
                                                             sub.rects[i]->w, sub.rects[i]->h, AV_PIX_FMT_PAL8,
-                                                            width, sub.rects[i]->h, AV_PIX_FMT_BGRA,
-                                                            SWS_BICUBIC, NULL, NULL, NULL);
+                                                            target_w, target_h, AV_PIX_FMT_RGBA,
+                                                            SWS_BILINEAR, NULL, NULL, NULL);
                 if (!sub_convert_ctx) {
                     av_log(NULL, AV_LOG_FATAL, "Cannot initialize the sub conversion context\n");
                     return -1;
@@ -1532,7 +1546,10 @@ int subtitle_thread(Converter *is, int index)
                 av_freep(&sub.rects[i]->data[1]);
                 av_freep(&sub.rects[i]->data[2]);
                 av_freep(&sub.rects[i]->data[3]);
-                sp->sub.rects[i]->w = width;
+                sp->sub.rects[i]->x = target_x;
+                sp->sub.rects[i]->y = target_y;
+                sp->sub.rects[i]->w = target_w;
+                sp->sub.rects[i]->h = target_h;
                 sp->sub.rects[i]->data[0] = data[0];
                 sp->sub.rects[i]->data[1] = data[1];
                 sp->sub.rects[i]->data[2] = data[2];
@@ -1648,13 +1665,14 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
                         displvp = displvp + y / 2 * output.linesize[2];
                         for(int x = s_x, sx = 0; x < output.width && sx < s_w; x++, sx++){
                             uint8_t *subp = &sublp[sx * 4];
+                            float a = subp[3] / 255.0f;
+                            if (a == 0.0f) continue;
+                            float r = subp[0] / 255.0f;
+                            float g = subp[1] / 255.0f;
+                            float b = subp[2] / 255.0f;
                             float dispy = displyp[x] / 255.0f;
                             float dispu = (displup[x/2] - 128.0f) / 255.0f;
                             float dispv = (displvp[x/2] - 128.0f) / 255.0f;
-                            float a = subp[3] / 255.0f;
-                            float r = subp[2] / 255.0f;
-                            float g = subp[1] / 255.0f;
-                            float b = subp[0] / 255.0f;
                             float r1 = 1.0f * dispy                  + 1.402f * dispv;
                             float g1 = 1.0f * dispy - 0.344f * dispu - 0.714f * dispv;
                             float b1 = 1.0f * dispy + 1.772f * dispu;
@@ -1664,11 +1682,12 @@ void Converter::subtitle_overlay(AVFrame &output, double pts)
                             float Y =  0.299f * r2 + 0.587f * g2 + 0.114f * b2;
                             float U = -0.169f * r2 - 0.331f * g2 + 0.500f * b2;
                             float V =  0.500f * r2 - 0.419f * g2 - 0.081f * b2;
-                            displyp[x] = Y * 255.0f;
-                            if (y % 2 == 1 && x % 2 == 1) {
-                                displup[x/2] = U * 255.0f + 128.0f;
-                                displvp[x/2] = V * 255.0f + 128.0f;
-                            }
+                            float final_Y = std::max(0.0f, std::min(Y * 255.0f, 255.0f));
+                            float final_U = std::max(0.0f, std::min(U * 255.0f + 128.0f, 255.0f));
+                            float final_V = std::max(0.0f, std::min(V * 255.0f + 128.0f, 255.0f));
+                            displyp[x] = (uint8_t)final_Y;
+                            displup[x/2] = (uint8_t)final_U;
+                            displvp[x/2] = (uint8_t)final_V;
                         }
                     }
                 }
@@ -1711,6 +1730,33 @@ int Converter::stream_component_open(int stream_index)
             av_dict_set_int(&opts, "replace_msz_ascii", 0, 0);
             av_dict_set_int(&opts, "replace_msz_japanese", 0, 0);
             av_dict_set_int(&opts, "replace_msz_glyph", 0, 0);
+        }
+    }
+    if (codecCtx->codec_id == AV_CODEC_ID_DVD_SUBTITLE && codecCtx->extradata_size == 0) {
+        av_log(NULL, AV_LOG_INFO, "DVD Subtitle extradata is empty. Injecting fallback palette.\n");
+        
+        if(((struct convert_param *)param)->paletteStr && strlen(((struct convert_param *)param)->paletteStr) > 0) {
+            int pal_len = (int)strlen(((struct convert_param *)param)->paletteStr);
+            codecCtx->extradata = (uint8_t *)av_mallocz(pal_len + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (codecCtx->extradata) {
+                memcpy(codecCtx->extradata, ((struct convert_param *)param)->paletteStr, pal_len);
+                codecCtx->extradata_size = pal_len;
+            }
+        }
+        else {
+            const char *fallback_pal =
+                "palette: "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f";
+
+            int pal_len = (int)strlen(fallback_pal);
+            codecCtx->extradata = (uint8_t *)av_mallocz(pal_len + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (codecCtx->extradata) {
+                memcpy(codecCtx->extradata, fallback_pal, pal_len);
+                codecCtx->extradata_size = pal_len;
+            }
         }
     }
 
@@ -1775,6 +1821,8 @@ int Converter::stream_component_open(int stream_index)
         {
             std::shared_ptr<SubtitleStreamInfo> info(new SubtitleStreamInfo(this));
             info->subtitle_st = pFormatCtx->streams[stream_index];
+            info->subtitle_width = codecCtx->width;
+            info->subtitle_height = codecCtx->height;
             info->subtitle_ctx = std::move(codecCtx);
             if(lang) {
                 info->language = lang->value;

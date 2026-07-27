@@ -141,7 +141,7 @@ struct RawTextUIView: View {
             defer {
                 isLoading = false
             }
-            remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
+            remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem()
             guard let remoteItem else { return }
             await Task.yield()
             filename = remoteItem.name

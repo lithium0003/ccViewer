@@ -44,6 +44,7 @@ public:
     std::string     name;
     bool            quit = false;
     int             ret = -1;
+    bool            reload = false;
     
     bool            arib_to_text = false;
     
@@ -134,7 +135,6 @@ public:
         AVStream        *video_st = NULL;
         std::shared_ptr<AVCodecContext> video_ctx;
         PacketQueue     videoq;
-//        std::shared_ptr<SwsContext>     sws_ctx;
         int64_t         video_current_pts_time = -1;
 
         bool            video_eof = false;
@@ -153,8 +153,6 @@ public:
         
         VideoPicture    pictq[VIDEO_PICTURE_QUEUE_SIZE];
         int             pictq_size = 0, pictq_rindex = 0, pictq_windex = 0;
-//        VideoPicture*   pictq_prev = NULL;
-//        VideoPicture*   pictq_next = NULL;
         int64_t         pictq_active_serial = -1;
         bool            pict_seek_after = true;
         std::mutex      pictq_mutex;

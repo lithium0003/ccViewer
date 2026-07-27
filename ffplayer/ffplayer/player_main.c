@@ -17,6 +17,7 @@ int averror_eof = AVERROR_EOF;
 int averror_exit = AVERROR_EXIT;
 
 void *make_arg(char *name,
+               char *paletteStr,
                double latency,
                double partial_start,
                double start_skip,
@@ -40,6 +41,7 @@ void *make_arg(char *name,
 {
     struct stream_param *param = (struct stream_param *)av_malloc(sizeof(struct stream_param));
     param->name = name;
+    param->paletteStr = paletteStr;
     param->latency = latency;
     param->partial_start = partial_start;
     param->start_skip = start_skip;
@@ -102,6 +104,13 @@ int run_quit(void *arg)
 {
     struct stream_param *param = (struct stream_param *)arg;
     quitPlayer(param);
+    return 0;
+}
+
+int run_restart(void *arg)
+{
+    struct stream_param *param = (struct stream_param *)arg;
+    restartPlayer(param);
     return 0;
 }
 

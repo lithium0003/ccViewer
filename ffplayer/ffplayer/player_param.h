@@ -11,6 +11,7 @@
 
 struct stream_param {
     char *name;
+    char *paletteStr;
     double latency;
     double partial_start;
     double start_skip;
@@ -44,6 +45,7 @@ void quitPlayer(struct stream_param * param);
 
 void setARIBtext(struct stream_param * param, int istext);
 
+void restartPlayer(struct stream_param * param);
 void seekPlayer(struct stream_param * param, long long pos);
 void seekPlayerChapter(struct stream_param * param, int inc);
 void cycleChancelPlayer(struct stream_param * param, int type);

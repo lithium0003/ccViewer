@@ -58,6 +58,14 @@ double load_sound(void *arg, float *buffer, int num_packets)
     return player->load_sound(buffer, num_packets);
 }
 
+void restartPlayer(struct stream_param * param)
+{
+    if(!param) return;
+    auto player = (Player *)param->player;
+    if(!player) return;
+    player->reload = true;
+}
+
 void seekPlayer(struct stream_param * param, int64_t pos)
 {
     if(!param) return;
@@ -197,11 +205,25 @@ int decode_thread(struct stream_param *stream)
 {
     av_log(NULL, AV_LOG_INFO, "decode_thread start\n");
 
-    Player *player = (Player *)stream->player;
-    player->ret = -1;
-    
     double start_skip = stream->start_skip;
     double partial_start = stream->partial_start;
+restart:
+    Player *player = (Player *)stream->player;
+    player->ret = -1;
+    player->video.video_eof = false;
+    player->audio.audio_eof = Player::AudioInfo::playing;
+    player->audio.audio_fin = false;
+    player->video.video_fin = false;
+    player->quit = false;
+    player->reload = false;
+    player->master_clock_offset = std::nan("");
+    player->master_clock_start = AV_NOPTS_VALUE;
+    player->audio_clock_base = std::nan("");
+    player->audio_last_call = AV_NOPTS_VALUE;
+    player->video.video_clock_start = std::nan("");
+    player->video.video_clock = std::nan("");
+    player->video.frame_last_pts = std::nan("");
+    player->video.frame_last_delay = 10e-3;
 
     int video_index = -1;
     int audio_index = -1;
@@ -234,6 +256,9 @@ int decode_thread(struct stream_param *stream)
         goto failed_open;
     }
 
+    player->pFormatCtx->max_analyze_duration = 20 * AV_TIME_BASE;
+    player->pFormatCtx->probesize = 100 * 1024 * 1024;
+    
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information
     if (player->IsQuit() || avformat_find_stream_info(player->pFormatCtx, NULL) < 0) {
@@ -317,6 +342,46 @@ int decode_thread(struct stream_param *stream)
     // main decode loop
     av_log(NULL, AV_LOG_INFO, "decode_thread read loop\n");
     for (;;) {
+        if (player->reload) {
+            if (player->video.videoStream >= 0) {
+                player->video.videoq.AbortQueue();
+                player->stream_component_close(player->video.videoStream);
+                player->video.videoStream = -1;
+            }
+            if (player->audio.audioStream >= 0) {
+                player->audio.audioq.AbortQueue();
+                player->stream_component_close(player->audio.audioStream);
+                player->audio.audioStream = -1;
+            }
+            if (player->subtitle.subtitleStream >= 0) {
+                player->subtitle.subtitleq.AbortQueue();
+                player->stream_component_close(player->subtitle.subtitleStream);
+                player->subtitle.subtitleStream = -1;
+            }
+
+            if(player->video_thread.joinable()){
+                player->video_thread.join();
+            }
+            player->audio.cond_full.notify_all();
+            if(player->audio_thread.joinable()){
+                player->audio_thread.join();
+            }
+            if(player->subtitle_thread.joinable()){
+                player->subtitle_thread.join();
+            }
+            if(player->display_thread.joinable()){
+                player->display_thread.join();
+            }
+
+            avformat_close_input(&player->pFormatCtx);
+            av_freep(&pIoCtx);
+            
+            player->seek_req_type = Player::seek_type_none;
+            player->seek_pos = AV_NOPTS_VALUE;
+            start_skip = std::nan("");
+            partial_start = std::nan("");
+            goto restart;
+        }
         if (player->IsQuit()) {
             break;
         }
@@ -574,7 +639,33 @@ int Player::stream_component_open(int stream_index)
             av_dict_set_int(&opts, "replace_msz_glyph", 0, 0);
         }
     }
+    if (codecCtx->codec_id == AV_CODEC_ID_DVD_SUBTITLE && codecCtx->extradata_size == 0) {
+        av_log(NULL, AV_LOG_INFO, "DVD Subtitle extradata is empty. Injecting fallback palette.\n");
+        
+        if(p->paletteStr && strlen(p->paletteStr) > 0) {
+            int pal_len = (int)strlen(p->paletteStr);
+            codecCtx->extradata = (uint8_t *)av_mallocz(pal_len + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (codecCtx->extradata) {
+                memcpy(codecCtx->extradata, p->paletteStr, pal_len);
+                codecCtx->extradata_size = pal_len;
+            }
+        }
+        else {
+            const char *fallback_pal =
+                "palette: "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f, "
+                "000000, ffffff, 000000, 7f7f7f";
 
+            int pal_len = (int)strlen(fallback_pal);
+            codecCtx->extradata = (uint8_t *)av_mallocz(pal_len + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (codecCtx->extradata) {
+                memcpy(codecCtx->extradata, fallback_pal, pal_len);
+                codecCtx->extradata_size = pal_len;
+            }
+        }
+    }
     int ret = avcodec_open2(codecCtx.get(), codec, &opts);
     av_dict_free(&opts);
     if (ret < 0) {
@@ -1205,6 +1296,9 @@ int video_present_thread(Player *is)
         double start_clock = is->get_master_clock();
         auto start_tic = av_gettime();
         while(!is->IsQuit()) {
+            if(is->reload) {
+                break;
+            }
             if(vp->serial < is->video.pictq_active_serial
                || !__builtin_isfinite(is->get_master_clock())
                || start_clock > is->get_master_clock()) {
@@ -1896,14 +1990,14 @@ int subtitle_thread(Player *is)
                 int width = sub.rects[i]->w * is->video.video_aspect;
                 uint8_t *data[4];
                 int linesize[4];
-                if (av_image_alloc(data, linesize, width, sub.rects[i]->h, AV_PIX_FMT_BGRA, 16) < 0) {
+                if (av_image_alloc(data, linesize, width, sub.rects[i]->h, AV_PIX_FMT_RGBA, 16) < 0) {
                     av_log(NULL, AV_LOG_FATAL, "Cannot allocate subtitle data\n");
                     return -1;
                 }
                 auto sub_convert_ctx = sws_getCachedContext(NULL,
                                                             sub.rects[i]->w, sub.rects[i]->h, AV_PIX_FMT_PAL8,
-                                                            width, sub.rects[i]->h, AV_PIX_FMT_BGRA,
-                                                            SWS_BICUBIC, NULL, NULL, NULL);
+                                                            width, sub.rects[i]->h, AV_PIX_FMT_RGBA,
+                                                            SWS_BILINEAR, NULL, NULL, NULL);
                 if (!sub_convert_ctx) {
                     av_log(NULL, AV_LOG_FATAL, "Cannot initialize the sub conversion context\n");
                     return -1;
@@ -1989,13 +2083,14 @@ void Player::subtitle_display(VideoPicture *vp)
                         displvp = displvp + y / 2 * vp->bmp.linesize[2];
                         for(int x = s_x, sx = 0; x < vp->width && sx < s_w; x++, sx++){
                             uint8_t *subp = &sublp[sx * 4];
+                            float a = subp[3] / 255.0f;
+                            if (a == 0.0f) continue;
+                            float r = subp[0] / 255.0f;
+                            float g = subp[1] / 255.0f;
+                            float b = subp[2] / 255.0f;
                             float dispy = displyp[x] / 255.0f;
                             float dispu = (displup[x/2] - 128.0f) / 255.0f;
                             float dispv = (displvp[x/2] - 128.0f) / 255.0f;
-                            float a = subp[3] / 255.0f;
-                            float r = subp[2] / 255.0f;
-                            float g = subp[1] / 255.0f;
-                            float b = subp[0] / 255.0f;
                             float r1 = 1.0f * dispy                  + 1.402f * dispv;
                             float g1 = 1.0f * dispy - 0.344f * dispu - 0.714f * dispv;
                             float b1 = 1.0f * dispy + 1.772f * dispu;
@@ -2005,11 +2100,12 @@ void Player::subtitle_display(VideoPicture *vp)
                             float Y =  0.299f * r2 + 0.587f * g2 + 0.114f * b2;
                             float U = -0.169f * r2 - 0.331f * g2 + 0.500f * b2;
                             float V =  0.500f * r2 - 0.419f * g2 - 0.081f * b2;
-                            displyp[x] = Y * 255.0f;
-                            if (y % 2 == 1 && x % 2 == 1) {
-                                displup[x/2] = U * 255.0f + 128.0f;
-                                displvp[x/2] = V * 255.0f + 128.0f;
-                            }
+                            float final_Y = std::max(0.0f, std::min(Y * 255.0f, 255.0f));
+                            float final_U = std::max(0.0f, std::min(U * 255.0f + 128.0f, 255.0f));
+                            float final_V = std::max(0.0f, std::min(V * 255.0f + 128.0f, 255.0f));
+                            displyp[x] = (uint8_t)final_Y;
+                            displup[x/2] = (uint8_t)final_U;
+                            displvp[x/2] = (uint8_t)final_V;
                         }
                     }
                 }

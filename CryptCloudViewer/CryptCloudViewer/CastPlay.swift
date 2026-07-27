@@ -108,7 +108,7 @@ class CastConverter: NSObject, GCKRemoteMediaClientListener {
                 }
             }
             let (storage, fileid) = orgItems[currentIdx]
-            if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+            if let remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() {
                 itemMap[currentIdx] = remoteItem
                 return (currentIdx, remoteItem)
             }
@@ -330,7 +330,7 @@ func playConverter(storages: [String], fileids: [String], playlist: Bool = false
     await withTaskGroup { group in
         for (storage, fileid) in zip(storages, fileids) {
             group.addTask { () -> (String, String)? in
-                if let remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid) {
+                if let remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() {
                     if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                     }
                     else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image) {

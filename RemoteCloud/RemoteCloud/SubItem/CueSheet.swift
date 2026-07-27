@@ -7,8 +7,9 @@
 //
 
 import Foundation
+import CoreData
 
-public class CueSheetRemoteItem: RemoteItem {
+public class CueSheetRemoteItem: RemoteSubItem {
     let baseItem: RemoteItem
     var wavitem: RemoteItem!
     var wavStream: RemoteStream!
@@ -16,30 +17,120 @@ public class CueSheetRemoteItem: RemoteItem {
     
     override init?(storage: String, id: String) async {
         let section = id.components(separatedBy: "\t")
-        if section.count < 2 {
+        guard section.count > 1, let p = section.last, let t = Int(p) else {
             return nil
         }
-        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: section[0]) else {
+        guard let item = await CloudFactory.shared.data.getData(storage: storage, fileId: section.dropLast().joined(separator: "\t"))?.getItem() else {
             return nil
         }
         baseItem = item
-        guard let t = Int(section[1]) else {
-            return nil
-        }
         track = t
         
         await super.init(storage: storage, id: id)
         
-        guard let wavid = subid else {
+        guard let wavid = subid?.dropFirst(3) else {
             return nil
         }
-        guard let wavitem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: wavid) else {
+        guard let wavitem = await CloudFactory.shared.data.getData(storage: storage, fileId: String(wavid))?.getItem() else {
             return nil
         }
         self.wavitem = wavitem
         self.wavStream = await self.wavitem.open()
     }
     
+    class func Create(from item: RemoteItem) async -> RemoteItem? {
+        let viewContext = CloudFactory.shared.data.viewContext
+        let itemid = item.id
+        let storage = item.storage
+        guard await CloudFactory.shared.data.listData(storage: storage, parentID: itemid).isEmpty else {
+            return item
+        }
+
+        let stream = await item.open()
+        guard let data = try? await stream.read() else {
+            return nil
+        }
+        guard let cue = CueSheet(data: data) else {
+            return nil
+        }
+        guard let wavname = cue.targetWave else {
+            return nil
+        }
+        let itemparent = item.parent
+        let wavId = await viewContext.perform { () -> String? in
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name == %@", itemparent, storage, wavname)
+            
+            guard let result = try? viewContext.fetch(fetchRequest) as? [RemoteData], let wavdata = result.first else {
+                return nil
+            }
+            return wavdata.id
+        }
+        guard let wavId, let wavitem = await CloudFactory.shared.data.getData(storage: storage, fileId: wavId)?.getItem() else {
+            return nil
+        }
+        let wavstream = await wavitem.open()
+        guard let wavFile = await RemoteWaveFile(stream: wavstream, size: wavitem.size) else {
+            wavstream.isLive = false
+            await wavitem.cancel()
+            return nil
+        }
+        let bytesPerSec = wavFile.wavFormat.BitsPerSample/8 * wavFile.wavFormat.SampleRate * wavFile.wavFormat.NumChannels
+        let bytesPerFrame = bytesPerSec / 75
+        let endTime = wavFile.wavSize / bytesPerFrame
+        
+        var diskTitle: String?
+        var diskPerformer: String?
+        for (index, track) in cue.tracks.enumerated() {
+            if index == 0 {
+                diskTitle = track["title"] as? String
+                diskPerformer = track["performer"] as? String
+                continue
+            }
+            
+            let id = "\(item.id)\t\(index)"
+            guard let title = track["title"] as? String ?? diskTitle else {
+                continue
+            }
+            guard let performer = track["performer"] as? String ?? diskPerformer else {
+                continue
+            }
+            let name = String(format: "%02d : %@ - %@", index, performer, title)
+            guard let start = track["start"] as? Int64 else {
+                continue
+            }
+            let end = track["end"] as? Int64 ?? Int64(endTime)
+            let size = 44 + (end - start) * Int64(bytesPerFrame)
+            let timelen = Double(end - start) / 75.0
+            var sec = Int(timelen)
+            let msec = Int((timelen - Double(sec))*1000)
+            let min = Int(sec / 60)
+            sec -= min * 60
+            let infostr = String(format: "%02d:%02d.%03d", min, sec, msec)
+            
+            let newitem = RemoteData(context: viewContext)
+            newitem.storage = storage
+            newitem.id = id
+            newitem.name = name
+            newitem.ext = "wav"
+            newitem.cdate = item.cDate
+            newitem.mdate = item.mDate
+            newitem.folder = false
+            newitem.size = size
+            newitem.hashstr = ""
+            newitem.parent = item.id
+            newitem.path = item.path + "/\(index)"
+            newitem.substart = start
+            newitem.subend = end
+            newitem.subid = "WAV"+wavId
+            newitem.subinfo = infostr
+        }
+        await viewContext.perform {
+            try? viewContext.save()
+        }
+        return item
+    }
+
     public override func open() async -> RemoteStream {
         return await CueSheetStream(remote: self)
     }
@@ -101,7 +192,6 @@ public class CueSheetStream: SlotStream {
             await super.fillHeader()
             return
         }
-        stream.isLive = false
         header = wavfile.getHeader(frames: frames)
         guard let header = header else {
             error = true

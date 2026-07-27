@@ -73,7 +73,7 @@ public class RemoteItem {
     public let id: String
     public let name: String
     public let ext: String
-    public let size: Int64
+    public let internal_size: Int64
     public let path: String
     public let parent: String
     public let parentDate: Date?
@@ -85,6 +85,10 @@ public class RemoteItem {
     public let subid: String?
     let service: RemoteStorage
 
+    public var size: Int64 {
+        internal_size
+    }
+    
     init?(storage: String, id: String) async {
         self.storage = storage
         self.id = id
@@ -95,7 +99,7 @@ public class RemoteItem {
         if id == "" {
             self.name = ""
             self.ext = ""
-            self.size = 0
+            self.internal_size = 0
             self.path = "\(storage):/"
             self.parent = ""
             self.parentDate = nil
@@ -116,7 +120,7 @@ public class RemoteItem {
             }
             self.name = name
             self.ext = origin.ext?.lowercased() ?? ""
-            self.size = origin.size
+            self.internal_size = origin.size
             guard let path = origin.path else {
                 return nil
             }
@@ -146,6 +150,18 @@ public class RemoteItem {
             return nil
         }
         await self.init(storage: storage, id: id)
+    }
+    
+    public func list(force: Bool = false) async -> [RemoteData] {
+        if force {
+            await service.list(fileId: id)
+        }
+        let items = await CloudFactory.shared.data.listData(storage: storage, parentID: id)
+        if items.isEmpty, !force {
+            await service.list(fileId: id)
+            return await CloudFactory.shared.data.listData(storage: storage, parentID: id)
+        }
+        return items
     }
     
     public func open() async -> RemoteStream {
@@ -652,7 +668,10 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     }
 
     public func get(fileId: String) async -> RemoteItem? {
-        await fileId.contains("\t") ? getSubitem(fileId: fileId) : getRaw(fileId: fileId)
+        if fileId.contains("\t") {
+            return await CloudFactory.shared.data.getData(storage: storageName ?? "", fileId: fileId)?.getItem()
+        }
+        return await getRaw(fileId: fileId)
     }
     
     public func get(path: String) async -> RemoteItem? {

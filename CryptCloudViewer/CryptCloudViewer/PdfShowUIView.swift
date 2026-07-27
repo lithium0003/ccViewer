@@ -225,7 +225,7 @@ struct PdfShowUIView: View {
                 isLoading = false
             }
             await Task.yield()
-            remoteItem = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fileid)
+            remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem()
             guard let remoteItem else { return }
             title = remoteItem.name
             let total = remoteItem.size

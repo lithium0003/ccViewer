@@ -13,6 +13,7 @@ extern int averror_eof;
 extern int averror_exit;
 
 void *makeconvert_arg(char *name,
+                      char *paletteStr,
                       void *object,
                       double start,
                       double duration,

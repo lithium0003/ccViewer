@@ -13,6 +13,7 @@ extern int averror_eof;
 extern int averror_exit;
 
 void *make_arg(char *name,
+               char *paletteStr,
                double latency,
                double partial_start,
                double start_skip,
@@ -38,6 +39,7 @@ int run_play(void *arg);
 int run_finish(void *arg);
 int run_quit(void *arg);
 
+int run_restart(void *arg);
 int run_seek(void *arg, long long pos);
 int run_seek_chapter(void *arg, int inc);
 int run_cycle_ch(void *arg, int type);
