@@ -602,10 +602,11 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     chaptDuration += t
                 }
                 currentCapter += inc
+                let stoffset = dvdItem.chapters.first?.0.first?.0 ?? 0
                 if currentCapter >= 0, currentCapter < dvdItem.chapters.count {
                     let st = dvdItem.chapters[currentCapter].0.first?.0 ?? 0
                     let tm = currentCapter > 0 ? dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +) : 0
-                    run_seek(param, Int64(tm * 1000000), st)
+                    run_seek(param, Int64(tm * 1000000), st - stoffset)
                     return
                 }
             }
