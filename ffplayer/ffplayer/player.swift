@@ -47,6 +47,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     var position: Int64
     var soundPTS: Double
     var videoPTS: Double
+    var lastVideoPTS = -1.0
     var name: String
     var mediaDuration: Double
     var soundOnly = 0
@@ -138,13 +139,10 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }.value
     }
 
-    let setDuration: @convention(c) (UnsafeMutableRawPointer?, Double) -> Void = {
+    let setDuration: @convention(c) (UnsafeMutableRawPointer?, Double) -> Double = {
         (ref, duration) in
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
-            stream.mediaDuration = duration
-            stream.durationSender.send(duration)
-
             Task { @MainActor in
                 if AVPictureInPictureController.isPictureInPictureSupported(), stream.pipController == nil {
                     stream.pipController = AVPictureInPictureController(contentSource: .init(sampleBufferDisplayLayer: stream.displayLayer, playbackDelegate: stream))
@@ -152,7 +150,19 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     stream.pipController?.canStartPictureInPictureAutomaticallyFromInline = true
                 }
             }
+            if let dvdItem = stream.remoteItem as? DVDRemoteItem {
+                let dvdDuration = dvdItem.chapters.map({ $0.2 }).reduce(0, +)
+                stream.mediaDuration = dvdDuration
+                stream.durationSender.send(dvdDuration)
+                return dvdDuration
+            }
+            else {
+                stream.mediaDuration = duration
+                stream.durationSender.send(duration)
+                return duration
+            }
         }
+        return 0
     }
     
     let setSoundOnly: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void = {
@@ -543,36 +553,62 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
     
     public func onSeek(_ pos: Double) {
-        let pos64: Int64 = Int64(pos * 1000000)
-        if let param {
-            run_seek(param, pos64)
+        if (remoteItem as? DVDRemoteItem) != nil {
+            let pos64: Int64 = Int64(pos / mediaDuration * Double(remoteItem?.size ?? 0))
+            let time64: Int64 = Int64(pos * 1000000)
+            if let param {
+                run_seek(param, time64, pos64)
+            }
+        }
+        else {
+            let pos64: Int64 = Int64(pos * 1000000)
+            if let param {
+                run_seek(param, pos64, -1)
+            }
         }
     }
-    
-    public func onSeekChapter(_ inc: Int) {
-        if let dvdItem = remoteItem as? DVDRemoteItem {
-            dvdItem.chapterIdx += inc
-            if dvdItem.chapterIdx >= 0, dvdItem.chapterIdx < dvdItem.chapters.count {
-                stream = nil
-                semaphore.wait()
-                if let param {
-                    run_restart(param)
-                }
-                position = 0
-                soundPTS = Double.nan
-                videoPTS = Double.nan
-                mediaDuration = 0
-                playPos = 0.0
-                Task {
-                    stream = await dvdItem.open()
-                    semaphore.signal()
-                }
-                return
+
+    public func onSeekBytes(_ pos: Double) {
+        if (remoteItem as? DVDRemoteItem) != nil {
+            let pos64: Int64 = Int64(pos * Double(remoteItem?.size ?? 0))
+            let time64: Int64 = Int64(pos * mediaDuration * 1000000)
+            if let param {
+                run_seek(param, time64, pos64)
             }
-            if dvdItem.chapterIdx < 0 { dvdItem.chapterIdx = 0 }
-            if dvdItem.chapterIdx >= dvdItem.chapters.count { dvdItem.chapterIdx = dvdItem.chapters.count - 1 }
         }
+        else {
+            onSeek(pos * mediaDuration)
+        }
+    }
+
+    public func onSeekBytes(_ pos: Int64) {
         if let param {
+            run_seek(param, 0, pos)
+        }
+    }
+
+    public func onSeekChapter(_ inc: Int) {
+        if let param {
+            if let dvdItem = remoteItem as? DVDRemoteItem {
+                var chaptsize: Int64 = 0
+                var chaptDuration = 0.0
+                var currentCapter = 0
+                for (c, (_, s, t, _)) in dvdItem.chapters.enumerated() {
+                    chaptsize += s
+                    if position < chaptsize {
+                        currentCapter = c
+                        break
+                    }
+                    chaptDuration += t
+                }
+                currentCapter += inc
+                if currentCapter >= 0, currentCapter < dvdItem.chapters.count {
+                    let st = dvdItem.chapters[currentCapter].0.first?.0 ?? 0
+                    let tm = currentCapter > 0 ? dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +) : 0
+                    run_seek(param, Int64(tm * 1000000), st)
+                    return
+                }
+            }
             run_seek_chapter(param, Int32(inc))
         }
     }
@@ -659,10 +695,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 continue
             }
             remoteItem = item
-            if let dvdItem = item as? DVDRemoteItem {
-                if dvdItem.chapterIdx < dvdItem.chapters.count {
-                    paletteStr = dvdItem.chapters[dvdItem.chapterIdx].2
-                }
+            if let dvdItem = item as? DVDRemoteItem, let chapter = dvdItem.chapters.first {
+                paletteStr = chapter.3
             }
             stream = await item.open()
             name = item.name
@@ -755,8 +789,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     if idx == curIdx {
                         curIdx += 1
                         if ret >= 0 && !playlist {
-                            if mediaDuration > 0, playPos > 0 {
-                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, playPos / mediaDuration)))
+                            if item.size > 0 && position > 0 {
+                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, Double(position - 20*1024*1024) / Double(item.size))))
                             }
                             else {
                                 await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)
@@ -940,7 +974,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             pos += Double(truncating: interval)
             let pos64: Int64 = Int64(pos * 1000000)
             if let param = self.param {
-                run_seek(param, pos64)
+                run_seek(param, pos64, 0)
             }
             return .success
         }
@@ -964,7 +998,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             pos -= Double(truncating: interval)
             let pos64: Int64 = Int64(pos * 1000000)
             if let param = self.param {
-                run_seek(param, pos64)
+                run_seek(param, pos64, 0)
             }
             return .success
         }
@@ -984,7 +1018,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 let pos = event.positionTime
                 let pos64: Int64 = Int64(pos * 1000000)
                 if let param = self.param {
-                    run_seek(param, pos64)
+                    run_seek(param, pos64, 0)
                 }
                 return .success
             }

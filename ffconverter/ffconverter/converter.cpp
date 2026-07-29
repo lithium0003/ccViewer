@@ -126,7 +126,8 @@ void decode_thread(struct convert_param *stream)
     }
     
     converter->pFormatCtx->max_analyze_duration = 20 * AV_TIME_BASE;
-    converter->pFormatCtx->probesize = 100 * 1024 * 1024;
+    converter->pFormatCtx->probesize = 200 * 1024 * 1024;
+    converter->pFormatCtx->flags |= AVFMT_FLAG_GENPTS;
 
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information
@@ -357,7 +358,7 @@ void decode_thread(struct convert_param *stream)
     else if (converter->audioStream.size() > 0 && converter->pFormatCtx->streams[main_audio]->duration) {
         converter->media_duration = converter->pFormatCtx->streams[main_audio]->duration / 1000000.0;
     }
-    stream->set_duration(stream->stream, converter->media_duration);
+    converter->media_duration = stream->set_duration(stream->stream, converter->media_duration);
 
     if (converter->IsQuit()) {
         goto finish;
@@ -664,7 +665,8 @@ void video_thread(Converter *is, int index)
     outputFrame.height = out_height;
     av_frame_get_buffer(&outputFrame, 32);
     double pts = 0;
-    int64_t prevframe_pts = AV_NOPTS_VALUE;
+    double pts_offset = 0.0;
+    double last_valid_pts = 0.0;
 
     switch (is->video_info[index]->video_ctx->codec_id)
     {
@@ -705,7 +707,7 @@ void video_thread(Converter *is, int index)
                 inpkt = &packet;
                 inframe = &frame1;
                 is->video_info[index]->video_eof = false;
-                prevframe_pts = AV_NOPTS_VALUE;
+                is->video_info[index]->video_prev_pts = AV_NOPTS_VALUE;
                 continue;
             }
             if (strcmp((char *)packet.data, ABORT_STR) == 0) {
@@ -784,12 +786,6 @@ void video_thread(Converter *is, int index)
                 if (inframe) av_frame_unref(inframe);
                 if (!filt_out) break;
                 while ((ret = av_buffersink_get_frame(filt_out, &frame2)) >= 0) {
-                    if(prevframe_pts != AV_NOPTS_VALUE && frame2.pts != AV_NOPTS_VALUE && frame2.pts < prevframe_pts) {
-                        av_frame_unref(&frame2);
-                        continue;
-                    }
-                    prevframe_pts = frame2.pts;
-
                     key = frame2.flags & AV_FRAME_FLAG_KEY;
                     //printf("key2 %d\n", key);
                     sws_context = sws_getCachedContext(sws_context,
@@ -807,23 +803,38 @@ void video_thread(Converter *is, int index)
 
                             pts_t += 0x1FFFFFFFF;
                         }
-                        if(is->video_info[index]->video_prev_pts != AV_NOPTS_VALUE && pts_t < is->video_info[index]->video_prev_pts) {
-                            av_log(NULL, AV_LOG_INFO, "video pts back ignore %d\n", index);
+                        double raw_pts = pts_t * av_q2d(is->video_info[index]->video_st->time_base);
+                        if (isnan(is->video_info[index]->video_clock_start)) {
+                            av_log(NULL, AV_LOG_INFO, "video start pts %f, %lld, %d\n", raw_pts, pts_t, index);
+                            is->video_info[index]->video_clock_start = raw_pts;
+                            is->video_info[index]->video_start_pts = pts_t;
+                            last_valid_pts = 0.0;
+                        }
 
+                        pts = (pts_t - is->video_info[index]->video_start_pts) * av_q2d(is->video_info[index]->video_st->time_base);
+                        pts += pts_offset;
+
+                        double drift = pts - last_valid_pts;
+                        
+                        if (is->video_info[index]->video_prev_pts != AV_NOPTS_VALUE && abs(drift) > 0.1) {
+                            if (drift <= -0.1 || pts < 0) {
+                                double jump = (last_valid_pts + 0.033) - pts;
+                                av_log(NULL, AV_LOG_INFO, "video backward jump detected (drift: %f sec). Adjusting pts_offset by %f sec.\n", drift, jump);
+                                
+                                pts_offset += jump;
+                                pts += jump;
+                            }
+                            else {
+                                av_log(NULL, AV_LOG_INFO, "video forward jump detected (drift: %f sec). Accept new pts.\n", drift);
+                            }
+                        }
+
+                        if (is->video_info[index]->video_prev_pts != AV_NOPTS_VALUE && pts <= last_valid_pts) {
                             av_frame_unref(&frame2);
                             continue;
                         }
-                        else {
-                            pts = pts_t * av_q2d(is->video_info[index]->video_st->time_base);
-                            //av_log(NULL, AV_LOG_INFO, "video clock %f\n", pts);
-                            
-                            if (isnan(is->video_info[index]->video_clock_start)) {
-                                av_log(NULL, AV_LOG_INFO, "video start pts %f, %lld, %d\n", pts, pts_t, index);
-                                is->video_info[index]->video_clock_start = pts;
-                                is->video_info[index]->video_start_pts = pts_t;
-                            }
-                            pts = (pts_t - is->video_info[index]->video_start_pts) * av_q2d(is->video_info[index]->video_st->time_base);
-                        }
+                        
+                        last_valid_pts = pts;
                     }
                     //av_log(NULL, AV_LOG_INFO, "video clock %f\n", pts);
                     if(!isnan(duration) && pts > duration) {
@@ -1060,6 +1071,7 @@ void audio_thread(Converter *is, int index)
     
     int64_t delta_pts_t = AV_NOPTS_VALUE;
     double delta_pts = 0;
+    double pts_offset = 0.0;
 
     while(true) {
         int ret;
@@ -1178,6 +1190,8 @@ void audio_thread(Converter *is, int index)
                         pts -= is->video_info[is->main_video]->video_clock_start;
                         //av_log(NULL, AV_LOG_INFO, "audio %d sync clock %f\n", index, pts);
                         
+                        pts += pts_offset;
+                        
                         if(isnan(is->audio_info[index]->audio_clock_start)) {
                             av_log(NULL, AV_LOG_INFO, "set audio %d start %f, %lld\n", index, pts, pts_t0);
                             is->audio_info[index]->audio_clock_start = pts;
@@ -1229,6 +1243,26 @@ void audio_thread(Converter *is, int index)
                     double drift_sec = pts - expected_pts;
                     int64_t drift_samples = drift_sec * audio_out_sample_rate;
 
+                    if (abs(drift_sec) > 0.1) {
+                        if (drift_sec <= -1.0 || pts < 0) {
+                            double jump = expected_pts - pts;
+                            av_log(NULL, AV_LOG_INFO, "audio %d backward jump/negative pts (drift: %f). Adjusting offset by %f.\n", index, drift_sec, jump);
+                            
+                            pts_offset += jump;
+                            pts += jump;
+                            expected_pts = pts;
+                        }
+                        else {
+                            av_log(NULL, AV_LOG_INFO, "audio %d forward jump/start (drift: %f). Updating frame_count.\n", index, drift_sec);
+                            
+                            is->audio_info[index]->frame_count = (int64_t)(pts * audio_out_sample_rate);
+                            expected_pts = pts;
+                        }
+                        
+                        drift_sec = 0.0;
+                        drift_samples = 0;
+                    }
+                    
                     if (drift_samples > 20 * audio_out_sample_rate) {
                         av_log(NULL, AV_LOG_INFO, "audio %d drift %f > 20s, clamping\n", index, drift_sec);
                         drift_samples = 20 * audio_out_sample_rate;

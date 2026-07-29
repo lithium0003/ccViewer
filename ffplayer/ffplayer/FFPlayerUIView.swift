@@ -437,7 +437,7 @@ public struct FFPlayerUIView: View {
                                 bridge.touchUpdate.send(Date())
                                 Task {
                                     isSeeking = false
-                                    bridge.onSeek(seekPos)
+                                    bridge.onSeekBytes(seekPos / mediaDuration)
                                 }
                             }
                         }

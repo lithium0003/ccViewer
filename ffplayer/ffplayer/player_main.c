@@ -28,7 +28,7 @@ void *make_arg(char *name,
                long long(*seek)(void *opaque, long long offset, int whence),
                void(*cancel)(void *opaque),
                void(*draw_pict)(void *opaque, unsigned char **images, int width, int height, int *linesizes, double t),
-               void(*set_duration)(void *opaque, double duration),
+               double(*set_duration)(void *opaque, double duration),
                void(*set_soundonly)(void *opaque, int value),
                int(*sound_play)(void *opaque),
                int(*sound_stop)(void *opaque),
@@ -114,10 +114,10 @@ int run_restart(void *arg)
     return 0;
 }
 
-int run_seek(void *arg, long long pos)
+int run_seek(void *arg, long long pos, long long bytepos)
 {
     struct stream_param *param = (struct stream_param *)arg;
-    seekPlayer(param, pos);
+    seekPlayer(param, pos, bytepos);
     return 0;
 }
 

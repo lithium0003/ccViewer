@@ -24,7 +24,7 @@ void *make_arg(char *name,
                long long(*seek)(void *opaque, long long offset, int whence),
                void(*cancel)(void *opaque),
                void(*draw_pict)(void *opaque, unsigned char **images, int width, int height, int *linesize, double t),
-               void(*set_duration)(void *opaque, double duration),
+               double(*set_duration)(void *opaque, double duration),
                void(*set_soundonly)(void *opaque, int value),
                int(*sound_play)(void *opaque),
                int(*sound_stop)(void *opaque),
@@ -40,7 +40,7 @@ int run_finish(void *arg);
 int run_quit(void *arg);
 
 int run_restart(void *arg);
-int run_seek(void *arg, long long pos);
+int run_seek(void *arg, long long pos, long long bytepos);
 int run_seek_chapter(void *arg, int inc);
 int run_cycle_ch(void *arg, int type);
 int run_pause(void *arg, int state);

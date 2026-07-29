@@ -12,19 +12,8 @@ import CoreData
 public class DVDRemoteItem: RemoteSubItem {
     var vobitem: [RemoteItem] = []
     var vobStream: [RemoteStream] = []
-    public var chapters: [([(Int64,Int64)], Int64, String)] = []
-    public var chapterIdx = 0
+    public var chapters: [([(Int64,Int64)], Int64, Double, String)] = []
     let title_idx: Int
-    
-    override public var size: Int64 {
-        if chapters.isEmpty {
-            return super.size
-        }
-        if chapterIdx < 0 || chapterIdx >= chapters.count {
-            return super.size
-        }
-        return chapters[chapterIdx].1
-    }
     
     override init?(storage: String, id: String) async {
         let section = id.components(separatedBy: "\t")
@@ -35,16 +24,17 @@ public class DVDRemoteItem: RemoteSubItem {
         await super.init(storage: storage, id: id)
         
         guard let comp1 = subid?.dropFirst(3).components(separatedBy: "\n"), comp1.count > 1 else {
-            return
+            return nil
         }
         guard let title_set_num = Int(comp1[0]) else { return }
         let chapt = comp1[1...].filter { !$0.isEmpty }
         for c in chapt {
             let citems = c.components(separatedBy: "\t")
-            guard citems.count == 3 else {
+            guard citems.count == 4 else {
                 continue
             }
             guard let csize = Int64(citems[1]) else { continue }
+            guard let cduration = Double(citems[2]) else { continue }
             var offset: [(Int64, Int64)] = []
             for p in citems[0].components(separatedBy: ";").filter({ !$0.isEmpty }) {
                 let comp2 = p.components(separatedBy: ",")
@@ -52,19 +42,19 @@ public class DVDRemoteItem: RemoteSubItem {
                 guard let start = Int64(comp2[0]), let end = Int64(comp2[1]) else { continue }
                 offset.append((start * 2048, (end + 1) * 2048))
             }
-            chapters.append((offset, csize * 2048, citems[2]))
+            chapters.append((offset, csize * 2048, cduration, citems[3]))
         }
         
-        guard let chapt1 = chapters.first else { return }
-        let maxoffset = chapt1.0.map(\.1).max() ?? 0
-        let count = (maxoffset - 1) / 1073741824 + 1
+        let maxoffset = chapters.map{ $0.0.map(\.1).max() ?? 0 }.max() ?? 0
         
         let viewContext = CloudFactory.shared.data.viewContext
         guard let baseItem = await CloudFactory.shared.data.getData(storage: storage, fileId: parent)?.getItem() else {
-            return
+            return nil
         }
         let parent = baseItem.parent
-        for i in 1...count {
+        var i = 1
+        var curOffset: Int64 = 0
+        while curOffset < maxoffset {
             let vob_file = "VTS_\(String(format: "%02d", title_set_num))_\(i).VOB"
             let vobdata = await viewContext.perform { () -> RemoteData? in
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -76,10 +66,12 @@ public class DVDRemoteItem: RemoteSubItem {
                 return ifodata
             }
             guard let vobdata, let item = await vobdata.getItem() else {
-                return
+                break
             }
             vobitem.append(item)
             vobStream.append(await item.open())
+            curOffset += item.size
+            i += 1
         }
     }
     
@@ -96,7 +88,6 @@ public class DVDRemoteItem: RemoteSubItem {
             return nil
         }
         let magic = data.prefix(12)
-        print(Array(magic))
         guard String(data: magic, encoding: .ascii) == "DVDVIDEO-VMG" else {
             return nil
         }
@@ -126,10 +117,12 @@ public class DVDRemoteItem: RemoteSubItem {
                 let title_set_num = buffer.load(fromByteOffset: entry_offset + 6, as: UInt8.self)
                 let vts_title_num = buffer.load(fromByteOffset: entry_offset + 7, as: UInt8.self)
                 
+                print("VTS_\(String(format: "%02d", title_set_num))_0.IFO title: \(vts_title_num)")
                 titles.append(("VTS_\(String(format: "%02d", title_set_num))_0.IFO", Int(vts_title_num), Int(title_set_num)))
             }
         }
         for (index, (vts_ifo, title_num, title_set_num)) in titles.enumerated() {
+            print("VTS: \(vts_ifo)")
             let itemparent = item.parent
             let ifodata = await viewContext.perform { () -> RemoteData? in
                 let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
@@ -223,8 +216,9 @@ public class DVDRemoteItem: RemoteSubItem {
                 print("PGC Count: \(pgc_count)")
                 
                 let pgc_pointer_start = vts_pgciti_offset + 8
-                var pgc: [([Int], [(Int, Int)], String)] = []
+                var pgc: [([Int], [(Int, Int, Double)], String)] = []
                 for i in 0..<Int(pgc_count) {
+                    print("PGC: \(i+1)")
                     let pointer_offset = pgc_pointer_start + (i * 8)
                     
                     let pgc_relative_offset = data2.withUnsafeBytes { buffer in
@@ -274,16 +268,33 @@ public class DVDRemoteItem: RemoteSubItem {
                         }
                         
                         print("  Cell Count: \(cell_count), C_PBIT starts at: \(c_pbit_absolute)")
-                        var cell_offsets: [(Int, Int)] = []
+                        var cell_offsets: [(Int, Int, Double)] = []
                         for c in 0..<Int(cell_count) {
                             let cell_offset = c_pbit_absolute + (c * 24)
                             guard data2.count >= cell_offset + 24 else { return }
-                            
+
+                            let time_sec = data2.withUnsafeBytes { buffer -> Double in
+                                let b0 = buffer.load(fromByteOffset: cell_offset + 4, as: UInt8.self)
+                                let b1 = buffer.load(fromByteOffset: cell_offset + 5, as: UInt8.self)
+                                let b2 = buffer.load(fromByteOffset: cell_offset + 6, as: UInt8.self)
+                                let b3 = buffer.load(fromByteOffset: cell_offset + 7, as: UInt8.self)
+                                
+                                let hours   = Double((b0 >> 4) * 10 + (b0 & 0x0F))
+                                let minutes = Double((b1 >> 4) * 10 + (b1 & 0x0F))
+                                let seconds = Double((b2 >> 4) * 10 + (b2 & 0x0F))
+                                
+                                let fpsFlag = (b3 >> 6) & 0x03
+                                let frameVal = b3 & 0x3F
+                                let frames  = Double((frameVal >> 4) * 10 + (frameVal & 0x0F))
+                                let fps     = (fpsFlag == 1) ? 25.0 : 29.97 // 1=PAL, 3=NTSC
+                                
+                                return (hours * 3600.0) + (minutes * 60.0) + seconds + (frames / fps)
+                            }
                             let start_sector = buffer.load(fromByteOffset: cell_offset + 8, as: UInt32.self).bigEndian
                             let end_sector = buffer.load(fromByteOffset: cell_offset + 20, as: UInt32.self).bigEndian
                             
-                            print("    Cell \(c + 1): Start Sector = \(start_sector), End Sector = \(end_sector)")
-                            cell_offsets.append((Int(start_sector), Int(end_sector)))
+                            print("    Cell \(c + 1): Start = \(start_sector), End = \(end_sector), Time = \(time_sec)s")
+                            cell_offsets.append((Int(start_sector), Int(end_sector), time_sec))
                         }
                         pgc.append((program_map,cell_offsets,paletteStr))
                     }
@@ -293,11 +304,26 @@ public class DVDRemoteItem: RemoteSubItem {
                 var size = 0
                 for (pgc_num, pg_num) in chapters {
                     let (program_map, cells, paletteStr) = pgc[pgc_num-1]
-                    let cell_num = program_map[pg_num-1]
+                    
+                    let pg_index = pg_num - 1
+                    let start_cell_idx = program_map[pg_index] - 1
+                    
+                    let end_cell_idx: Int
+                    if pg_index + 1 < program_map.count {
+                        end_cell_idx = program_map[pg_index + 1] - 2
+                    } else {
+                        end_cell_idx = cells.count - 1
+                    }
+                    
+                    let chapter_cells = cells[start_cell_idx...end_cell_idx]
+                    
                     var current = -1
                     var tmp_size = 0
-                    for (start, end) in cells[(cell_num-1)...] {
+                    var chapter_time_sec = 0.0
+                    
+                    for (start, end, time_sec) in chapter_cells {
                         tmp_size += end - start + 1
+                        chapter_time_sec += time_sec
                         if current < 0 {
                             subid += "\(start),"
                         }
@@ -306,8 +332,8 @@ public class DVDRemoteItem: RemoteSubItem {
                         }
                         current = end
                     }
-                    subid += "\(current)\t\(tmp_size)\t\(paletteStr)\n"
-                    size = max(size, tmp_size)
+                    subid += "\(current)\t\(tmp_size)\t\(chapter_time_sec)\t\(paletteStr)\n"
+                    size += tmp_size
                 }
                 
                 let size2 = size
@@ -363,47 +389,56 @@ public class DVDRemoteItem: RemoteSubItem {
     }
     
     override public func read(start: Int64?, length: Int64?) async throws -> Data? {
-        guard chapterIdx < chapters.count else { return nil }
-        let chapt1 = chapters[chapterIdx]
+        guard !chapters.isEmpty else { return nil }
         
         var remainingStart = start ?? 0
         var remainingLength = length ?? size
         var data = Data()
         
-        let gb: Int64 = 1073741824 // 1 GB VOB split size
-        
-        for (st, ed) in chapt1.0 {
-            if remainingLength <= 0 { break }
-            
-            let chapterLen = ed - st
-            
-            if remainingStart >= chapterLen {
-                remainingStart -= chapterLen
-                continue
-            }
-            
-            var currentOffset = st + remainingStart
-            var lengthToReadInChapter = min(remainingLength, chapterLen - remainingStart)
-            
-            while lengthToReadInChapter > 0 {
-                let volIndex = Int(currentOffset / gb)
-                let localOffset = currentOffset % gb
-                guard volIndex < vobStream.count else { break }
-
-                let maxReadableInVol = vobitem[volIndex].size - localOffset
-                let bytesToRead = min(lengthToReadInChapter, maxReadableInVol)
-                                
-                guard let chunk = try await vobStream[volIndex].read(position: localOffset, length: Int(bytesToRead)) else {
+        for chapter in chapters {
+            for (st, ed) in chapter.0 {
+                if remainingLength <= 0 {
                     return data.isEmpty ? nil : data
                 }
                 
-                data.append(chunk)
+                let chapterLen = ed - st
                 
-                currentOffset += bytesToRead
-                lengthToReadInChapter -= bytesToRead
-                remainingLength -= bytesToRead
+                if remainingStart >= chapterLen {
+                    remainingStart -= chapterLen
+                    continue
+                }
+                
+                var currentOffset = st + remainingStart
+                var lengthToReadInChapter = min(remainingLength, chapterLen - remainingStart)
+                
+                while lengthToReadInChapter > 0 {
+                    var volIndex = 0
+                    var localOffset = currentOffset
+                    for item in vobitem {
+                        let vobSize = item.size
+                        if localOffset < vobSize {
+                            break
+                        }
+                        localOffset -= vobSize
+                        volIndex += 1
+                    }
+                    guard volIndex < vobStream.count, volIndex < vobitem.count else { break }
+
+                    let maxReadableInVol = vobitem[volIndex].size - localOffset
+                    let bytesToRead = min(lengthToReadInChapter, maxReadableInVol)
+                                    
+                    guard let chunk = try await vobStream[volIndex].read(position: localOffset, length: Int(bytesToRead)) else {
+                        return data.isEmpty ? nil : data
+                    }
+                    
+                    data.append(chunk)
+                    
+                    currentOffset += bytesToRead
+                    lengthToReadInChapter -= bytesToRead
+                    remainingLength -= bytesToRead
+                }
+                remainingStart = 0
             }
-            remainingStart = 0
         }
         
         return data.isEmpty ? nil : data

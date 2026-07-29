@@ -23,7 +23,7 @@ struct stream_param {
     long long(*seek)(void *opaque, long long offset, int whence);
     void(*cancel)(void *opaque);
     void(*draw_pict)(void *opaque, unsigned char **images, int width, int height, int *linesizes, double t);
-    void(*set_duration)(void *opaque, double duration);
+    double(*set_duration)(void *opaque, double duration);
     void(*set_soundonly)(void *opaque, int value);
     int(*sound_play)(void *opaque);
     int(*sound_stop)(void *opaque);
@@ -46,7 +46,7 @@ void quitPlayer(struct stream_param * param);
 void setARIBtext(struct stream_param * param, int istext);
 
 void restartPlayer(struct stream_param * param);
-void seekPlayer(struct stream_param * param, long long pos);
+void seekPlayer(struct stream_param * param, long long pos, long long bytepos);
 void seekPlayerChapter(struct stream_param * param, int inc);
 void cycleChancelPlayer(struct stream_param * param, int type);
 void pausePlayer(struct stream_param * param, int state);

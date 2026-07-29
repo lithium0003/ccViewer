@@ -560,12 +560,22 @@ class StreamBridgeConvert {
         }
     }
 
-    let set_duration: @convention(c) (UnsafeMutableRawPointer?, Double) -> Void = {
+    let set_duration: @convention(c) (UnsafeMutableRawPointer?, Double) -> Double = {
         (ref, duration) in
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridgeConvert>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             stream.mediaDuration = duration
+            if let dvdItem = stream.remote as? DVDRemoteItem {
+                let dvdDuration = dvdItem.chapters.map({ $0.2 }).reduce(0, +)
+                stream.mediaDuration = dvdDuration
+                return dvdDuration
+            }
+            else {
+                stream.mediaDuration = duration
+                return duration
+            }
         }
+        return 0
     }
 
     class params {
@@ -587,10 +597,8 @@ class StreamBridgeConvert {
     func run() async -> Bool {
         var basename = remote.name
         var paletteStr = ""
-        if let dvdItem = remote as? DVDRemoteItem {
-            if dvdItem.chapterIdx < dvdItem.chapters.count {
-                paletteStr = dvdItem.chapters[dvdItem.chapterIdx].2
-            }
+        if let dvdItem = remote as? DVDRemoteItem, let chapter = dvdItem.chapters.first {
+            paletteStr = chapter.3
         }
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {

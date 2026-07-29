@@ -48,6 +48,14 @@ public:
     
     bool            arib_to_text = false;
     
+    double          media_duration = 0;
+    double          anchor_video_offset = 0;
+    double          anchor_video_pts = std::nan("");
+    double          prev_video_pts = std::nan("");
+    double          anchor_sound_offset = 0;
+    double          anchor_sound_pts = std::nan("");
+    double          prev_sound_pts = std::nan("");
+
     AVFormatContext *pFormatCtx = NULL;
     
     enum sync_source {
@@ -160,6 +168,9 @@ public:
 
         double          frame_last_pts = std::nan("");
         double          frame_last_delay = 10e-3;
+        double          frame_last_clock = std::nan("");
+        double          frame_pts_offset = 0;
+        double          frame_prev_pts = std::nan("");
 
         struct SwsContext *img_convert_ctx = NULL;
 
@@ -169,6 +180,7 @@ public:
 
     enum seek_type {
         seek_type_none,
+        seek_type_byte,
         seek_type_pos,
         seek_type_next,
         seek_type_prev,
@@ -205,7 +217,7 @@ public:
     bool configure_audio_filters(AVFilterContext **filt_in, AVFilterContext **filt_out, AVFilterGraph *graph, const AudioInfo::AudioParams &audio_filter_src);
     void clear_soundbufer();
     
-    void seek(int64_t pos);
+    void seek(int64_t pos, int64_t bytepos);
     void seek_chapter(int inc);
     void set_pause(bool pause_state);
     void stream_cycle_channel(int codec_type);
