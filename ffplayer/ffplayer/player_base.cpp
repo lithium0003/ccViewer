@@ -1982,7 +1982,7 @@ found:
         stream_cycle_channel(AVMEDIA_TYPE_SUBTITLE);
     }
     stream->change_lang(stream->stream, lng.c_str(), tp, stream_index);
-    seek((int64_t)((get_master_clock() - 3) * AV_TIME_BASE), 0);
+    stream->initial_seek(stream->stream, get_master_clock() - 3);
 }
 
 int subtitle_thread(Player *is)
