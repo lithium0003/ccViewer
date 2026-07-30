@@ -201,7 +201,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             guard let ritem = stream.remoteItem else {
                 return averror_exit
             }
-            print("read \(stream.position) \(buf_size)")
+            //print("read \(stream.position) \(buf_size)")
             stream.semaphore.wait()
             defer {
                 stream.semaphore.signal()

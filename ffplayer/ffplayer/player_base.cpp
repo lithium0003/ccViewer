@@ -250,7 +250,6 @@ restart:
 
     player->pFormatCtx->max_analyze_duration = 20 * AV_TIME_BASE;
     player->pFormatCtx->probesize = 200 * 1024 * 1024;
-    player->pFormatCtx->flags |= AVFMT_FLAG_GENPTS;
 
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information
@@ -1373,7 +1372,7 @@ void Player::video_display(VideoPicture *vp)
             clock -= anchor_video_pts;
         }
         //av_log(NULL, AV_LOG_INFO, "video clock %f, offset %f, anchor %f\n", clock, anchor_video_offset, anchor_video_pts);
-        if (sync_type != sync_audio) {
+        if (sync_type != sync_audio && __builtin_isfinite(clock)) {
             current_clock = clock;
         }
         stream->draw_pict(stream->stream, vp->bmp.data, vp->width, vp->height, vp->bmp.linesize, clock);
@@ -1554,7 +1553,7 @@ double Player::load_sound(float *buffer, int num_packet)
         }
     }
     
-    if (sync_type == sync_audio) {
+    if (sync_type == sync_audio && __builtin_isfinite(clock)) {
         current_clock = clock;
     }
     return clock;

@@ -127,7 +127,6 @@ void decode_thread(struct convert_param *stream)
     
     converter->pFormatCtx->max_analyze_duration = 20 * AV_TIME_BASE;
     converter->pFormatCtx->probesize = 200 * 1024 * 1024;
-    converter->pFormatCtx->flags |= AVFMT_FLAG_GENPTS;
 
     av_log(NULL, AV_LOG_VERBOSE, "avformat_find_stream_info()\n");
     // Retrieve stream information

@@ -398,7 +398,7 @@ public class DVDRemoteItem: RemoteSubItem {
         for chapter in chapters {
             for (st, ed) in chapter.0 {
                 if remainingLength <= 0 {
-                    return data.isEmpty ? nil : data
+                    return data
                 }
                 
                 let chapterLen = ed - st
