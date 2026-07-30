@@ -68,6 +68,8 @@ public:
     int64_t         audio_last_call = AV_NOPTS_VALUE;
     double          audio_clock_base = std::nan("");
     
+    double          current_clock = 0;
+    
     bool            pause = false;
     void setPause(bool value);
     

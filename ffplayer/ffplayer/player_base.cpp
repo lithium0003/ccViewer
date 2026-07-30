@@ -1373,6 +1373,9 @@ void Player::video_display(VideoPicture *vp)
             clock -= anchor_video_pts;
         }
         //av_log(NULL, AV_LOG_INFO, "video clock %f, offset %f, anchor %f\n", clock, anchor_video_offset, anchor_video_pts);
+        if (sync_type != sync_audio) {
+            current_clock = clock;
+        }
         stream->draw_pict(stream->stream, vp->bmp.data, vp->width, vp->height, vp->bmp.linesize, clock);
     }
 }
@@ -1551,6 +1554,9 @@ double Player::load_sound(float *buffer, int num_packet)
         }
     }
     
+    if (sync_type == sync_audio) {
+        current_clock = clock;
+    }
     return clock;
 }
 
@@ -1982,7 +1988,7 @@ found:
         stream_cycle_channel(AVMEDIA_TYPE_SUBTITLE);
     }
     stream->change_lang(stream->stream, lng.c_str(), tp, stream_index);
-    stream->initial_seek(stream->stream, get_master_clock() - 3);
+    stream->initial_seek(stream->stream, current_clock - 3);
 }
 
 int subtitle_thread(Player *is)
