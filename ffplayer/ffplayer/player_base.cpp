@@ -1366,8 +1366,8 @@ void Player::video_display(VideoPicture *vp)
                     anchor_video_pts = clock;
                 }
             }
-            prev_video_pts = clock;
         }
+        prev_video_pts = clock;
         if(__builtin_isfinite(anchor_video_pts)) {
             clock += anchor_video_offset;
             clock -= anchor_video_pts;
@@ -1532,8 +1532,8 @@ double Player::load_sound(float *buffer, int num_packet)
                 anchor_sound_pts = clock;
             }
         }
-        prev_sound_pts = clock;
     }
+    prev_sound_pts = clock;
     if(__builtin_isfinite(anchor_sound_pts)) {
         clock += anchor_sound_offset;
         clock -= anchor_sound_pts;

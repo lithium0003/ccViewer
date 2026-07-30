@@ -91,7 +91,9 @@ public struct FFPlayerUIView: View {
     @State var isLoading = true
     @State var playPos = 0.0
     @State var seekPos = 0.0
+    @State var seekChapter = 0
     @State var isSeeking = false
+    @State var isChapterSeeking = false
     @State var buttonCalls: Int64 = 0
     @State var ccText: String? = nil
     @State var infoText: String? = nil
@@ -133,7 +135,10 @@ public struct FFPlayerUIView: View {
     }
     
     var timeText: String {
-        if isSeeking {
+        if isChapterSeeking {
+            "Chapter \(seekChapter > 0 ? "next" : "prev") \(abs(seekChapter))"
+        }
+        else if isSeeking {
             "Seeking to \(getTimeText(t: seekPos)) (\(String(format: "%05.2f%%", seekPos / mediaDuration * 100)))"
         }
         else {
@@ -305,7 +310,19 @@ public struct FFPlayerUIView: View {
                         Spacer()
                         if let im = FrameworkResource.getImage(name: "prevp") {
                             Button {
-                                bridge.onSeekChapter(-1)
+                                if !isChapterSeeking {
+                                    seekChapter = 0
+                                    isChapterSeeking = true
+                                }
+                                OSAtomicIncrement64(&buttonCalls)
+                                seekChapter -= 1
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(750))
+                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                        bridge.onSeekChapter(seekChapter)
+                                        isChapterSeeking = false
+                                    }
+                                }
                             } label: {
                                 Image(uiImage: im)
                                     .renderingMode(.template)
@@ -413,7 +430,19 @@ public struct FFPlayerUIView: View {
                         }
                         if let im = FrameworkResource.getImage(name: "nextp") {
                             Button {
-                                bridge.onSeekChapter(1)
+                                if !isChapterSeeking {
+                                    seekChapter = 0
+                                    isChapterSeeking = true
+                                }
+                                OSAtomicIncrement64(&buttonCalls)
+                                seekChapter += 1
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(750))
+                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                        bridge.onSeekChapter(seekChapter)
+                                        isChapterSeeking = false
+                                    }
+                                }
                             } label: {
                                 Image(uiImage: im)
                                     .renderingMode(.template)

@@ -620,9 +620,11 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                         break
                     }
                 }
-                if inc > 0 || playPos - 1 < dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +) {
-                    currentCapter += inc
+                var inc = inc
+                if inc < 0, playPos - 1 > dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +) {
+                    inc += 1
                 }
+                currentCapter += inc
                 if currentCapter >= 0, currentCapter < dvdItem.chapters.count {
                     let st = dvdItem.chapters[0..<currentCapter].map({ $0.1 }).reduce(0, +)
                     let tm = dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +)
