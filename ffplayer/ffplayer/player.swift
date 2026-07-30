@@ -201,7 +201,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             guard let ritem = stream.remoteItem else {
                 return averror_exit
             }
-            //print("read \(stream.position) \(buf_size)")
+            print("read \(stream.position) \(buf_size)")
             stream.semaphore.wait()
             defer {
                 stream.semaphore.signal()
@@ -246,7 +246,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     let seek: @convention(c) (UnsafeMutableRawPointer?, Int64, Int32) -> Int64 = {
         (ref, offset, whence) in
         var count: Int64 = 0
-        //print("seek \(offset) \(whence)")
+        print("seek \(offset) \(whence)")
         if let ref_unwrapped = ref {
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             if stream.isCancel {
@@ -418,6 +418,14 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
     }
 
+    let initial_seek: @convention(c) (UnsafeMutableRawPointer?, Double) -> Void = {
+        (ref, value) in
+        if let ref_unwrapped = ref {
+            let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
+            stream.onSeek(value)
+        }
+    }
+
     class func convertText(text: String, ass: Bool) -> String {
         let txtArray = text.components(separatedBy: .newlines)
         if ass {
@@ -553,8 +561,21 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
     
     public func onSeek(_ pos: Double) {
-        if (remoteItem as? DVDRemoteItem) != nil {
-            let pos64: Int64 = Int64(pos / mediaDuration * Double(remoteItem?.size ?? 0))
+        if let dvdItem = remoteItem as? DVDRemoteItem {
+            var chaptDuration = 0.0
+            var currentCapter = 0
+            for (c, (_, _, t, _)) in dvdItem.chapters.enumerated() {
+                chaptDuration += t
+                if pos < chaptDuration {
+                    currentCapter = c
+                    break
+                }
+            }
+            let st = dvdItem.chapters[0..<currentCapter].map({ $0.1 }).reduce(0, +)
+            let tm = dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +)
+            let s = dvdItem.chapters[currentCapter].1
+            let t = dvdItem.chapters[currentCapter].2
+            let pos64: Int64 = Int64((pos - tm) / t * Double(s)) + st
             let time64: Int64 = Int64(pos * 1000000)
             if let param {
                 run_seek(param, time64, pos64)
@@ -590,18 +611,18 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     public func onSeekChapter(_ inc: Int) {
         if let param {
             if let dvdItem = remoteItem as? DVDRemoteItem {
-                var chaptsize: Int64 = 0
                 var chaptDuration = 0.0
                 var currentCapter = 0
-                for (c, (_, s, t, _)) in dvdItem.chapters.enumerated() {
-                    chaptsize += s
-                    if position < chaptsize {
+                for (c, (_, _, t, _)) in dvdItem.chapters.enumerated() {
+                    chaptDuration += t
+                    if playPos < chaptDuration {
                         currentCapter = c
                         break
                     }
-                    chaptDuration += t
                 }
-                currentCapter += inc
+                if inc > 0 || playPos - 1 < dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +) {
+                    currentCapter += inc
+                }
                 if currentCapter >= 0, currentCapter < dvdItem.chapters.count {
                     let st = dvdItem.chapters[0..<currentCapter].map({ $0.1 }).reduce(0, +)
                     let tm = dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +)
@@ -757,6 +778,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     wait_start,
                     send_pause,
                     skip_media,
+                    initial_seek,
                     cc_draw,
                     change_lang)
                 
@@ -789,8 +811,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     if idx == curIdx {
                         curIdx += 1
                         if ret >= 0 && !playlist {
-                            if item.size > 0 && position > 0 {
-                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, Double(position - 20*1024*1024) / Double(item.size))))
+                            if item.size > 0 && mediaDuration > 0 {
+                                await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: max(0, min(1, playPos / mediaDuration)))
                             }
                             else {
                                 await CloudFactory.shared.mark.setMark(storage: item.storage, targetID: item.id, parentID: item.parent, position: 1.0)

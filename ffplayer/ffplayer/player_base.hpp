@@ -44,7 +44,6 @@ public:
     std::string     name;
     bool            quit = false;
     int             ret = -1;
-    bool            reload = false;
     
     bool            arib_to_text = false;
     

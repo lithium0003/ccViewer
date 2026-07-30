@@ -58,14 +58,6 @@ double load_sound(void *arg, float *buffer, int num_packets)
     return player->load_sound(buffer, num_packets);
 }
 
-void restartPlayer(struct stream_param * param)
-{
-    if(!param) return;
-    auto player = (Player *)param->player;
-    if(!player) return;
-    player->reload = true;
-}
-
 void seekPlayer(struct stream_param * param, int64_t pos, int64_t bytepos)
 {
     if(!param) return;
@@ -205,9 +197,6 @@ int decode_thread(struct stream_param *stream)
 {
     av_log(NULL, AV_LOG_INFO, "decode_thread start\n");
 
-    double start_skip = stream->start_skip;
-    double partial_start = stream->partial_start;
-    int64_t start_skip_bytes = -1;
 restart:
     Player *player = (Player *)stream->player;
     player->ret = -1;
@@ -216,7 +205,6 @@ restart:
     player->audio.audio_fin = false;
     player->video.video_fin = false;
     player->quit = false;
-    player->reload = false;
     player->master_clock_offset = std::nan("");
     player->master_clock_start = AV_NOPTS_VALUE;
     player->audio_clock_base = std::nan("");
@@ -335,103 +323,20 @@ restart:
     player->media_duration = stream->set_duration(stream->stream, player->get_duration());
     stream->wait_stop(stream->stream);
 
-    if (__builtin_isfinite(partial_start) && !__builtin_isfinite(start_skip)) {
-        if (player->pFormatCtx->pb) {
-            start_skip_bytes = avio_size(player->pFormatCtx->pb) * partial_start;
-        }
+    if (__builtin_isfinite(stream->start_skip)) {
+        stream->initial_seek(stream->stream, stream->start_skip);
+    }
+    else if (__builtin_isfinite(stream->partial_start)) {
+        stream->initial_seek(stream->stream, stream->partial_start * player->media_duration);
     }
     
     // main decode loop
     av_log(NULL, AV_LOG_INFO, "decode_thread read loop\n");
     for (;;) {
-        if (player->reload) {
-            if (player->video.videoStream >= 0) {
-                player->video.videoq.AbortQueue();
-                player->stream_component_close(player->video.videoStream);
-                player->video.videoStream = -1;
-            }
-            if (player->audio.audioStream >= 0) {
-                player->audio.audioq.AbortQueue();
-                player->stream_component_close(player->audio.audioStream);
-                player->audio.audioStream = -1;
-            }
-            if (player->subtitle.subtitleStream >= 0) {
-                player->subtitle.subtitleq.AbortQueue();
-                player->stream_component_close(player->subtitle.subtitleStream);
-                player->subtitle.subtitleStream = -1;
-            }
-
-            if(player->video_thread.joinable()){
-                player->video_thread.join();
-            }
-            player->audio.cond_full.notify_all();
-            if(player->audio_thread.joinable()){
-                player->audio_thread.join();
-            }
-            if(player->subtitle_thread.joinable()){
-                player->subtitle_thread.join();
-            }
-            if(player->display_thread.joinable()){
-                player->display_thread.join();
-            }
-
-            avformat_close_input(&player->pFormatCtx);
-            av_freep(&pIoCtx);
-            
-            player->clear_soundbufer();
-            player->prev_video_pts = std::nan("");
-            player->prev_sound_pts = std::nan("");
-            player->seek_req_type = Player::seek_type_none;
-            player->seek_pos = AV_NOPTS_VALUE;
-            start_skip = std::nan("");
-            partial_start = std::nan("");
-            start_skip_bytes = -1;
-            goto restart;
-        }
         if (player->IsQuit()) {
             break;
         }
         // seek stuff goes here
-        if(start_skip_bytes > 0) {
-            int ret1 = avformat_seek_file(player->pFormatCtx, -1, INT64_MIN, start_skip_bytes, INT64_MAX, AVSEEK_FLAG_BYTE);
-            start_skip_bytes = -1;
-            if (ret1 < 0) {
-                char buf[AV_ERROR_MAX_STRING_SIZE];
-                char *errstr = av_make_error_string(buf, AV_ERROR_MAX_STRING_SIZE, ret1);
-                av_log(NULL, AV_LOG_ERROR, "error avformat_seek_file() %d %s\n", ret1, errstr);
-                //error = true;
-            }
-            else {
-                player->master_clock_offset = std::nan("");
-                player->master_clock_start = AV_NOPTS_VALUE;
-                if (player->audio.audioStream >= 0) {
-                    player->audio.audio_eof = Player::AudioInfo::audio_eof_enum::playing;
-                    av_log(NULL, AV_LOG_INFO, "audio flush request\n");
-                    player->audio.audioq.flush();
-                }
-                if (player->video.videoStream >= 0) {
-                    player->video.video_eof = false;
-                    av_log(NULL, AV_LOG_INFO, "video flush request\n");
-                    player->video.videoq.flush();
-                }
-                if (player->subtitle.subtitleStream >= 0) {
-                    av_log(NULL, AV_LOG_INFO, "subtitle flush request\n");
-                    player->subtitle.subtitleq.flush();
-                }
-                player->video.pictq_active_serial = player->subtitle.subpictq_active_serial = av_gettime();
-                player->clear_soundbufer();
-            }
-            player->prev_video_pts = std::nan("");
-            player->prev_sound_pts = std::nan("");
-            player->anchor_sound_offset = player->media_duration * partial_start;
-            player->anchor_video_offset = player->media_duration * partial_start;
-            player->anchor_sound_pts = std::nan("");
-            player->anchor_video_pts = std::nan("");
-            player->seek_req_type = Player::seek_type_none;
-            player->seek_pos = AV_NOPTS_VALUE;
-            stream->wait_stop(stream->stream);
-            continue;
-        }
         if(player->seek_req_type == Player::seek_type_next) {
             // if no chapter, skip to next media
             if(!player->pFormatCtx->nb_chapters) {
@@ -648,21 +553,6 @@ restart:
         if (!__builtin_isfinite(player->master_clock_offset)) {
             player->master_clock_start = av_gettime();
             player->master_clock_offset = inpkt->pts * av_q2d(player->pFormatCtx->streams[inpkt->stream_index]->time_base) - ((player->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : player->pFormatCtx->start_time) * av_q2d(AV_TIME_BASE_Q);
-        }
-
-        if (__builtin_isfinite(start_skip)) {
-            av_packet_unref(inpkt);
-            start_skip -= 1;
-            if(start_skip > 0) {
-                printf("start skip %f sec\n", start_skip);
-                player->seek_pos = (int64_t)(start_skip * AV_TIME_BASE);
-                if (player->pFormatCtx->start_time != AV_NOPTS_VALUE) {
-                    player->seek_pos += player->pFormatCtx->start_time;
-                }
-                player->seek_req_type = Player::seek_type_pos;
-            }
-            start_skip = std::nan("");
-            continue;
         }
 
         if (inpkt->stream_index == player->video.videoStream) {
@@ -1167,10 +1057,10 @@ int video_thread(Player *is)
 
                     int64_t pts_t;
                     if ((pts_t = frame.best_effort_timestamp) != AV_NOPTS_VALUE) {
-                        // av_log(NULL, AV_LOG_INFO, "video pts %lld\n", pts_t);
+                        //av_log(NULL, AV_LOG_INFO, "video pts %lld\n", pts_t);
                         pts = pts_t * av_q2d(timebase);
                         pts -= av_q2d(AV_TIME_BASE_Q) * ((is->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : is->pFormatCtx->start_time);
-                        // av_log(NULL, AV_LOG_INFO, "video time %f\n", pts);
+                        //av_log(NULL, AV_LOG_INFO, "video time %f\n", pts);
                         
                         if (!__builtin_isfinite(is->video.video_clock_start)) {
                             is->video.video_clock_start = pts;
@@ -1411,9 +1301,6 @@ int video_present_thread(Player *is)
         double start_clock = is->get_master_clock();
         auto start_tic = av_gettime();
         while(!is->IsQuit()) {
-            if(is->reload) {
-                break;
-            }
             if(vp->serial < is->video.pictq_active_serial) {
                 is->next_picture_queue();
                 is->video.frame_last_pts = std::nan("");
@@ -1471,7 +1358,7 @@ void Player::video_display(VideoPicture *vp)
             if(__builtin_isfinite(prev_video_pts)) {
                 if(__builtin_isfinite(anchor_video_pts)) {
                     if(fabs(prev_video_pts - clock) > 3) {
-                        anchor_video_offset = prev_video_pts - clock;
+                        anchor_video_offset += prev_video_pts - anchor_video_pts - clock;
                         anchor_video_pts = clock;
                     }
                 }
@@ -1637,7 +1524,7 @@ double Player::load_sound(float *buffer, int num_packet)
         if(__builtin_isfinite(prev_sound_pts)) {
             if(__builtin_isfinite(anchor_sound_pts)) {
                 if(fabs(prev_sound_pts - clock) > 3) {
-                    anchor_sound_offset = prev_sound_pts - clock;
+                    anchor_sound_offset += prev_sound_pts - anchor_sound_pts - clock;
                     anchor_sound_pts = clock;
                 }
             }
@@ -1782,7 +1669,7 @@ void audio_thread(Player *is)
                         pts = av_q2d(timebase)*pts_t;
                         pts -= av_q2d(AV_TIME_BASE_Q) * ((is->pFormatCtx->start_time == AV_NOPTS_VALUE)? 0 : is->pFormatCtx->start_time);
                     }
-                    // av_log(NULL, AV_LOG_INFO, "audio time %f\n", pts);
+                    //av_log(NULL, AV_LOG_INFO, "audio time %f\n", pts);
 
                     float *audio_buf = (float *)audio_frame_out.data[0];
                     int out_samples = audio_frame_out.nb_samples;

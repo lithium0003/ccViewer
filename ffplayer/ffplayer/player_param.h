@@ -31,6 +31,7 @@ struct stream_param {
     void(*wait_start)(void *opaque);
     void(*send_pause)(void *opaque, int value);
     void(*skip_media)(void *opaque, int value);
+    void(*initial_seek)(void *opaque, double value);
     void(*cc_draw)(void *opaque, const char *buffer, int type);
     void(*change_lang)(void *opaque, const char *buffer, int type, int idx);
 };

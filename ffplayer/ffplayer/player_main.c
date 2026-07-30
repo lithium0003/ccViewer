@@ -36,6 +36,7 @@ void *make_arg(char *name,
                void(*wait_start)(void *opaque),
                void(*send_pause)(void *opaque, int value),
                void(*skip_media)(void *opaque, int value),
+               void(*initial_seek)(void *opaque, double value),
                void(*cc_draw)(void *opaque, const char *buffer, int type),
                void(*change_lang)(void *opaque, const char *buffer, int type, int idx))
 {
@@ -60,6 +61,7 @@ void *make_arg(char *name,
     param->wait_start = wait_start;
     param->send_pause = send_pause;
     param->skip_media = skip_media;
+    param->initial_seek = initial_seek;
     param->cc_draw = cc_draw;
     param->change_lang = change_lang;
     return param;
@@ -104,13 +106,6 @@ int run_quit(void *arg)
 {
     struct stream_param *param = (struct stream_param *)arg;
     quitPlayer(param);
-    return 0;
-}
-
-int run_restart(void *arg)
-{
-    struct stream_param *param = (struct stream_param *)arg;
-    restartPlayer(param);
     return 0;
 }
 
