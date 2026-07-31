@@ -254,6 +254,21 @@ public class dataItems {
         }
     }
 
+    public func clearAllData() async throws {
+        let viewContext = self.viewContext
+        try await viewContext.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+            batchDeleteRequest.resultType = .resultTypeObjectIDs
+            
+            let result = try viewContext.execute(batchDeleteRequest) as? NSBatchDeleteResult
+            let objectIDArray = result?.result as? [NSManagedObjectID] ?? []
+            
+            let changes = [NSDeletedObjectsKey: objectIDArray]
+            NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [viewContext])
+        }
+    }
+    
     // MARK: - Core Data stack
     public lazy var persistentContainer: NSPersistentContainer = {
         /*

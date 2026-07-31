@@ -174,8 +174,14 @@ struct SettingUIView: View {
     }
 
     static func doDelete() async {
+        try? await CloudFactory.shared.data.clearAllData()
+        await CloudFactory.shared.cache.deleteAllCache()
+    }
+    
+    static func doAllDelete() async {
         await CloudFactory.shared.removeAllAuth()
         UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier!)
+        try? await CloudFactory.shared.data.clearAllData()
         await CloudFactory.shared.cache.deleteAllCache()
         await CloudFactory.shared.initializeDatabase()
     }
@@ -509,25 +515,47 @@ struct SettingUIView: View {
 
             Section {
                 Button(role: .destructive) {
-                    deleteConfirmation.toggle()
-                } label: {
-                    Text("Clear all Authorization information and Cache data")
-                }
-                .alert("Delete all data", isPresented: $deleteConfirmation) {
-                    Button(role: .destructive) {
-                        Task {
-                            await SettingUIView.doDelete()
-                            env.path.removeAll()
+                    Task {
+                        await SettingUIView.doDelete()
+                        while !env.path.isEmpty {
+                            env.path.removeLast()
+                            await Task.yield()
                         }
                     }
-                    Button(role: .cancel) {
+                } label: {
+                    Text("Clear Cache")
+                }
+            } header: {
+                Text("Data")
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    deleteConfirmation.toggle()
+                } label: {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                        Text("Clear Credentials & Cache")
+                    }
+                }
+                .alert("Delete All Data", isPresented: $deleteConfirmation) {
+                    Button(role: .destructive) {
+                        Task {
+                            await SettingUIView.doAllDelete()
+                            while !env.path.isEmpty {
+                                env.path.removeLast()
+                                await Task.yield()
+                            }
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
                         deleteConfirmation = false
                     }
                 } message: {
-                    Text("Do you remove all autorization infomarion and cached data in app?")
+                    Text("Are you sure you want to remove all credentials and cached data from this app? You will need to sign in again.")
                 }
             } header: {
-                Text("Delete")
+                Text("Danger Zone")
             }
         }
         .onAppear {

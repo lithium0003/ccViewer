@@ -24,6 +24,16 @@ struct OpenfileUIView: View {
 
     @State var cancellables: Set<AnyCancellable> = []
 
+    let defaultMediaExt: Set<String> = [
+        "mp4",
+        "mov",
+        "m4v",
+        "mp3",
+        "m4a",
+        "aac",
+        "wav",
+    ]
+    
     enum DispType {
         case empty
         case txt
@@ -87,7 +97,7 @@ struct OpenfileUIView: View {
                         bridge = await Player.prepare(storages: passStorages, fileids: passFileids, playlist: playlist)
                         dispType = .ffplay
                     }
-                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .movie) || uti.conforms(to: .video) || uti.conforms(to: .audio), UserDefaults.standard.bool(forKey: "MediaViewer") {
+                    else if defaultMediaExt.contains(remoteItem.ext.lowercased()), UserDefaults.standard.bool(forKey: "MediaViewer") {
                         passStorages.append(storage)
                         passFileids.append(fileid)
                         dispType = .media

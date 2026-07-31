@@ -54,6 +54,7 @@ enum HomePath: Hashable {
     case root
     case items(storage: String, fileid: String)
     case open(storages: [String], fileids: [String], playlist: Bool)
+    case rawopen(storage: String, fileid: String)
     case edit(storage: String, fileid: String)
     case setting
     case select(storage: String, fileid: String)
@@ -69,6 +70,8 @@ enum HomePath: Hashable {
         case let .items(storage: storage, fileid: fileid):
             "\(storage):\(fileid)"
         case .open:
+            "Open"
+        case .rawopen:
             "Open"
         case let .edit(storage: storage, fileid: fileid):
             "\(storage):\(fileid)"
@@ -96,6 +99,8 @@ enum HomePath: Hashable {
             ItemsUIView(storage: storage, fileid: fileid, env: env)
         case let .open(storages: storages, fileids: fileids, playlist: playlist):
             OpenfileUIView(storages: storages, fileids: fileids, playlist: playlist)
+        case let .rawopen(storage: storage, fileid: fileid):
+            RawTextUIView(storage: storage, fileid: fileid)
         case let .edit(storage: storage, fileid: fileid):
             EditItemsUIView(storage: storage, fileid: fileid, env: env)
         case .setting:

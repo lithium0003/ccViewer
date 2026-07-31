@@ -74,6 +74,7 @@ struct CryptCloudViewerApp: App {
             UserDefaults.standard.set(true, forKey: "PDFViewer")
             UserDefaults.standard.set(true, forKey: "MediaViewer")
             UserDefaults.standard.set(true, forKey: "FFplayer")
+            UserDefaults.standard.set(true, forKey: "firstFFplayer")
             UserDefaults.standard.set(true, forKey: "savePlaypos")
             UserDefaults.standard.set(true, forKey: "resumePlaypos")
             UserDefaults.standard.set(true, forKey: "cloudPlaypos")

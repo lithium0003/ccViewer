@@ -12,7 +12,7 @@ struct RawTextUIView: View {
     let storage: String
     let fileid: String
     @State var remoteItem: RemoteItem?
-    @State var decodeType = 0
+    @State var decodeType = 1
     @State var filename = ""
     @State var infotext = ""
     @State var offset = 0 {
@@ -49,18 +49,42 @@ struct RawTextUIView: View {
             return String(bytes: asciiBytes, encoding: .ascii) ?? ""
         case 1:
             var str = ""
+            str.reserveCapacity(data.count * 5)
+            let initialColumn = offset % 16
             for i in 0 ..< data.count {
+                let currentAddress = i + offset
+                let column = currentAddress % 16
+                
                 if i == 0 {
-                    str += String(format: "0x%08x : ", i + offset)
-                    str += String(repeating: "   ", count: Int((i + offset) % 16))
+                    str += String(format: "0x%08x : ", currentAddress - column)
+                    str += String(repeating: "   ", count: column)
+                } else if column == 0 {
+                    str += String(format: "0x%08x : ", currentAddress)
                 }
-                else if (i + offset) % 16 == 0 {
-                    str += String(format: "0x%08x : ", i + offset)
-                }
+                
                 str += String(format: "%02x ", data[i])
                 
-                if (i + offset) % 16 == 15 {
-                    str += "\n"
+                if column == 15 || i == data.count - 1 {
+                    if column < 15 {
+                        str += String(repeating: "   ", count: 15 - column)
+                    }
+                    
+                    let rowStartIndex = max(0, i - column)
+                    
+                    let asciiLineBytes = data[rowStartIndex...i].map { c -> UInt8 in
+                        switch c {
+                        case 0x20..<0x7f:
+                            return c
+                        default:
+                            return 0x2E // "."
+                        }
+                    }
+                    
+                    let asciiString = String(decoding: asciiLineBytes, as: UTF8.self)
+                    
+                    let asciiPadding = (rowStartIndex == 0 && initialColumn > 0) ? String(repeating: " ", count: initialColumn) : ""
+                    
+                    str += " " + asciiPadding + asciiString + "\n"
                 }
             }
             return str

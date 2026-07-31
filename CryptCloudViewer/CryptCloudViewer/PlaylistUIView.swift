@@ -84,7 +84,7 @@ struct PlaylistUIView: View {
         let playitems = await CloudFactory.shared.data.getPlaylist(playlistName: playlistName)
         var newItems: [String: RemoteData] = [:]
         var newIds: [String] = []
-        for (storage, fileid, path, uuid) in playitems {
+        for (storage, fileid, _, uuid) in playitems {
             if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
                 newItems[uuid] = item
                 newIds.append(uuid)

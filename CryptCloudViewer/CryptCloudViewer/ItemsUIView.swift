@@ -212,6 +212,9 @@ struct ItemsUIView: View {
                                         env.path.append(HomePath.open(storages: [storage], fileids: [item.id ?? ""], playlist: false))
                                     }
                                 }
+                                .onLongPressGesture(minimumDuration: 1.0) {
+                                    env.path.append(HomePath.rawopen(storage: storage, fileid: item.id ?? ""))
+                                }
                                 .listRowBackground(itemMark[item.id ?? ""] != nil ? backgroundColor(item) : nil)
                                 .swipeActions {
                                     if UserDefaults.standard.bool(forKey: "savePlaypos") {

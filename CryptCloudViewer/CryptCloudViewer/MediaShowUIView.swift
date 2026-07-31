@@ -253,7 +253,7 @@ class CustomPlayer: NSObject {
 
     func getArtimage(item: RemoteItem) async -> UIImage? {
         var basename = item.name
-        var parentId = item.parent
+        let parentId = item.parent
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
             components.removeLast()
