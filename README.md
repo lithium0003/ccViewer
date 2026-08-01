@@ -34,3 +34,5 @@ If you want to use, fix these files for your own client_id and secret.
 - CryptCloudViewer/CryptCloudViewer/Secret.xcconfig
 - CryptCloudViewer/CryptCloudViewer/Secret.swift
 
+## Help
+https://lithium03.info/ios/ccViewer.en.html (English)
