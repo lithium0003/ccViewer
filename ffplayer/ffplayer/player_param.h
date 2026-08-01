@@ -50,6 +50,7 @@ void restartPlayer(struct stream_param * param);
 void seekPlayer(struct stream_param * param, long long pos, long long bytepos);
 void seekPlayerChapter(struct stream_param * param, int inc);
 void cycleChancelPlayer(struct stream_param * param, int type);
+void setPlaybackRate(struct stream_param * param, double rate);
 void pausePlayer(struct stream_param * param, int state);
 int getPlayer_pause(struct stream_param * param);
 

@@ -43,6 +43,7 @@ int run_quit(void *arg);
 int run_seek(void *arg, long long pos, long long bytepos);
 int run_seek_chapter(void *arg, int inc);
 int run_cycle_ch(void *arg, int type);
+int run_set_playback_rate(void *arg, double rate);
 int run_pause(void *arg, int state);
 int set_latency(void *arg, double latency);
 

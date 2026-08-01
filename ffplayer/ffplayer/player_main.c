@@ -130,6 +130,13 @@ int run_cycle_ch(void *arg, int type)
     return 0;
 }
 
+int run_set_playback_rate(void *arg, double rate)
+{
+    struct stream_param *param = (struct stream_param *)arg;
+    setPlaybackRate(param, rate);
+    return 0;
+}
+
 int run_pause(void *arg, int state)
 {
     struct stream_param *param = (struct stream_param *)arg;

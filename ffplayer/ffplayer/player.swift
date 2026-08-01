@@ -648,6 +648,12 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
     }
     
+    public func setPlaybackRate(_ rate: Double) {
+        if let param {
+            run_set_playback_rate(param, rate)
+        }
+    }
+    
     public func run() async -> Bool {
         if sound == nil { return true }
         guard remotes.count > 0 else {

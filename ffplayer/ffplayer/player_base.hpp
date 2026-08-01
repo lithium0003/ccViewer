@@ -46,6 +46,7 @@ public:
     int             ret = -1;
     
     bool            arib_to_text = false;
+    double          playback_rate = 1.0;
     
     double          media_duration = 0;
     double          anchor_video_offset = 0;
@@ -222,6 +223,7 @@ public:
     void seek_chapter(int inc);
     void set_pause(bool pause_state);
     void stream_cycle_channel(int codec_type);
+    void set_playback_rate(double rate);
     
     void subtitle_display(VideoPicture *vp);
     

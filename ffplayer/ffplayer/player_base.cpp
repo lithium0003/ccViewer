@@ -95,6 +95,13 @@ void cycleChancelPlayer(struct stream_param * param, int type)
     }
 }
 
+void setPlaybackRate(struct stream_param * param, double rate)
+{
+    if(!param) return;
+    auto player = (Player *)param->player;
+    if(!player) return;
+    player->set_playback_rate(rate);
+}
 
 void pausePlayer(struct stream_param * param, int state)
 {
@@ -903,6 +910,17 @@ bool Player::Configure_VideoFilter(AVFilterContext **filt_in, AVFilterContext **
         filt_input = filt_deint;
     }
 
+    AVFilterContext *filt_setpts = NULL;
+    char setpts_args[64] = {0};
+    snprintf(setpts_args, sizeof(setpts_args), "PTS/%f", this->playback_rate);
+    if (avfilter_graph_create_filter(&filt_setpts, avfilter_get_by_name("setpts"), "setpts", setpts_args, NULL, graph) < 0) {
+        return false;
+    }
+    if (avfilter_link(filt_input, 0, filt_setpts, 0) != 0) {
+        return false;
+    }
+    filt_input = filt_setpts;
+    
     if (avfilter_link(filt_input, 0, *filt_out, 0) != 0)
     {
         return false;
@@ -943,6 +961,7 @@ int video_thread(Player *is)
     struct stream_param *stream = (struct stream_param *)is->param;
     AVRational timebase = AV_TIME_BASE_Q;
     int64_t prevframe_pts = AV_NOPTS_VALUE;
+    double last_playback_rate = 1.0;
     
     switch (is->video.video_ctx->codec_id)
     {
@@ -1016,7 +1035,8 @@ int video_thread(Player *is)
                     if (frame.width != last_w ||
                         frame.height != last_h ||
                         frame.format != last_format ||
-                        last_serial != serial) {
+                        last_serial != serial ||
+                        last_playback_rate != is->playback_rate) {
                         graph = std::shared_ptr<AVFilterGraph>(avfilter_graph_alloc(), [](AVFilterGraph *ptr) { avfilter_graph_free(&ptr); });
                         if (!is->Configure_VideoFilter(&filt_in, &filt_out, &frame, graph.get())) {
                             is->Quit();
@@ -1026,6 +1046,7 @@ int video_thread(Player *is)
                         last_h = frame.height;
                         last_format = (AVPixelFormat)frame.format;
                         last_serial = serial;
+                        last_playback_rate = is->playback_rate;
                     }
                 }
                 
@@ -1584,6 +1605,7 @@ void audio_thread(Player *is)
     struct stream_param *stream = (struct stream_param *)is->param;
     AVRational timebase = AV_TIME_BASE_Q;
     double head_pts = std::nan("");
+    double last_playback_rate = 1.0;
     
     while(true) {
         int ret;
@@ -1643,7 +1665,8 @@ void audio_thread(Player *is)
                     cmp_audio_fmts(is->audio.audio_filter_src.fmt, is->audio.audio_filter_src.channels,
                                    (enum AVSampleFormat)inframe->format, inframe->ch_layout.nb_channels) ||
                     av_channel_layout_compare(&is->audio.audio_filter_src.ch_layout, &dec_channel_layout) != 0 ||
-                    is->audio.audio_filter_src.freq != inframe->sample_rate;
+                    is->audio.audio_filter_src.freq != inframe->sample_rate ||
+                    last_playback_rate != is->playback_rate;
                     
                     if (reconfigure) {
                         av_log(NULL, AV_LOG_INFO, "audio reconfigure\n");
@@ -1655,6 +1678,7 @@ void audio_thread(Player *is)
                         graph = std::shared_ptr<AVFilterGraph>(avfilter_graph_alloc(), [](AVFilterGraph *ptr) { avfilter_graph_free(&ptr); });
                         if (!is->configure_audio_filters(&filt_in, &filt_out, graph.get(), is->audio.audio_filter_src))
                             goto failed_audio;
+                        last_playback_rate = is->playback_rate;
                     }
                 }
                 
@@ -1767,6 +1791,13 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
                                      avfilter_get_by_name("abuffer"), "ffplay_abuffer",
                                      asrc_args, NULL, graph) < 0)
         return false;
+
+    AVFilterContext *filt_atempo = NULL;
+    char atempo_args[32] = { 0 };
+    // ※ atempoは 0.5 to 100.0 limit
+    snprintf(atempo_args, sizeof(atempo_args), "%f", this->playback_rate);
+    if (avfilter_graph_create_filter(&filt_atempo, avfilter_get_by_name("atempo"), "atempo", atempo_args, NULL, graph) < 0)
+        return false;
     
     filt_asink = avfilter_graph_alloc_filter(graph, avfilter_get_by_name("abuffersink"),
                                                  "ffplay_abuffersink");
@@ -1788,7 +1819,9 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
     if(avfilter_init_dict(filt_asink, NULL) < 0)
         return false;
     
-    if(avfilter_link(filt_asrc, 0, filt_asink, 0) < 0)
+    if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
+        return false;
+    if (avfilter_link(filt_atempo, 0, filt_asink, 0) < 0)
         return false;
     
     if(avfilter_graph_config(graph, NULL) < 0)
@@ -1990,6 +2023,14 @@ found:
     stream->initial_seek(stream->stream, current_clock - 3);
 }
 
+void Player::set_playback_rate(double rate) {
+    if(rate < 0.5) rate = 0.5;
+    if(rate > 100) rate = 100;
+    playback_rate = rate;
+    struct stream_param *stream = (struct stream_param *)param;
+    stream->initial_seek(stream->stream, current_clock);
+}
+
 int subtitle_thread(Player *is)
 {
     av_log(NULL, AV_LOG_INFO, "subtitle_thread start\n");
@@ -2052,6 +2093,10 @@ int subtitle_thread(Player *is)
         // av_log(NULL, AV_LOG_INFO, "subtitle time %f\n", pts);
         std::shared_ptr<SubtitlePicture> sp(new SubtitlePicture);
         sp->pts = pts;
+        sp->sub.start_display_time = sp->sub.start_display_time / is->playback_rate;
+        if(sp->sub.end_display_time != 0xffffffff) {
+            sp->sub.end_display_time = sp->sub.end_display_time / is->playback_rate;
+        }
         sp->serial = av_gettime();
         while (old_serial >= sp->serial) sp->serial++;
         old_serial = sp->serial;

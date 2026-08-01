@@ -91,6 +91,7 @@ public struct FFPlayerUIView: View {
     @State var isLoading = true
     @State var playPos = 0.0
     @State var seekPos = 0.0
+    @State var playbackRate = 1.0
     @State var seekChapter = 0
     @State var isSeeking = false
     @State var isChapterSeeking = false
@@ -203,6 +204,72 @@ public struct FFPlayerUIView: View {
             }
             
             if (isMediaInfoShow || isSeeking) && !pipActive {
+                VStack {
+                    Spacer()
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        VStack {
+                            Button {
+                                playbackRate += 0.1
+                                if playbackRate > 100 {
+                                    playbackRate = 100
+                                }
+                                OSAtomicIncrement64(&buttonCalls)
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(750))
+                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                        bridge.setPlaybackRate(playbackRate)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "hare")
+                                    .padding()
+                            }
+                            .controlSize(.mini)
+                            .buttonStyle(.glass)
+                            Button {
+                                playbackRate = 1.0
+                                OSAtomicIncrement64(&buttonCalls)
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(750))
+                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                        bridge.setPlaybackRate(playbackRate)
+                                    }
+                                }
+                            } label: {
+                                Text(verbatim: "x " + String(format: "%.2f", playbackRate))
+                                    .padding()
+                                    .monospaced()
+                                    .foregroundStyle(.green)
+                                    .background {
+                                        Color.black
+                                            .cornerRadius(15)
+                                    }
+                            }
+                            .controlSize(.mini)
+                            Button {
+                                playbackRate -= 0.1
+                                if playbackRate < 0.5 {
+                                    playbackRate = 0.5
+                                }
+                                OSAtomicIncrement64(&buttonCalls)
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(750))
+                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                        bridge.setPlaybackRate(playbackRate)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "tortoise")
+                                    .padding()
+                            }
+                            .controlSize(.mini)
+                            .buttonStyle(.glass)
+                        }
+                    }
+                    Spacer()
+                }
                 VStack {
                     HStack {
                         if let im = FrameworkResource.getImage(name: "close") {
