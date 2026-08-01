@@ -252,18 +252,26 @@ class CustomPlayer: NSObject {
     }
 
     func getArtimage(item: RemoteItem) async -> UIImage? {
-        var basename = item.name
-        let parentId = item.parent
+        let storage = item.storage
+        let parentId: String
+        var basename = ""
+        if let subitem = item as? CueSheetRemoteItem {
+            basename = subitem.baseItem.name
+            parentId = subitem.baseItem.parent
+        }
+        else {
+            basename = item.name
+            parentId = item.parent
+        }
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
             components.removeLast()
             basename = components.joined(separator: ".")
         }
         
-        if let imageitem = await CloudFactory.shared.data.getImage(storage: item.storage, parentId: parentId, baseName: basename) {
-            if let imagestream = await CloudFactory.shared.data.getData(storage: item.storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
-                let data = try? await imagestream.read()
-                if let data = data, let image = UIImage(data: data) {
+        if let imageitem = await CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
+            if let imagestream = await CloudFactory.shared.data.getData(storage: storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
+                if let data = try? await imagestream.read(), let image = UIImage(data: data) {
                     return image
                 }
             }

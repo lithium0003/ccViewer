@@ -28,6 +28,7 @@ void setParam(struct stream_param * param)
     player->param = param;
 
     player->arib_to_text = param->arib_convert_text != 0;
+    player->playback_rate = param->playback_rate;
 }
 
 void freeParam(struct stream_param * param)

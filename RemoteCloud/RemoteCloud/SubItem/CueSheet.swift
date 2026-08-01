@@ -10,7 +10,7 @@ import Foundation
 import CoreData
 
 public class CueSheetRemoteItem: RemoteSubItem {
-    let baseItem: RemoteItem
+    public let baseItem: RemoteItem
     var wavitem: RemoteItem!
     var wavStream: RemoteStream!
     let track: Int

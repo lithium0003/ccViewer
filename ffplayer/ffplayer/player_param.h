@@ -16,6 +16,7 @@ struct stream_param {
     double partial_start;
     double start_skip;
     double play_duration;
+    double playback_rate;
     int arib_convert_text;
     void *stream;
     void *player;

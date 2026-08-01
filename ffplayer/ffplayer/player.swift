@@ -48,6 +48,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     var soundPTS: Double
     var videoPTS: Double
     var lastVideoPTS = -1.0
+    var playbackRate: Double = 1.0
     var name: String
     var mediaDuration: Double
     var soundOnly = 0
@@ -514,8 +515,16 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             image = nil
             return
         }
-        var basename = item.name
-        let parentId = item.parent
+        let parentId: String
+        var basename = ""
+        if let subitem = item as? CueSheetRemoteItem {
+            basename = subitem.baseItem.name
+            parentId = subitem.baseItem.parent
+        }
+        else {
+            basename = item.name
+            parentId = item.parent
+        }
         var components = basename.components(separatedBy: ".")
         if components.count > 1 {
             components.removeLast()
@@ -650,6 +659,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     
     public func setPlaybackRate(_ rate: Double) {
         if let param {
+            playbackRate = rate
             run_set_playback_rate(param, rate)
         }
     }
@@ -772,6 +782,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     partial_start,
                     start_skip,
                     stop_limit,
+                    playbackRate,
                     aribText ? 1: 0,
                     selfref,
                     read_packet,

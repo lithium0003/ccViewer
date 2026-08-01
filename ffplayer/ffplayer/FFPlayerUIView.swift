@@ -161,15 +161,21 @@ public struct FFPlayerUIView: View {
                     .ignoresSafeArea()
             }
             if soundOnly {
-                Color.black.ignoresSafeArea()
                 if let im = mediaImage {
                     Image(uiImage: im)
                         .resizable()
                         .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .ignoresSafeArea()
                 }
                 else {
                     Image(systemName: "waveform")
-                        .scaleEffect(5)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 100, height: 100)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .ignoresSafeArea()
                 }
             }
             
@@ -215,6 +221,7 @@ public struct FFPlayerUIView: View {
                                 if playbackRate > 100 {
                                     playbackRate = 100
                                 }
+                                bridge.touchUpdate.send(Date())
                                 OSAtomicIncrement64(&buttonCalls)
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(750))
@@ -230,6 +237,7 @@ public struct FFPlayerUIView: View {
                             .buttonStyle(.glass)
                             Button {
                                 playbackRate = 1.0
+                                bridge.touchUpdate.send(Date())
                                 OSAtomicIncrement64(&buttonCalls)
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(750))
@@ -253,6 +261,7 @@ public struct FFPlayerUIView: View {
                                 if playbackRate < 0.5 {
                                     playbackRate = 0.5
                                 }
+                                bridge.touchUpdate.send(Date())
                                 OSAtomicIncrement64(&buttonCalls)
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(750))
@@ -381,6 +390,7 @@ public struct FFPlayerUIView: View {
                                     seekChapter = 0
                                     isChapterSeeking = true
                                 }
+                                bridge.touchUpdate.send(Date())
                                 OSAtomicIncrement64(&buttonCalls)
                                 seekChapter -= 1
                                 Task {
@@ -501,6 +511,7 @@ public struct FFPlayerUIView: View {
                                     seekChapter = 0
                                     isChapterSeeking = true
                                 }
+                                bridge.touchUpdate.send(Date())
                                 OSAtomicIncrement64(&buttonCalls)
                                 seekChapter += 1
                                 Task {
