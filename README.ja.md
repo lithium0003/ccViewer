@@ -37,3 +37,6 @@ cd work
 - CryptCloudViewer/CryptCloudViewer/Secret.xcconfig
 - CryptCloudViewer/CryptCloudViewer/Secret.swift
 あなた自身で取得した、それぞれのサービスでの client_id と secret に置き換えてください。
+
+## ヘルプ
+https://lithium03.info/ios/ccViewer.ja.html (日本語)
