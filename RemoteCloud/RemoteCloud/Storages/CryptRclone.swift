@@ -1211,9 +1211,14 @@ public class RemoteCryptRcloneStream: SlotStream {
 
     override func setLive(_ live: Bool) {
         if !live {
+            let sem = DispatchSemaphore(value: 0)
             Task {
+                defer {
+                    sem.signal()
+                }
                 await remote.cancel()
             }
+            sem.wait()
         }
     }
 

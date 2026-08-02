@@ -696,7 +696,8 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     var cancelTime = Date(timeIntervalSince1970: 0)
 
     public func cancel() async {
-        cancelTime = Date(timeIntervalSinceNow: 0.5)
+        cancelTime = Date(timeIntervalSinceNow: 0.1)
+        try? await Task.sleep(for: .milliseconds(100))
     }
     
     public func config() -> String {

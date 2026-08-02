@@ -212,7 +212,27 @@ public struct FFPlayerUIView: View {
             if (isMediaInfoShow || isSeeking) && !pipActive {
                 VStack {
                     Spacer()
-                    Spacer()
+                    if UIDevice.current.userInterfaceIdiom == .phone {
+                        HStack {
+                            Spacer()
+                            Button {
+                                rotateLock.toggle()
+                                bridge.lockrotateSender.send(rotateLock)
+                            } label: {
+                                if rotateLock {
+                                    Image(systemName: "rectangle.landscape.rotate")
+                                }
+                                else {
+                                    Image(systemName: "rectangle.landscape.rotate.slash")
+                                }
+                            }
+                            .controlSize(.mini)
+                            .buttonStyle(.glass)
+                        }
+                    }
+                    else {
+                        Spacer()
+                    }
                     HStack {
                         Spacer()
                         VStack {
@@ -348,21 +368,6 @@ public struct FFPlayerUIView: View {
                             .controlSize(.mini)
                             .buttonStyle(.glass)
                             Spacer()
-                            if UIDevice.current.userInterfaceIdiom == .phone {
-                                Button {
-                                    rotateLock.toggle()
-                                    bridge.lockrotateSender.send(rotateLock)
-                                } label: {
-                                    if rotateLock {
-                                        Image(systemName: "rectangle.landscape.rotate")
-                                    }
-                                    else {
-                                        Image(systemName: "rectangle.landscape.rotate.slash")
-                                    }
-                                }
-                                .controlSize(.mini)
-                                .buttonStyle(.glass)
-                            }
                         }
                     }
                     if let im = FrameworkResource.getImage(name: "subtitle") {

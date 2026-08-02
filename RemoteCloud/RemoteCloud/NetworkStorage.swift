@@ -128,7 +128,8 @@ public class NetworkStorage: RemoteStorageBase {
         }
         if await semaphore.wait(timeout: .seconds(5)) == .timeout {
             if cancelTime.timeIntervalSinceNow > 0 {
-                cancelTime = Date(timeIntervalSinceNow: 0.5)
+                cancelTime = Date(timeIntervalSinceNow: 0.1)
+                try await Task.sleep(for: .milliseconds(100))
                 throw CancellationError()
             }
             try? await Task.sleep(for: .milliseconds(Int(1000 * (callWait + Double.random(in: 0..<callWait)))))
@@ -572,9 +573,14 @@ public class RemoteNetworkStream: SlotStream {
 
     override func setLive(_ live: Bool) {
         if !live {
+            let sem = DispatchSemaphore(value: 0)
             Task {
+                defer {
+                    sem.signal()
+                }
                 await remote.cancel()
             }
+            sem.wait()
         }
     }
 

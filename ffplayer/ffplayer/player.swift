@@ -181,11 +181,8 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             let stream = Unmanaged<StreamBridge>.fromOpaque(ref_unwrapped).takeUnretainedValue()
             stream.isCancel = true
             stream.stream?.isLive = false
-            Task {
-                await stream.remoteItem?.cancel()
-                stream.stream = nil
-                stream.remoteItem = nil
-            }
+            stream.stream = nil
+            stream.remoteItem = nil
             stream.semaphore.signal()
         }
     }
@@ -845,7 +842,6 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     }
 
                     stream?.isLive = false
-                    await item.cancel()
                     remoteItem = nil
                     stream = nil
                     continuation.resume(returning: ret)
@@ -1011,21 +1007,14 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 return .noSuchContent
             }
             let interval = command.preferredIntervals[0]
-            var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
-            pos += Double(truncating: interval)
-            let pos64: Int64 = Int64(pos * 1000000)
-            if let param = self.param {
-                run_seek(param, pos64, 0)
-            }
+            self.onSeek(self.playPos + Double(truncating: interval))
             return .success
         }
         commandCenter.skipForwardCommand.preferredIntervals = [NSNumber(value: skip_nextsec)]
 
         commandCenter.nextTrackCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            if let param = self.param {
-                run_seek_chapter(param, Int32(1))
-            }
+            self.onSeekChapter(1)
             return .success
         }
 
@@ -1035,21 +1024,14 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 return .noSuchContent
             }
             let interval = command.preferredIntervals[0]
-            var pos = self.soundPTS.isNaN ? self.videoPTS : self.soundPTS
-            pos -= Double(truncating: interval)
-            let pos64: Int64 = Int64(pos * 1000000)
-            if let param = self.param {
-                run_seek(param, pos64, 0)
-            }
+            self.onSeek(self.playPos - Double(truncating: interval))
             return .success
         }
         commandCenter.skipBackwardCommand.preferredIntervals = [NSNumber(value: skip_prevsec)]
 
         commandCenter.previousTrackCommand.addTarget { [weak self] event in
             guard let self = self else {return .commandFailed}
-            if let param = self.param {
-                run_seek_chapter(param, Int32(-1))
-            }
+            self.onSeekChapter(-1)
             return .success
         }
 
@@ -1057,10 +1039,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             guard let self = self else {return .commandFailed}
             if let event = remoteEvent as? MPChangePlaybackPositionCommandEvent {
                 let pos = event.positionTime
-                let pos64: Int64 = Int64(pos * 1000000)
-                if let param = self.param {
-                    run_seek(param, pos64, 0)
-                }
+                self.onSeek(pos)
                 return .success
             }
             return .commandFailed
@@ -1085,7 +1064,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                 MPMediaItemPropertyTitle: name,
                 MPMediaItemPropertyArtwork: image,
                 MPNowPlayingInfoPropertyPlaybackRate: pause ? 0.0: 1.0,
-                MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: playPos,
                 MPMediaItemPropertyPlaybackDuration: mediaDuration,
             ]
         }
@@ -1093,7 +1072,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             MPNowPlayingInfoCenter.default().nowPlayingInfo = [
                 MPMediaItemPropertyTitle: name,
                 MPNowPlayingInfoPropertyPlaybackRate: pause ? 0.0: 1.0,
-                MPNowPlayingInfoPropertyElapsedPlaybackTime: soundPTS.isNaN ? videoPTS : soundPTS,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: playPos,
                 MPMediaItemPropertyPlaybackDuration: mediaDuration,
             ]
         }

@@ -328,7 +328,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CryptCloudViewer/CryptCloudViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 165;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_APP_SANDBOX = YES;
@@ -342,7 +342,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Use for protect to start app";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "${PRODUCT_NAME} uses the local network to discover Cast-enabled devices on your WiFi\nnetwork.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CryptCloudViewer uses the local network to discover Cast-enabled devices on your WiFi\nnetwork.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -387,7 +387,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = CryptCloudViewer/CryptCloudViewer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 163;
+				CURRENT_PROJECT_VERSION = 165;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 7A9X38B4YU;
 				ENABLE_APP_SANDBOX = YES;
@@ -401,7 +401,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Use for protect to start app";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "${PRODUCT_NAME} uses the local network to discover Cast-enabled devices on your WiFi\nnetwork.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CryptCloudViewer uses the local network to discover Cast-enabled devices on your WiFi\nnetwork.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

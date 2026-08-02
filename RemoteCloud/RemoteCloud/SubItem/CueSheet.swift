@@ -172,9 +172,14 @@ public class CueSheetStream: SlotStream {
 
     override func setLive(_ live: Bool) {
         if !live {
+            let sem = DispatchSemaphore(value: 0)
             Task {
+                defer {
+                    sem.signal()
+                }
                 await remote.cancel()
             }
+            sem.wait()
         }
     }
 
@@ -218,11 +223,12 @@ public class CueSheetStream: SlotStream {
                 error = true
                 return
             }
-            if pos.lowerBound == 0 {
+            if pos.lowerBound < header.count {
                 if let data = try? await remote.read(start: Int64(wavOffset), length: len-Int64(header.count)) {
                     var result = Data()
                     result += header
                     result += data
+                    result = result[pos]
                     await buffer.store(pos: pos.lowerBound, data: result)
                 }
                 else {
