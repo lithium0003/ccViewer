@@ -668,7 +668,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
         initDoneSender.send(false)
 
-        var all_done = true
+        var all_done = remotes.count > 1
         for (storage, fileid) in remotes {
             if let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
                 all_done = all_done && p > 0

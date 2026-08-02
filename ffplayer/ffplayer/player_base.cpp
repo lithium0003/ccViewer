@@ -1608,6 +1608,9 @@ void audio_thread(Player *is)
     AVRational timebase = AV_TIME_BASE_Q;
     double head_pts = std::nan("");
     double last_playback_rate = 1.0;
+    ebur128_state* ebu_state = nullptr;
+    double current_gain = 1.0;
+    const double target_lufs = -14.0;
     
     while(true) {
         int ret;
@@ -1705,6 +1708,65 @@ void audio_thread(Player *is)
 
                     float *audio_buf = (float *)audio_frame_out.data[0];
                     int out_samples = audio_frame_out.nb_samples;
+                    int ch = audio_frame_out.ch_layout.nb_channels;
+                    int sample_rate = audio_frame_out.sample_rate;
+
+                    if (is->loudnorm) {
+                        if (!ebu_state || (int)ebu_state->samplerate != sample_rate || (int)ebu_state->channels != ch) {
+                            if (ebu_state) { ebur128_destroy(&ebu_state); }
+                            ebu_state = ebur128_init(ch, sample_rate, EBUR128_MODE_S);
+                        }
+                        
+                        if (ebu_state) {
+                            ebur128_add_frames_float(ebu_state, audio_buf, out_samples);
+                            
+                            double loudness = -70.0;
+                            ebur128_loudness_shortterm(ebu_state, &loudness);
+                            
+                            if (loudness < -60.0) loudness = -60.0;
+                            double target_gain = pow(10.0, (target_lufs - loudness) / 20.0);
+                            
+                            if (target_gain > 5.0) target_gain = 5.0;
+                            
+                            if (target_gain < current_gain) {
+                                current_gain = current_gain * 0.2 + target_gain * 0.8;
+                            } else {
+                                current_gain = current_gain * 0.95 + target_gain * 0.05;
+                            }
+                        }
+                    } else {
+                        if (ebu_state) {
+                            ebur128_destroy(&ebu_state);
+                            ebu_state = nullptr;
+                        }
+                        
+                        current_gain = current_gain * 0.95 + 1.0 * 0.05;
+                    }
+
+                    float max_peak = 0.0f;
+                    for (int i = 0; i < out_samples * ch; i++) {
+                        float abs_sample = fabs(audio_buf[i]);
+                        if (abs_sample > max_peak) max_peak = abs_sample;
+                    }
+
+                    if (max_peak * current_gain > 0.95f) {
+                        float safe_gain = 0.95f / max_peak;
+                        if (safe_gain < current_gain) {
+                            current_gain = safe_gain;
+                        }
+                    }
+                    
+                    if (fabs(current_gain - 1.0) > 0.01) {
+                        for (int i = 0; i < out_samples * ch; i++) {
+                            float sample = audio_buf[i] * (float)current_gain;
+                            
+                            if (sample > 1.0f) sample = 1.0f;
+                            else if (sample < -1.0f) sample = -1.0f;
+                            
+                            audio_buf[i] = sample;
+                        }
+                    }
+                    
                     {
                         std::unique_lock<std::mutex> lk(is->audio.audio_mutex);
                         is->audio.cond_full.wait(lk, [is, out_samples] { return is->IsQuit() || is->audio.write_idx + out_samples < is->audio.read_idx + is->audio.buf_length; });
@@ -1759,6 +1821,10 @@ failed_audio:
     is->setPause(stream->sound_stop(stream->stream) != 1);
 quit_audio:
     av_log(NULL, AV_LOG_INFO, "audio_thread loop end\n");
+    if (ebu_state) {
+        ebur128_destroy(&ebu_state);
+        ebu_state = nullptr;
+    }
     if(!__builtin_isfinite(stream->play_duration)) {
         while(!is->IsQuit()) {
             if(is->audio_clock_base < head_pts) {
@@ -1801,17 +1867,7 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
     snprintf(atempo_args, sizeof(atempo_args), "%f", this->playback_rate);
     if (avfilter_graph_create_filter(&filt_atempo, avfilter_get_by_name("atempo"), "atempo", atempo_args, NULL, graph) < 0)
         return false;
-    
-    AVFilterContext *filt_norm = NULL;
-    if(loudnorm) {
-        if (avfilter_graph_create_filter(&filt_norm,
-                                         avfilter_get_by_name("dynaudnorm"), "dynaudnorm",
-                                         "f=150:g=15",
-                                         NULL, graph) < 0) {
-            return false;
-        }
-    }
-    
+        
     filt_asink = avfilter_graph_alloc_filter(graph, avfilter_get_by_name("abuffersink"),
                                                  "ffplay_abuffersink");
     if (!filt_asink) {
@@ -1832,21 +1888,11 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
     if(avfilter_init_dict(filt_asink, NULL) < 0)
         return false;
     
-    if(filt_norm) {
-        if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
-            return false;
-        if (avfilter_link(filt_atempo, 0, filt_norm, 0) < 0)
-            return false;
-        if (avfilter_link(filt_norm, 0, filt_asink, 0) < 0)
-            return false;
-    }
-    else {
-        if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
-            return false;
-        if (avfilter_link(filt_atempo, 0, filt_asink, 0) < 0)
-            return false;
-    }
-    
+    if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
+        return false;
+    if (avfilter_link(filt_atempo, 0, filt_asink, 0) < 0)
+        return false;
+
     if(avfilter_graph_config(graph, NULL) < 0)
         return false;
     

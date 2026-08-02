@@ -21,6 +21,8 @@
 		3F9151D3236C10C700E5EF65 /* sound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F9151D1236C10C700E5EF65 /* sound.swift */; };
 		BE0572F22EC0CCB400515817 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572F12EC0CCB400515817 /* VideoToolbox.framework */; };
 		BE186EA82E9C0A1E002F6CC8 /* ffmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */; };
+		BE189AF7301F1CD600CA48CD /* ebur128.h in Headers */ = {isa = PBXBuildFile; fileRef = BE189AF5301F1CD600CA48CD /* ebur128.h */; };
+		BE189AF8301F1CD600CA48CD /* ebur128.c in Sources */ = {isa = PBXBuildFile; fileRef = BE189AF6301F1CD600CA48CD /* ebur128.c */; };
 		BE29134F2EB5483A00A22D12 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE29134E2EB5482D00A22D12 /* libbz2.tbd */; };
 		BE2913512EB5487F00A22D12 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913502EB5487600A22D12 /* libz.tbd */; };
 		BE2913532EB5489800A22D12 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913522EB5489100A22D12 /* libiconv.tbd */; };
@@ -46,6 +48,8 @@
 		3F9151D1236C10C700E5EF65 /* sound.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = sound.swift; sourceTree = "<group>"; };
 		BE0572F12EC0CCB400515817 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
 		BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = ffmpeg.a; sourceTree = "<group>"; };
+		BE189AF5301F1CD600CA48CD /* ebur128.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ebur128.h; path = libebur128/ebur128/ebur128.h; sourceTree = SOURCE_ROOT; };
+		BE189AF6301F1CD600CA48CD /* ebur128.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ebur128.c; path = libebur128/ebur128/ebur128.c; sourceTree = SOURCE_ROOT; };
 		BE29134E2EB5482D00A22D12 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
 		BE2913502EB5487600A22D12 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		BE2913522EB5489100A22D12 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
@@ -89,6 +93,8 @@
 		3C4009302242CB9D0028A45A /* ffplayer */ = {
 			isa = PBXGroup;
 			children = (
+				BE189AF5301F1CD600CA48CD /* ebur128.h */,
+				BE189AF6301F1CD600CA48CD /* ebur128.c */,
 				BE2D3D0C2EB0B27A006DF15C /* FFPlayerUIView.swift */,
 				3F9151D1236C10C700E5EF65 /* sound.swift */,
 				3F9151CF236C107A00E5EF65 /* Media.xcassets */,
@@ -127,6 +133,7 @@
 			files = (
 				3C40093F2242CB9D0028A45A /* ffplayer.h in Headers */,
 				3C11C10D224429EC006EA640 /* player_main.h in Headers */,
+				BE189AF7301F1CD600CA48CD /* ebur128.h in Headers */,
 				3F9151CD236C101A00E5EF65 /* packetQueue.hpp in Headers */,
 				3C11C10A22442985006EA640 /* player_param.h in Headers */,
 				3C11C1002243DDA6006EA640 /* player_base.hpp in Headers */,
@@ -206,6 +213,7 @@
 				3C4009722242DBA00028A45A /* player.swift in Sources */,
 				3F9151CE236C101A00E5EF65 /* packetQueue.cpp in Sources */,
 				3C11C0FF2243DDA6006EA640 /* player_base.cpp in Sources */,
+				BE189AF8301F1CD600CA48CD /* ebur128.c in Sources */,
 				3C11C10E224429EC006EA640 /* player_main.c in Sources */,
 			);
 		};

@@ -23,6 +23,8 @@ extern "C" {
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
+
+#include "ebur128.h"
 }
 
 #include <string>
@@ -35,6 +37,7 @@ extern "C" {
 #include <atomic>
 #include <list>
 #include <sstream>
+#include <cmath>
 
 #include "packetQueue.hpp"
 #include "player_param.h"
