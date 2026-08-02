@@ -80,6 +80,8 @@ struct CryptCloudViewerApp: App {
             UserDefaults.standard.set(true, forKey: "cloudPlaypos")
             UserDefaults.standard.set(true, forKey: "cloudPlaylist")
             UserDefaults.standard.set(true, forKey: "PDF_continuous")
+
+            UserDefaults.standard.set(true, forKey: "ffplay loudnorm")
         }
 
         if UserDefaults.standard.bool(forKey: "tutorial"), UserDefaults.standard.integer(forKey: "previousBuildNo") < 99 {

@@ -23,6 +23,7 @@ void *make_arg(char *name,
                double start_skip,
                double play_duration,
                double playback_rate,
+               int loudnorm,
                int arib_convert_text,
                void *object,
                int(*read_packet)(void *opaque, unsigned char *buf, int buf_size),
@@ -49,6 +50,7 @@ void *make_arg(char *name,
     param->start_skip = start_skip;
     param->play_duration = play_duration;
     param->playback_rate = playback_rate;
+    param->loudnorm = loudnorm;
     param->arib_convert_text = arib_convert_text;
     param->stream = object;
     param->read_packet = read_packet;

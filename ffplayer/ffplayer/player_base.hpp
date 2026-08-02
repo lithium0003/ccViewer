@@ -47,6 +47,7 @@ public:
     
     bool            arib_to_text = false;
     double          playback_rate = 1.0;
+    bool            loudnorm = true;
     
     double          media_duration = 0;
     double          anchor_video_offset = 0;

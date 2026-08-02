@@ -17,6 +17,7 @@ struct stream_param {
     double start_skip;
     double play_duration;
     double playback_rate;
+    int loudnorm;
     int arib_convert_text;
     void *stream;
     void *player;

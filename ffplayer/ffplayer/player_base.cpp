@@ -29,6 +29,7 @@ void setParam(struct stream_param * param)
 
     player->arib_to_text = param->arib_convert_text != 0;
     player->playback_rate = param->playback_rate;
+    player->loudnorm = param->loudnorm != 0;
 }
 
 void freeParam(struct stream_param * param)
@@ -1623,6 +1624,7 @@ void audio_thread(Player *is)
                     av_log(NULL, AV_LOG_INFO, "audio buffer flush\n");
                     avcodec_flush_buffers(aCodecCtx);
                     is->clear_soundbufer();
+                    is->audio.audio_filter_src.freq = 0;
                     pkt = { 0 };
                     inpkt = &pkt;
                     continue;
@@ -1795,10 +1797,20 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
 
     AVFilterContext *filt_atempo = NULL;
     char atempo_args[32] = { 0 };
-    // ※ atempoは 0.5 to 100.0 limit
+    // ※ atempo limits 0.5 to 100.0
     snprintf(atempo_args, sizeof(atempo_args), "%f", this->playback_rate);
     if (avfilter_graph_create_filter(&filt_atempo, avfilter_get_by_name("atempo"), "atempo", atempo_args, NULL, graph) < 0)
         return false;
+    
+    AVFilterContext *filt_norm = NULL;
+    if(loudnorm) {
+        if (avfilter_graph_create_filter(&filt_norm,
+                                         avfilter_get_by_name("dynaudnorm"), "dynaudnorm",
+                                         "f=150:g=15",
+                                         NULL, graph) < 0) {
+            return false;
+        }
+    }
     
     filt_asink = avfilter_graph_alloc_filter(graph, avfilter_get_by_name("abuffersink"),
                                                  "ffplay_abuffersink");
@@ -1820,10 +1832,20 @@ bool Player::configure_audio_filters(AVFilterContext **filt_in, AVFilterContext 
     if(avfilter_init_dict(filt_asink, NULL) < 0)
         return false;
     
-    if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
-        return false;
-    if (avfilter_link(filt_atempo, 0, filt_asink, 0) < 0)
-        return false;
+    if(filt_norm) {
+        if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
+            return false;
+        if (avfilter_link(filt_atempo, 0, filt_norm, 0) < 0)
+            return false;
+        if (avfilter_link(filt_norm, 0, filt_asink, 0) < 0)
+            return false;
+    }
+    else {
+        if (avfilter_link(filt_asrc, 0, filt_atempo, 0) < 0)
+            return false;
+        if (avfilter_link(filt_atempo, 0, filt_asink, 0) < 0)
+            return false;
+    }
     
     if(avfilter_graph_config(graph, NULL) < 0)
         return false;

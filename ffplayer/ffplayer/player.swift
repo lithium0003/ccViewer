@@ -668,7 +668,17 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         }
         initDoneSender.send(false)
 
+        var all_done = true
+        for (storage, fileid) in remotes {
+            if let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
+                all_done = all_done && p > 0
+            }
+            else {
+                all_done = false
+            }
+        }
         let aribText = UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text")
+        let loudnorm = UserDefaults.standard.bool(forKey: "ffplay loudnorm")
         var ret = -1
         var count = 0
 
@@ -699,6 +709,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             }
             if idx >= remotes.count {
                 idx = 0
+                all_done = true
             }
             if idx == 0, shuffle {
                 remotes = remotes.shuffled()
@@ -756,7 +767,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             await setupArtwork(idx)
 
             var partial_start = Double.nan
-            if !playlist, let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
+            if !playlist, !all_done, let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
                 if remotes.count > 1 {
                     if p < 0 || p > 0.99 {
                         curIdx += 1
@@ -780,6 +791,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     start_skip,
                     stop_limit,
                     playbackRate,
+                    loudnorm ? 1: 0,
                     aribText ? 1: 0,
                     selfref,
                     read_packet,

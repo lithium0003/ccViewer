@@ -50,6 +50,7 @@ struct SettingUIView: View {
         }
     }
     @State var aribText = UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text")
+    @State var loudnorm = UserDefaults.standard.bool(forKey: "ffplay loudnorm")
 
     @State var aribTextCast = UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text_cast")
     @State var castTextImageIdx = UserDefaults.standard.integer(forKey: "Cast_text_image_idx") {
@@ -259,6 +260,12 @@ struct SettingUIView: View {
             }
 
             Section {
+                HStack {
+                    Toggle("Normalize volume", isOn: $loudnorm)
+                        .onChange(of: loudnorm) {
+                            UserDefaults.standard.set(loudnorm, forKey: "ffplay loudnorm")
+                        }
+                }
                 HStack {
                     Toggle("ARIB subtitle convert to text", isOn: $aribText)
                         .onChange(of: aribText) {
