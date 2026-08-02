@@ -1566,7 +1566,7 @@ double Player::load_sound(float *buffer, int num_packet)
     //av_log(NULL, AV_LOG_INFO, " sound clock %f, offset %f, anchor %f\n", clock, anchor_sound_offset, anchor_sound_pts);
     
     struct stream_param *stream = (struct stream_param *)param;
-    if (__builtin_isfinite(stream->play_duration)) {
+    if (stream && __builtin_isfinite(stream->play_duration)) {
         double s = 0;
         if (__builtin_isfinite(stream->start_skip)) {
             s = stream->start_skip;
