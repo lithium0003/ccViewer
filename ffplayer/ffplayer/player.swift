@@ -689,12 +689,21 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         initDoneSender.send(false)
 
         var all_done = remotes.count > 1
-        for (storage, fileid) in remotes {
-            if let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
-                all_done = all_done && p > 0
-            }
-            else {
-                all_done = false
+        if !playlist {
+            await withTaskGroup { group in
+                for (storage, fileid) in remotes {
+                    group.addTask {
+                        if let p = await CloudFactory.shared.mark.getMark(storage: storage, targetID: fileid) {
+                            p > 0
+                        }
+                        else {
+                            false
+                        }
+                    }
+                }
+                for await b in group {
+                    all_done = all_done && b
+                }
             }
         }
         let aribText = UserDefaults.standard.bool(forKey: "ARIB_subtitle_convert_to_text")
