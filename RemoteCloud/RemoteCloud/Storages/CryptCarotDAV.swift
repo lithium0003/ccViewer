@@ -469,7 +469,7 @@ public class RemoteCryptCarotDAVStream: SlotStream {
     override func setLive(_ live: Bool) {
         if !live {
             let sem = DispatchSemaphore(value: 0)
-            Task {
+            Task(priority: .userInitiated) {
                 defer {
                     sem.signal()
                 }

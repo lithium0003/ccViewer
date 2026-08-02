@@ -1610,7 +1610,7 @@ void audio_thread(Player *is)
     double last_playback_rate = 1.0;
     ebur128_state* ebu_state = nullptr;
     double current_gain = 1.0;
-    const double target_lufs = -14.0;
+    const double target_lufs = -16.0;
     
     while(true) {
         int ret;
@@ -1724,14 +1724,16 @@ void audio_thread(Player *is)
                             ebur128_loudness_shortterm(ebu_state, &loudness);
                             
                             if (loudness < -60.0) loudness = -60.0;
-                            double target_gain = pow(10.0, (target_lufs - loudness) / 20.0);
-                            
-                            if (target_gain > 5.0) target_gain = 5.0;
+                            double target_gain = 1.0;
+                            if(loudness > -45.0) {
+                                target_gain = pow(10.0, (target_lufs - loudness) / 20.0);
+                                if (target_gain > 5.0) target_gain = 5.0;
+                            }
                             
                             if (target_gain < current_gain) {
                                 current_gain = current_gain * 0.2 + target_gain * 0.8;
                             } else {
-                                current_gain = current_gain * 0.95 + target_gain * 0.05;
+                                current_gain = current_gain * 0.99 + target_gain * 0.01;
                             }
                         }
                     } else {
@@ -1744,9 +1746,20 @@ void audio_thread(Player *is)
                     }
 
                     float max_peak = 0.0f;
+                    float sum_squares = 0.0f;
                     for (int i = 0; i < out_samples * ch; i++) {
                         float abs_sample = fabs(audio_buf[i]);
                         if (abs_sample > max_peak) max_peak = abs_sample;
+                        sum_squares += abs_sample * abs_sample;
+                    }
+                    float current_rms = sqrt(sum_squares / (out_samples * ch));
+                    
+                    float comfort_rms_limit = 0.25f;
+                    if (current_rms * current_gain > comfort_rms_limit) {
+                        float comfort_gain = comfort_rms_limit / current_rms;
+                        if (comfort_gain < current_gain) {
+                            current_gain = comfort_gain;
+                        }
                     }
 
                     if (max_peak * current_gain > 0.95f) {

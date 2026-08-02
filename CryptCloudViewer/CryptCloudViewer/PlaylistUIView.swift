@@ -413,7 +413,12 @@ struct PlaylistUIView: View {
 
             ToolbarItem(placement: .cancellationAction) {
                 Button {
-                    env.path.removeAll()
+                    Task {
+                        while !env.path.isEmpty {
+                            env.path.removeLast()
+                            await Task.yield()
+                        }
+                    }
                 } label: {
                     Image(systemName: "house")
                 }

@@ -61,6 +61,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     }
     var pause = false
 
+    var failCount = 0
+    let maxFailCount = 20
+    
     var loop: Bool {
         UserDefaults.standard.bool(forKey: "loop")
     }
@@ -219,26 +222,37 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     }
                     let data = try? await rstream.read(position: stream.position, length: Int(buf_size))
                     if stream.isCancel {
+                        stream.failCount = 0
                         return
                     }
                     assert(data?.count ?? 0 <= Int(buf_size))
                     if let data, data.count > 0 {
                         count = data.copyBytes(to: buf_array)
                         stream.position += Int64(count)
+                        stream.failCount = 0
                         break
                     }
 
-                    // error, reopen stream
-                    print("read reopen stream")
-                    stream.stream = nil
-                    try? await Task.sleep(for: .seconds(2))
-                    stream.stream = await stream.remoteItem?.open()
+                    if stream.failCount < stream.maxFailCount {
+                        stream.failCount += 1
+                        // error, reopen stream
+                        print("read reopen stream")
+                        stream.stream = nil
+                        try? await Task.sleep(for: .seconds(2))
+                        stream.stream = await stream.remoteItem?.open()
+                    }
+                    else {
+                        return
+                    }
                 }
             }
             semaphore.wait()
+            if stream.failCount < stream.maxFailCount {
+                return Int32(count)
+            }
         }
         //print("read count \(count)")
-        return Int32(count)
+        return averror_exit
     }
 
     let seek: @convention(c) (UnsafeMutableRawPointer?, Int64, Int32) -> Int64 = {
@@ -631,12 +645,18 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                     inc += 1
                 }
                 currentCapter += inc
-                if currentCapter >= 0, currentCapter < dvdItem.chapters.count {
-                    let st = dvdItem.chapters[0..<currentCapter].map({ $0.1 }).reduce(0, +)
-                    let tm = dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +)
-                    run_seek(param, Int64(tm * 1000000), st)
+                if currentCapter < 0 {
+                    run_seek_chapter(param, -1)
                     return
                 }
+                if currentCapter >= dvdItem.chapters.count {
+                    run_seek_chapter(param, 1)
+                    return
+                }
+                let st = dvdItem.chapters[0..<currentCapter].map({ $0.1 }).reduce(0, +)
+                let tm = dvdItem.chapters[0..<currentCapter].map({ $0.2 }).reduce(0, +)
+                run_seek(param, Int64(tm * 1000000), st)
+                return
             }
             run_seek_chapter(param, Int32(inc))
         }

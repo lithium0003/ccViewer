@@ -240,6 +240,7 @@ public class PlayMark {
         if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
             await setCloudMark(storage: storage, targetID: targetID, parentID: parentID, position: position)
         }
+        try? await Task.sleep(for: .milliseconds(500))
     }
     
     func setCloudMark(storage: String, targetID: String, parentID: String, position: Double?) async {
