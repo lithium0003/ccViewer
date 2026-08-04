@@ -1728,12 +1728,15 @@ void audio_thread(Player *is)
                             if(loudness > -45.0) {
                                 target_gain = pow(10.0, (target_lufs - loudness) / 20.0);
                                 if (target_gain > 5.0) target_gain = 5.0;
+
+                                if (target_gain < current_gain) {
+                                    current_gain = current_gain * 0.2 + target_gain * 0.8;
+                                } else {
+                                    current_gain = current_gain * 0.99 + target_gain * 0.01;
+                                }
                             }
-                            
-                            if (target_gain < current_gain) {
-                                current_gain = current_gain * 0.2 + target_gain * 0.8;
-                            } else {
-                                current_gain = current_gain * 0.99 + target_gain * 0.01;
+                            else {
+                                current_gain = current_gain * 0.995 + target_gain * 0.005;
                             }
                         }
                     } else {
@@ -1746,13 +1749,25 @@ void audio_thread(Player *is)
                     }
 
                     float max_peak = 0.0f;
-                    float sum_squares = 0.0f;
-                    for (int i = 0; i < out_samples * ch; i++) {
-                        float abs_sample = fabs(audio_buf[i]);
-                        if (abs_sample > max_peak) max_peak = abs_sample;
-                        sum_squares += abs_sample * abs_sample;
+                    float sum_squares[32] = {0.0f};
+
+                    for (int i = 0; i < out_samples; i++) {
+                        for (int c = 0; c < ch; c++) {
+                            float abs_sample = fabs(audio_buf[i * ch + c]);
+                            if (abs_sample > max_peak) max_peak = abs_sample;
+                            if(c < 32) {
+                                sum_squares[c] += abs_sample * abs_sample;
+                            }
+                        }
                     }
-                    float current_rms = sqrt(sum_squares / (out_samples * ch));
+
+                    float current_rms = 0.0f;
+                    for (int c = 0; c < std::min(ch, 32); c++) {
+                        float ch_rms = sqrt(sum_squares[c] / out_samples);
+                        if (ch_rms > current_rms) {
+                            current_rms = ch_rms;
+                        }
+                    }
                     
                     float comfort_rms_limit = 0.25f;
                     if (current_rms * current_gain > comfort_rms_limit) {

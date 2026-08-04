@@ -322,7 +322,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     func encodeMetadata(key: String, metadata: String) async -> String? {
-        var version = 3
+        var version = 2
         if key.count != 64 || !key.allSatisfy({ "0123456789ABCDEFabcdef".contains($0) }) {
             version = 2
         }
