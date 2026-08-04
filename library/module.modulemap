@@ -1,0 +1,9 @@
+module libssh {
+    umbrella "install/include/libssh"
+    exclude header "install/include/libssh/libsshpp.hpp"
+    export *
+    link "crypto"
+    link "ssl"
+    link "z"
+    link "ssh"
+}

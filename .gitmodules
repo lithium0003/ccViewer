@@ -1,3 +1,9 @@
 [submodule "ffplayer/libebur128"]
 	path = ffplayer/libebur128
 	url = https://github.com/jiixyj/libebur128.git
+[submodule "library/libssh"]
+	path = library/libssh
+	url = https://gitlab.com/libssh/libssh-mirror.git
+[submodule "library/openssl"]
+	path = library/openssl
+	url = https://github.com/openssl/openssl.git
