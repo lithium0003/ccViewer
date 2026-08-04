@@ -18,6 +18,13 @@ Ver 2.0.0より、サポートOSをiOS26以降にしました。
 ## コンパイル方法
 これまでにセットアップしていない場合は、次のコマンドで実行環境を準備します。
 
+### submoduleの準備
+cloneする際に、`git clone --recursive`しなかった場合は、次の手順でsubmodleを準備します。
+```bash
+cd ccViewer
+git submodule update --init --recursive
+```
+
 ### 依存パッケージの準備
 
 ```bash
