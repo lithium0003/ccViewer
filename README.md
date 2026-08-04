@@ -15,6 +15,12 @@ In version 2.0.0, rewrite for iOS26 and broken features fix. Support OS is swich
 ## how to compile
 if you did not set up, run these commands.
 
+### prepare submodules
+```bash
+cd ccViewer
+git submodule update --init --recursive
+```
+
 ### prepare depencency
 
 ```bash
