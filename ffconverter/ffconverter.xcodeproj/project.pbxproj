@@ -20,11 +20,11 @@
 		3FA954D82322EE13005B086A /* server.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D72322EE13005B086A /* server.swift */; };
 		3FA954DA23230EA1005B086A /* mpegts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954D923230EA1005B086A /* mpegts.swift */; };
 		3FA954DC23230F38005B086A /* encoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA954DB23230F38005B086A /* encoder.swift */; };
-		BE0572F52EC1B1CF00515817 /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572F42EC1B1CF00515817 /* RemoteCloud.framework */; };
 		BE0572FD2EC1BB4C00515817 /* ffmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572FC2EC1BB4C00515817 /* ffmpeg.a */; };
 		BE0572FF2EC1BB6A00515817 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572FE2EC1BB6000515817 /* libbz2.tbd */; };
 		BE0573012EC1BB8100515817 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0573002EC1BB7B00515817 /* libz.tbd */; };
 		BE0573032EC1BB9A00515817 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0573022EC1BB9000515817 /* libiconv.tbd */; };
+		BE18D2A930221A9900CA48CD /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE0572F42EC1B1CF00515817 /* RemoteCloud.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,10 +57,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BE18D2A930221A9900CA48CD /* RemoteCloud.framework in Frameworks */,
 				BE0572FF2EC1BB6A00515817 /* libbz2.tbd in Frameworks */,
 				BE0573012EC1BB8100515817 /* libz.tbd in Frameworks */,
 				BE0572FD2EC1BB4C00515817 /* ffmpeg.a in Frameworks */,
-				BE0572F52EC1B1CF00515817 /* RemoteCloud.framework in Frameworks */,
 				BE0573032EC1BB9A00515817 /* libiconv.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -378,7 +378,10 @@
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
-				HEADER_SEARCH_PATHS = ../work/output/include;
+				HEADER_SEARCH_PATHS = (
+					../work/output/include,
+					../library/install/include,
+				);
 				INFOPLIST_FILE = ffconverter/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -387,13 +390,17 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+					../library/install/lib,
+				);
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverter;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_INCLUDE_PATHS = ../library;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -414,7 +421,10 @@
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
-				HEADER_SEARCH_PATHS = ../work/output/include;
+				HEADER_SEARCH_PATHS = (
+					../work/output/include,
+					../library/install/include,
+				);
 				INFOPLIST_FILE = ffconverter/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -423,13 +433,17 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+					../library/install/lib,
+				);
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffconverter;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_INCLUDE_PATHS = ../library;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USER_HEADER_SEARCH_PATHS = "";

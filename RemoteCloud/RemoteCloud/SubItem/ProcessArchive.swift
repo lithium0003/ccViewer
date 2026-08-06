@@ -24,6 +24,10 @@ public class ArchiveBridge {
         self.item = item
     }
     
+    deinit {
+        self.stream?.isLive = false
+    }
+    
     func setStream(_ stream: RemoteStream) async {
         self.stream = stream
         self.offset = 0

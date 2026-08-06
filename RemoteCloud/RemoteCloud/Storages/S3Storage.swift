@@ -248,13 +248,10 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
         return nil
     }
     
-    // MARK: - ファイル一覧のUI反映 (CoreDataへの保存)
-    
     override func listChildren(fileId: String, path: String) async {
         let viewContext = CloudFactory.shared.data.viewContext
         let storage = storageName ?? ""
         
-        // 1. CoreData内の古いキャッシュ(同じ親フォルダを持つ要素)をクリア
         await viewContext.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
@@ -264,16 +261,10 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
                 }
             }
         }
-        
-        // 2. S3から最新のリストを取得
         if let items = await listFolder(path: fileId) {
-            
-            // 3. 取得したアイテムをCoreDataに書き込む
             for item in items {
                 await storeItem(item: item, parentId: fileId, parentPath: path, context: viewContext)
             }
-            
-            // 4. 変更を保存してUIを更新
             await viewContext.perform {
                 try? viewContext.save()
             }
@@ -333,9 +324,17 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     func downloadChunk(fileId: String, range: ClosedRange<Int64>) async -> Data? {
+        if let cache = await CloudFactory.shared.cache.getCache(storage: storageName ?? "", id: fileId, offset: range.lowerBound, size: Int64(range.count)) {
+            if let data = try? Data(contentsOf: cache) {
+                os_log("%{public}@", log: log, type: .debug, "hit cache(:\(storageName ?? "") \(fileId) \(range.lowerBound) \(range.upperBound))")
+                return data
+            }
+        }
         do {
             let headers = ["Range": "bytes=\(range.lowerBound)-\(range.upperBound)"]
-            return try await sendS3Request(method: "GET", path: fileId, additionalHeaders: headers)
+            let data = try await sendS3Request(method: "GET", path: fileId, additionalHeaders: headers)
+            await CloudFactory.shared.cache.saveCache(storage: storageName ?? "", id: fileId, offset: range.lowerBound, data: data)
+            return data
         } catch {
             os_log("%{public}@", log: log, type: .error, "S3 Download Error: \(error.localizedDescription)")
             return nil

@@ -241,7 +241,10 @@ public class dataItems {
         return await viewContext.perform {
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+            if let results = try? viewContext.fetch(fetchrequest) as? [RemoteData], let result = results.first {
+                return result
+            }
+            return nil
         }
     }
 
@@ -250,7 +253,10 @@ public class dataItems {
         return await viewContext.perform {
             let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             fetchrequest.predicate = NSPredicate(format: "path == %@", path)
-            return ((try? viewContext.fetch(fetchrequest)) as? [RemoteData])?.first
+            if let results = try? viewContext.fetch(fetchrequest) as? [RemoteData], let result = results.first {
+                return result
+            }
+            return nil
         }
     }
 

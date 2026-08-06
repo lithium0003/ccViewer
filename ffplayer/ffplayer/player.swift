@@ -237,6 +237,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                         stream.failCount += 1
                         // error, reopen stream
                         print("read reopen stream")
+                        rstream.isLive = false
                         stream.stream = nil
                         try? await Task.sleep(for: .seconds(2))
                         stream.stream = await stream.remoteItem?.open()
@@ -544,7 +545,9 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
         
         if let imageitem = await CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
             if let imagestream = await CloudFactory.shared.data.getData(storage: storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
-                
+                defer {
+                    imagestream.isLive = false
+                }
                 if let data = try? await imagestream.read(), let image = UIImage(data: data) {
                     self.image = MPMediaItemArtwork(boundsSize: image.size) { size in
                         return image

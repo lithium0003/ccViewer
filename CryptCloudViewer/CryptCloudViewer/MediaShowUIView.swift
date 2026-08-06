@@ -271,6 +271,9 @@ class CustomPlayer: NSObject {
         
         if let imageitem = await CloudFactory.shared.data.getImage(storage: storage, parentId: parentId, baseName: basename) {
             if let imagestream = await CloudFactory.shared.data.getData(storage: storage, fileId: imageitem.id ?? "")?.getItem()?.open() {
+                defer {
+                    imagestream.isLive = false
+                }
                 if let data = try? await imagestream.read(), let image = UIImage(data: data) {
                     return image
                 }

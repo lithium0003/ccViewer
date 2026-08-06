@@ -456,14 +456,16 @@ public class SlotStream: RemoteStream {
                 }
                 await subFillBuffer(pos: pos1...pos2)
             }
-            group.addTask { [self] in
-                let slot = size / SlotStream.bufSize
-                let pos1 = slot * SlotStream.bufSize
-                let pos2 = min(size-1, (slot+1) * SlotStream.bufSize - 1)
-                guard pos1 <= pos2 else {
-                    return
+            if size / SlotStream.bufSize > 0 {
+                group.addTask { [self] in
+                    let slot = size / SlotStream.bufSize
+                    let pos1 = slot * SlotStream.bufSize
+                    let pos2 = min(size-1, (slot+1) * SlotStream.bufSize - 1)
+                    guard pos1 <= pos2 else {
+                        return
+                    }
+                    await subFillBuffer(pos: pos1...pos2)
                 }
-                await subFillBuffer(pos: pos1...pos2)
             }
         }
     }

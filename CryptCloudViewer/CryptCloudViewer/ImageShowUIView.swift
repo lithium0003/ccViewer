@@ -117,13 +117,13 @@ struct ImageShowUIView: View {
                     minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
                     totalZoom = minZoom
                 }
-                .onChange(of: image) {
-                    minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
-                    totalZoom = minZoom
-                    offset = .zero
-                }
                 .onChange(of: geo.size) {
                     minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                }
+                .onChange(of: imageIdx) {
+                    minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                    totalZoom = minZoom
+                    position.scrollTo(id: 0, anchor: .center)
                 }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0)
@@ -214,6 +214,9 @@ struct ImageShowUIView: View {
                 guard let remoteItem else { return }
                 let total = remoteItem.size
                 let remoteData = await remoteItem.open()
+                defer {
+                    remoteData.isLive = false
+                }
                 do {
                     let data = try await remoteData.read(onProgress: { p in
                         if total > 0 {
@@ -234,7 +237,6 @@ struct ImageShowUIView: View {
                 }
                 catch {
                     print(error)
-                    remoteData.isLive = false
                 }
             }
             
@@ -260,37 +262,43 @@ struct ImageShowUIView: View {
                         if Task.isCancelled {
                             break
                         }
+                        await Task.yield()
                         if curIdx + k < files.count {
                             let itemData = files[curIdx + k]
                             if let id = itemData.id {
                                 group0.addTask {
-                                    try? await withThrowingTaskGroup { group in
-                                        group.addTask { ()->(Int, UIImage)? in
-                                            let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
-                                            try Task.checkCancellation()
-                                            if let remoteData = await item?.open() {
-                                                do {
-                                                    let data = try await remoteData.read()
-                                                    if let data, let im = UIImage(data: data) {
-                                                        return (curIdx + k, im)
+                                    let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
+                                    if let size = item?.size, size > 0 {
+                                        return try? await withThrowingTaskGroup { group in
+                                            group.addTask { ()->(Int, UIImage)? in
+                                                try Task.checkCancellation()
+                                                if let remoteData = await item?.open() {
+                                                    defer {
+                                                        remoteData.isLive = false
+                                                    }
+                                                    do {
+                                                        let data = try await remoteData.read()
+                                                        if let data, let im = UIImage(data: data) {
+                                                            return (curIdx + k, im)
+                                                        }
+                                                    }
+                                                    catch {
+                                                        print(error)
                                                     }
                                                 }
-                                                catch {
-                                                    print(error)
-                                                    remoteData.isLive = false
-                                                }
+                                                return nil
                                             }
-                                            return nil
+                                            group.addTask {
+                                                try await Task.sleep(for: .seconds(max(20, Double(size)/10000)))
+                                                print("timeout")
+                                                return nil
+                                            }
+                                            let ret = try await group.next()!
+                                            group.cancelAll()
+                                            return ret
                                         }
-                                        group.addTask {
-                                            try await Task.sleep(for: .seconds(10))
-                                            print("timeout")
-                                            return nil
-                                        }
-                                        let ret = try await group.next()!
-                                        group.cancelAll()
-                                        return ret
                                     }
+                                    return nil
                                 }
                                 count += 1
                             }
@@ -299,38 +307,44 @@ struct ImageShowUIView: View {
                             let itemData = files[curIdx - k]
                             if let id = itemData.id {
                                 group0.addTask {
-                                    try? await withThrowingTaskGroup { group in
-                                        group.addTask { ()->(Int, UIImage)? in
-                                            let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
-                                            try Task.checkCancellation()
-                                            if let remoteData = await item?.open() {
-                                                do {
-                                                    let data = try await remoteData.read()
-                                                    if let data, let im = UIImage(data: data) {
-                                                        return (curIdx - k, im)
+                                    let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
+                                    if let size = item?.size, size > 0 {
+                                        return try? await withThrowingTaskGroup { group in
+                                            group.addTask { ()->(Int, UIImage)? in
+                                                try Task.checkCancellation()
+                                                if let remoteData = await item?.open() {
+                                                    defer {
+                                                        remoteData.isLive = false
+                                                    }
+                                                    do {
+                                                        let data = try await remoteData.read()
+                                                        if let data, let im = UIImage(data: data) {
+                                                            return (curIdx - k, im)
+                                                        }
+                                                    }
+                                                    catch {
+                                                        print(error)
                                                     }
                                                 }
-                                                catch {
-                                                    print(error)
-                                                    remoteData.isLive = false
-                                                }
+                                                return nil
                                             }
-                                            return nil
+                                            group.addTask {
+                                                try await Task.sleep(for: .seconds(max(20, Double(size)/10000)))
+                                                print("timeout")
+                                                return nil
+                                            }
+                                            let ret = try await group.next()!
+                                            group.cancelAll()
+                                            return ret
                                         }
-                                        group.addTask {
-                                            try await Task.sleep(for: .seconds(10))
-                                            print("timeout")
-                                            return nil
-                                        }
-                                        let ret = try await group.next()!
-                                        group.cancelAll()
-                                        return ret
                                     }
+                                    return nil
                                 }
                                 count += 1
                             }
                         }
                         while count > 3 {
+                            await Task.yield()
                             if let next = await group0.next(), let (i, im) = next {
                                 ret[i] = im
                                 images = ret.sorted(by: { $0.key < $1.key }).map(\.value)

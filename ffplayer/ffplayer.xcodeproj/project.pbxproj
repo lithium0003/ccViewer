@@ -23,11 +23,11 @@
 		BE186EA82E9C0A1E002F6CC8 /* ffmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE186EA72E9C0A1E002F6CC8 /* ffmpeg.a */; };
 		BE189AF7301F1CD600CA48CD /* ebur128.h in Headers */ = {isa = PBXBuildFile; fileRef = BE189AF5301F1CD600CA48CD /* ebur128.h */; };
 		BE189AF8301F1CD600CA48CD /* ebur128.c in Sources */ = {isa = PBXBuildFile; fileRef = BE189AF6301F1CD600CA48CD /* ebur128.c */; };
+		BE18D2AC30221AA200CA48CD /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE4DF4F72EBEC00100BE2C5F /* RemoteCloud.framework */; };
 		BE29134F2EB5483A00A22D12 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE29134E2EB5482D00A22D12 /* libbz2.tbd */; };
 		BE2913512EB5487F00A22D12 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913502EB5487600A22D12 /* libz.tbd */; };
 		BE2913532EB5489800A22D12 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = BE2913522EB5489100A22D12 /* libiconv.tbd */; };
 		BE2D3D0D2EB0B27A006DF15C /* FFPlayerUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE2D3D0C2EB0B27A006DF15C /* FFPlayerUIView.swift */; };
-		BE4DF4F82EBEC00100BE2C5F /* RemoteCloud.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE4DF4F72EBEC00100BE2C5F /* RemoteCloud.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,8 +63,8 @@
 			files = (
 				BE29134F2EB5483A00A22D12 /* libbz2.tbd in Frameworks */,
 				BE2913512EB5487F00A22D12 /* libz.tbd in Frameworks */,
+				BE18D2AC30221AA200CA48CD /* RemoteCloud.framework in Frameworks */,
 				BE0572F22EC0CCB400515817 /* VideoToolbox.framework in Frameworks */,
-				BE4DF4F82EBEC00100BE2C5F /* RemoteCloud.framework in Frameworks */,
 				BE186EA82E9C0A1E002F6CC8 /* ffmpeg.a in Frameworks */,
 				BE2913532EB5489800A22D12 /* libiconv.tbd in Frameworks */,
 			);
@@ -382,7 +382,10 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				HEADER_SEARCH_PATHS = ../work/output/include;
+				HEADER_SEARCH_PATHS = (
+					../work/output/include,
+					../library/install/include,
+				);
 				INFOPLIST_FILE = ffplayer/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -391,7 +394,10 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+					../library/install/lib,
+				);
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayer;
@@ -399,6 +405,7 @@
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_INCLUDE_PATHS = ../library;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -420,7 +427,10 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_OPTIMIZATION_LEVEL = s;
-				HEADER_SEARCH_PATHS = ../work/output/include;
+				HEADER_SEARCH_PATHS = (
+					../work/output/include,
+					../library/install/include,
+				);
 				INFOPLIST_FILE = ffplayer/Info.plist;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -429,13 +439,17 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+					../library/install/lib,
+				);
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = info.lithium03.ffplayer;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
+				SWIFT_INCLUDE_PATHS = ../library;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
