@@ -20,6 +20,10 @@ if you did not set up, run these commands.
 cd ccViewer
 git submodule update --init --recursive
 ```
+```bash
+cd library
+./build.sh
+```
 
 ### prepare depencency
 
