@@ -24,6 +24,11 @@ cloneする際に、`git clone --recursive`しなかった場合は、次の手�
 cd ccViewer
 git submodule update --init --recursive
 ```
+依存モジュールのコンパイルを行います。
+```bash
+cd library
+./build.sh
+```
 
 ### 依存パッケージの準備
 
