@@ -1,5 +1,5 @@
 //
-//  CryptRclone.swift
+//  CryptGocryptfs.swift
 //  RemoteCloud
 //
 //  Created by rei6 on 2019/03/15.
@@ -132,12 +132,12 @@ public class CryptGocryptfs: ChildStorage {
     var dataKey: [UInt8] = []
     var nameKey: [UInt8] = []
 
-    let fileHeaderVersion: [UInt8] = [0, 2]
-    let fileHeaderSize: Int64 = 18
-    let blockNonceSize: Int64 = 16
-    let blockTagSize: Int64 = 16
-    let blockDataSize: Int64 = 4 * 1024
-    let chunkSize: Int64 = 16 + 4 * 1024 + 16
+    static let fileHeaderVersion: [UInt8] = [0, 2]
+    static let fileHeaderSize: Int64 = 18
+    static let blockNonceSize: Int64 = 16
+    static let blockTagSize: Int64 = 16
+    static let blockDataSize: Int64 = 4 * 1024
+    static let chunkSize: Int64 = 16 + 4 * 1024 + 16
 
     override public init(name: String) async {
         await super.init(name: name)
@@ -197,7 +197,7 @@ public class CryptGocryptfs: ChildStorage {
         await super.logout()
     }
 
-    func findParentStorage(baseId: String = "") async -> [RemoteData] {
+    func findParentStorage(baseId: String = "") async -> [RemoteDataDTO] {
         let fixId = baseId == "" ? baseRootFileId: baseId
         let cached = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixId)
         if cached.isEmpty {
@@ -209,7 +209,7 @@ public class CryptGocryptfs: ChildStorage {
         }
     }
 
-    func CalcEncryptedSize(org_size: Int64) -> Int64 {
+    class func CalcEncryptedSize(org_size: Int64) -> Int64 {
         if org_size < 1 {
             return fileHeaderSize
         }
@@ -220,7 +220,7 @@ public class CryptGocryptfs: ChildStorage {
         return fileHeaderSize + chunkSize * chunk_num + (blockNonceSize + blockTagSize + last_chunk_size)
     }
 
-    func CalcDecryptedSize(crypt_size: Int64) -> Int64 {
+    class func CalcDecryptedSize(crypt_size: Int64) -> Int64 {
         let size = crypt_size - fileHeaderSize
         if size <= 0 {
             return size
@@ -239,45 +239,53 @@ public class CryptGocryptfs: ChildStorage {
         return chunk_num * blockDataSize + last_chunk_size - (blockNonceSize + blockTagSize)
     }
 
-    func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, id: String, path: String, context: NSManagedObjectContext) {
-        os_log("%{public}@", log: log, type: .debug, "storeItem(cryptgocryptfs:\(storageName ?? "")) \(name)")
+    private class func storeItem(parentId: String, item: RemoteDataDTO, name: String, isFolder: Bool, id: String, path: String, storage: String, baseStorage: String, existingItem: RemoteData? = nil, context: NSManagedObjectContext) {
+        let newid = id
+        let newname = name
+        let newcdate = item.cdate
+        let newmdate = item.mdate
+        let newfolder = isFolder
+        let newsize = CalcDecryptedSize(crypt_size: item.size)
         
-        context.performAndWait {
-            let newid = id
-            let newname = name
-            let newcdate = item.cDate
-            let newmdate = item.mDate
-            let newfolder = isFolder
-            let newsize = CalcDecryptedSize(crypt_size: item.size)
-
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = newid
-            newitem.name = newname
-            let comp = newname.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = newcdate
-            newitem.mdate = newmdate
-            newitem.folder = newfolder
-            newitem.size = newsize
-            newitem.hashstr = ""
-            newitem.parent = parentId
-            if parentId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(newname)"
-            }
-            else {
-                newitem.path = "\(path)/\(newname)"
-            }
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = storage
+        targetItem.id = newid
+        targetItem.name = newname
+        
+        let comp = newname.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        
+        targetItem.cdate = newcdate
+        targetItem.mdate = newmdate
+        targetItem.folder = newfolder
+        targetItem.size = newsize
+        targetItem.hashstr = nil
+        targetItem.parent = parentId
+        
+        targetItem.baseStorage = baseStorage
+        targetItem.baseId = id
+        
+        if parentId == "" {
+            targetItem.path = "\(storage):/\(newname)"
+        } else {
+            targetItem.path = "\(path)/\(newname)"
         }
     }
     
@@ -365,14 +373,13 @@ public class CryptGocryptfs: ChildStorage {
         }
         let fixFileId = (fileId == "") ? baseRootFileId : fileId
         let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixFileId)
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        var processedItems: [(id: String, name: String, item: RemoteDataDTO)] = []
+        
         if name_encryption, let dirivItem = items.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
-            guard let diriv = try? await bs.read(fileId: dirivId) else {
-                return
-            }
+            guard let diriv = try? await bs.read(fileId: dirivId) else { return }
             let dirIV = Array(diriv)
-
+            
             var longMap: [String: String] = [:]
             for itemData in items {
                 if let name = itemData.name, let id = itemData.id {
@@ -384,64 +391,59 @@ public class CryptGocryptfs: ChildStorage {
             
             for itemData in items {
                 if let id = itemData.id, let rawName = itemData.name {
-                    // ignore files
-                    if rawName == "gocryptfs.conf" {
-                        continue
-                    }
-                    if rawName == "gocryptfs.diriv" {
-                        continue
-                    }
+                    if rawName == "gocryptfs.conf" || rawName == "gocryptfs.diriv" { continue }
                     
-                    // long names
                     if rawName.hasPrefix("gocryptfs.longname.") {
                         if rawName.hasSuffix(".name") {
-                            guard let nameData = try? await bs.read(fileId: id) else {
-                                continue
-                            }
-                            
+                            guard let nameData = try? await bs.read(fileId: id) else { continue }
                             let longRawName = String(rawName.dropLast(5))
-                            guard let longid = longMap[longRawName], let bodyitem = await bs.get(fileId: longid) else {
-                                continue
-                            }
-                            if let name = decryptFileName(cipherData: nameData, diriv: dirIV) {
-                                storeItem(parentId: fileId, item: bodyitem, name: name, isFolder: bodyitem.isFolder, id: longid, path: path, context: viewContext)
-                            }
-                            else {
-                                storeItem(parentId: fileId, item: bodyitem, name: bodyitem.name, isFolder: bodyitem.isFolder, id: longid, path: path, context: viewContext)
-                            }
+                            guard let longid = longMap[longRawName], let bodyitem = await CloudFactory.shared.data.getData(storage: baseRootFileId, fileId: longid) else { continue }
+                            
+                            let finalName = decryptFileName(cipherData: nameData, diriv: dirIV) ?? (bodyitem.name ?? "")
+                            processedItems.append((id: longid, name: finalName, item: bodyitem))
                         }
-                    }
-                    else {
-                        guard let bodyitem = await bs.get(fileId: id) else {
-                            continue
-                        }
-                        if let name = decryptFileName(cipherData: rawName.data(using: .utf8)!, diriv: dirIV) {
-                            storeItem(parentId: fileId, item: bodyitem, name: name, isFolder: bodyitem.isFolder, id: id, path: path, context: viewContext)
-                        }
-                        else {
-                            storeItem(parentId: fileId, item: bodyitem, name: bodyitem.name, isFolder: bodyitem.isFolder, id: id, path: path, context: viewContext)
-                        }
+                    } else {
+                        let finalName = decryptFileName(cipherData: rawName.data(using: .utf8)!, diriv: dirIV) ?? (itemData.name ?? "")
+                        processedItems.append((id: id, name: finalName, item: itemData))
                     }
                 }
             }
-        }
-        else {
-            // raw filename
+        } else {
             for itemData in items {
-                if let id = itemData.id, let item = await bs.get(fileId: id) {
-                    // ignore files
-                    if item.name == "gocryptfs.conf" {
-                        continue
-                    }
-                    storeItem(parentId: fileId, item: item, name: item.name, isFolder: item.isFolder, id: id, path: path, context: viewContext)
+                if let id = itemData.id, let name = itemData.name {
+                    if name == "gocryptfs.conf" { continue }
+                    processedItems.append((id: id, name: name, item: itemData))
                 }
             }
         }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storageNameStr = storageName ?? ""
+        let baseStorageName = baseRootStorage
+        
         await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storageNameStr)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id { existingDict[id] = item }
+            }
+            
+            for processed in processedItems {
+                let existing = existingDict.removeValue(forKey: processed.id)
+                CryptGocryptfs.storeItem(parentId: fileId, item: processed.item, name: processed.name, isFolder: processed.item.folder, id: processed.id, path: path, storage: storageNameStr, baseStorage: baseStorageName, existingItem: existing, context: viewContext)
+            }
+            
+            for (_, orphan) in existingDict {
+                CryptGocryptfs.cascadeDelete(item: orphan, in: viewContext)
+            }
+            
             try? viewContext.save()
         }
     }
-
+    
     func createGocryptfsConf(password: String) async -> Data? {
         let scryptN = 65536
         let scryptR = 8
@@ -669,32 +671,18 @@ public class CryptGocryptfs: ChildStorage {
     
     override func listChildren(fileId: String, path: String) async {
         os_log("%{public}@", log: log, type: .debug, "ListChildren(cryptgocryptfs:\(storageName ?? "")) \(fileId)")
-
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-        }
-        await viewContext.perform {
-            try? viewContext.save()
-        }
-
+        await recoverBaseRootIfNeeded()
         let fixFileId = (fileId == "") ? baseRootFileId : fileId
-
+        
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return
         }
         await bs.list(fileId: fixFileId)
-
+        
         if fileId == "" {
             await loadRootConfig()
         }
+        
         await subListChildren(fileId: fileId, path: path)
     }
 
@@ -720,38 +708,28 @@ public class CryptGocryptfs: ChildStorage {
     
     public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
         os_log("%{public}@", log: log, type: .debug, "makeFolder(\(String(describing: type(of: self))):\(storageName ?? "") \(parentId)(\(parentPath)) \(newname)")
-
+        
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return nil
         }
         let fixParentId = parentId == "" ? baseRootFileId : parentId
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
         let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixParentId)
-        var ret: String?
         let storage = storageName ?? ""
         let baseStorage = baseRootStorage
+        
+        var createdBaseId: String? = nil
+        
         if name_encryption, let dirivItem = items.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
-            guard let diriv = try? await bs.read(fileId: dirivId) else {
-                return nil
-            }
+            guard let diriv = try? await bs.read(fileId: dirivId) else { return nil }
             let dirIV = Array(diriv)
-
-            let decryptSize = { size in
-                self.CalcDecryptedSize(crypt_size: size)
-            }
-
-            // generate encrypted name
-            guard let encryptedName = encryptFileName(clearString: newname, diriv: dirIV) else {
-                return nil
-            }
+            
+            guard let encryptedName = encryptFileName(clearString: newname, diriv: dirIV) else { return nil }
             let newDirIVData = generateDirIV()
+            
             if encryptedName.count <= 175 {
-                // short name
-                guard let newBaseId = await bs.mkdir(parentId: fixParentId, newname: encryptedName) else {
-                    return nil
-                }
-
+                guard let newBaseId = await bs.mkdir(parentId: fixParentId, newname: encryptedName) else { return nil }
+                
                 let ivtarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try newDirIVData.write(to: ivtarget)
@@ -759,67 +737,21 @@ public class CryptGocryptfs: ChildStorage {
                         try FileManager.default.removeItem(at: ivtarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
-                await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                        if let item = items.first {
-                            let newid = item.id!
-                            let newcdate = item.cdate
-                            let newmdate = item.mdate
-                            let newfolder = item.folder
-                            let newsize = decryptSize(item.size)
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                for object in result {
-                                    viewContext.delete(object as! NSManagedObject)
-                                }
-                            }
-                            
-                            let newitem = RemoteData(context: viewContext)
-                            newitem.storage = storage
-                            newitem.id = newid
-                            newitem.name = newname
-                            let comp = newname.components(separatedBy: ".")
-                            if comp.count >= 1 {
-                                newitem.ext = comp.last!.lowercased()
-                            }
-                            newitem.cdate = newcdate
-                            newitem.mdate = newmdate
-                            newitem.folder = newfolder
-                            newitem.size = newsize
-                            newitem.hashstr = ""
-                            newitem.parent = parentId
-                            if parentId == "" {
-                                newitem.path = "\(storage):/\(newname)"
-                            }
-                            else {
-                                newitem.path = "\(parentPath)/\(newname)"
-                            }
-                            ret = newid
-                        }
-                    }
-                }
-            }
-            else {
-                // long name
+                createdBaseId = newBaseId
+                
+            } else {
                 guard let nameData = encryptedName.data(using: .utf8) else { return nil }
                 
                 let hashDigest = SHA256.hash(data: nameData)
                 let hashData = Data(hashDigest)
-                
                 let hashBase64 = encodeBase64(input: Array(hashData))
                 let baseName = "gocryptfs.longname.\(hashBase64)"
                 let nameFileName = "\(baseName).name"
-
+                
                 let nametarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try nameData.write(to: nametarget)
@@ -827,16 +759,13 @@ public class CryptGocryptfs: ChildStorage {
                         try FileManager.default.removeItem(at: nametarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
-                guard let newBaseId = await bs.mkdir(parentId: fixParentId, newname: baseName) else {
-                    return nil
-                }
-
+                
+                guard let newBaseId = await bs.mkdir(parentId: fixParentId, newname: baseName) else { return nil }
+                
                 let ivtarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try newDirIVData.write(to: ivtarget)
@@ -844,130 +773,100 @@ public class CryptGocryptfs: ChildStorage {
                         try FileManager.default.removeItem(at: ivtarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
-                await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                        if let item = items.first {
-                            let newid = item.id!
-                            let newcdate = item.cdate
-                            let newmdate = item.mdate
-                            let newfolder = item.folder
-                            let newsize = decryptSize(item.size)
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                for object in result {
-                                    viewContext.delete(object as! NSManagedObject)
-                                }
-                            }
-                            
-                            let newitem = RemoteData(context: viewContext)
-                            newitem.storage = storage
-                            newitem.id = newid
-                            newitem.name = newname
-                            let comp = newname.components(separatedBy: ".")
-                            if comp.count >= 1 {
-                                newitem.ext = comp.last!.lowercased()
-                            }
-                            newitem.cdate = newcdate
-                            newitem.mdate = newmdate
-                            newitem.folder = newfolder
-                            newitem.size = newsize
-                            newitem.hashstr = ""
-                            newitem.parent = parentId
-                            if parentId == "" {
-                                newitem.path = "\(storage):/\(newname)"
-                            }
-                            else {
-                                newitem.path = "\(parentPath)/\(newname)"
-                            }
-                            ret = newid
-                        }
-                    }
-                }
+                createdBaseId = newBaseId
             }
+        } else {
+            createdBaseId = await bs.mkdir(parentId: fixParentId, newname: newname)
         }
-        else {
-            // raw create
-            guard let newBaseId = await bs.mkdir(parentId: fixParentId, newname: newname) else {
-                return nil
-            }
-            let decryptSize = { size in
-                self.CalcDecryptedSize(crypt_size: size)
-            }
-
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    if let item = items.first {
-                        let newid = item.id!
-                        let newname = item.name!
-                        let newcdate = item.cdate
-                        let newmdate = item.mdate
-                        let newfolder = item.folder
-                        let newsize = decryptSize(item.size)
-                        
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            for object in result {
-                                viewContext.delete(object as! NSManagedObject)
-                            }
-                        }
-                        
-                        let newitem = RemoteData(context: viewContext)
-                        newitem.storage = storage
-                        newitem.id = newid
-                        newitem.name = newname
-                        let comp = newname.components(separatedBy: ".")
-                        if comp.count >= 1 {
-                            newitem.ext = comp.last!.lowercased()
-                        }
-                        newitem.cdate = newcdate
-                        newitem.mdate = newmdate
-                        newitem.folder = newfolder
-                        newitem.size = newsize
-                        newitem.hashstr = ""
-                        newitem.parent = parentId
-                        if parentId == "" {
-                            newitem.path = "\(storage):/\(newname)"
-                        }
-                        else {
-                            newitem.path = "\(parentPath)/\(newname)"
-                        }
-                        ret = newid
-                    }
+        
+        guard let newBaseId = createdBaseId else { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        return await viewContext.perform {
+            var ret: String?
+            
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+            fetchRequest.fetchLimit = 1
+            
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                let newid = item.id!
+                let newcdate = item.cdate
+                let newmdate = item.mdate
+                let newfolder = item.folder
+                let newsize = CryptGocryptfs.CalcDecryptedSize(crypt_size: item.size)
+                
+                let existingFetch = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                existingFetch.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                existingFetch.fetchLimit = 1
+                if let existingResults = try? viewContext.fetch(existingFetch), let existing = existingResults.first {
+                    CryptGocryptfs.cascadeDelete(item: existing, in: viewContext)
                 }
+                
+                let targetItem = RemoteData(context: viewContext)
+                targetItem.storage = storage
+                targetItem.id = newid
+                targetItem.name = newname
+                
+                let comp = newname.components(separatedBy: ".")
+                if comp.count >= 1 {
+                    targetItem.ext = comp.last!.lowercased()
+                } else {
+                    targetItem.ext = ""
+                }
+                
+                targetItem.cdate = newcdate
+                targetItem.mdate = newmdate
+                targetItem.folder = newfolder
+                targetItem.size = newsize
+                targetItem.hashstr = ""
+                targetItem.parent = parentId
+                
+                targetItem.baseStorage = baseStorage
+                targetItem.baseId = newBaseId
+                
+                if parentId == "" {
+                    targetItem.path = "\(storage):/\(newname)"
+                } else {
+                    targetItem.path = "\(parentPath)/\(newname)"
+                }
+                
+                ret = newid
             }
-        }
-        await viewContext.perform {
             try? viewContext.save()
+            return ret
         }
-        return ret
     }
-
+    
     override func deleteItem(fileId: String) async -> Bool {
         guard fileId != "" else {
             return false
         }
         os_log("%{public}@", log: log, type: .debug, "deleteItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)")
-
+        
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return false
         }
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
+        var targetObjectID: NSManagedObjectID? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+            }
+        }
+        
         let fixFileId = fileId == "" ? baseRootFileId : fileId
-
+        
         if let baseitem = await CloudFactory.shared.data.getData(storage: baseRootStorage, fileId: fixFileId), let name = baseitem.name, name.hasPrefix("gocryptfs.longname."), let parentId = baseitem.parent {
             let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: parentId)
             
@@ -980,19 +879,18 @@ public class CryptGocryptfs: ChildStorage {
                 }
             }
         }
+        
         guard await bs.delete(fileId: fileId) else {
             return false
         }
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    viewContext.delete(item)
-                }
-                try? viewContext.save()
+            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                CryptGocryptfs.cascadeDelete(item: existing, in: viewContext)
             }
+            try? viewContext.save()
         }
+        
         return true
     }
 
@@ -1003,34 +901,55 @@ public class CryptGocryptfs: ChildStorage {
         }
         
         os_log("%{public}@", log: log, type: .debug, "renameItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)->\(newname)")
-
+        
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return nil
         }
-        let viewContext = CloudFactory.shared.data.viewContext
-        guard let baseitem = await CloudFactory.shared.data.getData(storage: baseRootStorage, fileId: fileId), let parentId = baseitem.parent, let baseId = baseitem.id, let oldname = baseitem.name else {
-            return nil
-        }
-        let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: parentId)
-        var ret: String?
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
-        if name_encryption, let dirivItem = items.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
-            guard let diriv = try? await bs.read(fileId: dirivId) else {
+        let baseStorage = baseRootStorage
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        var parentId: String? = nil
+        var oldItemProps: (cdate: Date?, mdate: Date?, size: Int64, folder: Bool, path: String?)? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+                parentId = item.parent
+                oldItemProps = (item.cdate, item.mdate, item.size, item.folder, item.path)
+            }
+        }
+        guard let pId = parentId else { return nil }
+        
+        var oldBaseName: String? = nil
+        if oldBaseName == nil {
+            if let baseitem = await CloudFactory.shared.data.getData(storage: baseStorage, fileId: fileId) {
+                oldBaseName = baseitem.name
+            } else {
                 return nil
             }
+        }
+        guard let oldname = oldBaseName else { return nil }
+        
+        let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: pId)
+        var ret: String?
+        
+        if name_encryption, let dirivItem = items.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
+            guard let diriv = try? await bs.read(fileId: dirivId) else { return nil }
             let dirIV = Array(diriv)
             
             // generate encrypted name
-            guard let encryptedName = encryptFileName(clearString: newname, diriv: dirIV) else {
-                return nil
-            }
-
+            guard let encryptedName = encryptFileName(clearString: newname, diriv: dirIV) else { return nil }
+            
             if oldname.hasPrefix("gocryptfs.longname.") {
                 for item in items {
                     if item.name == "\(oldname).name", let id = item.id {
-                        guard await bs.delete(fileId: id) else {
-                            return nil
-                        }
+                        guard await bs.delete(fileId: id) else { return nil }
                         break
                     }
                 }
@@ -1038,9 +957,8 @@ public class CryptGocryptfs: ChildStorage {
             
             if encryptedName.count <= 175 {
                 // short name
-                ret = await bs.rename(fileId: baseId, newname: encryptedName)
-            }
-            else {
+                ret = await bs.rename(fileId: fileId, newname: encryptedName)
+            } else {
                 // long name
                 guard let nameData = encryptedName.data(using: .utf8) else { return nil }
                 
@@ -1050,104 +968,125 @@ public class CryptGocryptfs: ChildStorage {
                 let hashBase64 = encodeBase64(input: Array(hashData))
                 let baseName = "gocryptfs.longname.\(hashBase64)"
                 let nameFileName = "\(baseName).name"
-
+                
                 let nametarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try nameData.write(to: nametarget)
-                    guard try await bs.upload(parentId: parentId, uploadname: nameFileName, target: nametarget) != nil else {
+                    guard try await bs.upload(parentId: pId, uploadname: nameFileName, target: nametarget) != nil else {
                         try FileManager.default.removeItem(at: nametarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
-                ret = await bs.rename(fileId: baseId, newname: baseName)
+                
+                ret = await bs.rename(fileId: fileId, newname: baseName)
             }
+        } else {
+            ret = await bs.rename(fileId: fileId, newname: newname)
         }
-        else {
-            ret = await bs.rename(fileId: baseId, newname: newname)
-        }
-        if ret != nil {
+        
+        if let newId = ret {
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    if let item = items.first {
-                        item.id = ret
-                        item.name = newname
-                        let comp = newname.components(separatedBy: ".")
-                        if comp.count >= 1 {
-                            item.ext = comp.last!.lowercased()
-                        }
-                        if var pathcomp = item.path?.components(separatedBy: "/") {
-                            pathcomp.removeLast()
-                            pathcomp.append(newname)
-                            item.path = pathcomp.joined(separator: "/")
-                        }
-                    }
+                if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    CryptGocryptfs.cascadeDelete(item: existing, in: viewContext)
                 }
+                
+                let newItem = RemoteData(context: viewContext)
+                newItem.storage = storage
+                newItem.id = newId
+                newItem.name = newname
+                
+                let comp = newname.components(separatedBy: ".")
+                newItem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+                
+                newItem.cdate = oldItemProps?.cdate
+                newItem.mdate = oldItemProps?.mdate
+                newItem.folder = oldItemProps?.folder ?? false
+                newItem.size = oldItemProps?.size ?? 0
+                newItem.parent = pId
+                
+                newItem.baseStorage = baseStorage
+                newItem.baseId = newId
+                
+                if var pathcomp = oldItemProps?.path?.components(separatedBy: "/") {
+                    pathcomp.removeLast()
+                    pathcomp.append(newname)
+                    newItem.path = pathcomp.joined(separator: "/")
+                }
+                
                 try? viewContext.save()
             }
+            await CloudFactory.shared.cache.remove(storage: storage, id: fileId)
         }
+        
         return ret
     }
-
+    
     override func changeTime(fileId: String, newdate: Date) async -> String? {
         guard fileId != "" else {
             return nil
         }
         
         os_log("%{public}@", log: log, type: .debug, "changeTime(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)->\(newdate)")
-
+        
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return nil
         }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        var targetObjectID: NSManagedObjectID? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         let fixFileId = fileId == "" ? baseRootFileId : fileId
-
-        guard let newBaseId = await bs.chagetime(fileId: fixFileId, newdate: newdate) else {
+        
+        guard let newBaseId = await bs.changeTime(fileId: fixFileId, newdate: newdate) else {
             return nil
         }
         
-        let viewContext = CloudFactory.shared.data.viewContext
-        let baseRootStorage = baseRootStorage
-        let storage = storageName ?? ""
+        let baseRootStorageStr = baseRootStorage
         await viewContext.perform {
             var newcdate: Date? = nil
             var newmdate: Date? = nil
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseRootStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let baseItem = items.first {
-                    newcdate = baseItem.cdate
-                    newmdate = baseItem.mdate
-                }
+            
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseRootStorageStr)
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let baseItem = results.first {
+                newcdate = baseItem.cdate
+                newmdate = baseItem.mdate
             }
-
-            let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest2), let items1 = result as? [RemoteData] {
-                if let pitem = items1.first {
-                    pitem.cdate = newcdate
-                    pitem.mdate = newmdate
-                    try? viewContext.save()
-                }
+            
+            if let objID = targetObjectID, let pitem = try? viewContext.existingObject(with: objID) as? RemoteData {
+                pitem.cdate = newcdate ?? newdate
+                pitem.mdate = newmdate ?? newdate
+                
+                pitem.baseId = newBaseId
+                
+                try? viewContext.save()
             }
         }
         return fileId
     }
-
+    
     func getOrgName(fileId: String) async -> String? {
         var orgname: String? = nil
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         return await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest) {
+                if let item = results.first {
                     orgname = item.name
                 }
             }
@@ -1163,18 +1102,35 @@ public class CryptGocryptfs: ChildStorage {
         guard fileId != "" else {
             return nil
         }
+        guard fromParentId != toParentId else {
+            return nil
+        }
         
         guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
             return nil
         }
         
-        guard let orgname = await getOrgName(fileId: fileId) else {
-            return nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        let baseStorage = baseRootStorage
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        var oldItemProps: (cdate: Date?, mdate: Date?, size: Int64, folder: Bool, name: String)? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+                if let name = item.name {
+                    oldItemProps = (item.cdate, item.mdate, item.size, item.folder, name)
+                }
+            }
         }
         
-        guard fromParentId != toParentId else {
-            return nil
-        }
+        guard let props = oldItemProps else { return nil }
+        let orgname = props.name
         
         var toParentPath: String
         if toParentId != "" {
@@ -1182,37 +1138,36 @@ public class CryptGocryptfs: ChildStorage {
                 return nil
             }
             toParentPath = p
-        }
-        else {
-            toParentPath = "\(storageName ?? ""):"
+        } else {
+            toParentPath = "\(storage):"
         }
         
-        os_log("%{public}@", log: log, type: .debug, "moveItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId) \(fromParentId)->\(toParentId)")
-
-        guard let baseitem = await CloudFactory.shared.data.getData(storage: baseRootStorage, fileId: fileId), let baseId = baseitem.id, let name = baseitem.name else {
+        os_log("%{public}@", log: log, type: .debug, "moveItem(\(String(describing: type(of: self))):\(storage) \(fileId) \(fromParentId)->\(toParentId)")
+        
+        guard let baseitem = await CloudFactory.shared.data.getData(storage: baseStorage, fileId: fileId), let baseId = baseitem.id, let name = baseitem.name else {
             return nil
         }
-
+        
         let fixFromParentId = fromParentId == "" ? baseRootFileId : fromParentId
         let fixToParentId = toParentId == "" ? baseRootFileId : toParentId
-        let fromitems = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixFromParentId)
-        let toitems = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixToParentId)
-
+        let fromitems = await CloudFactory.shared.data.listData(storage: baseStorage, parentID: fixFromParentId)
+        let toitems = await CloudFactory.shared.data.listData(storage: baseStorage, parentID: fixToParentId)
+        
         var ret = await bs.move(fileId: baseId, fromParent: fixFromParentId, toParent: fixToParentId)
         if ret == nil {
             return nil
         }
+        
         if name_encryption, let dirivItem = toitems.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
             guard let diriv = try? await bs.read(fileId: dirivId) else {
                 return nil
             }
             let dirIV = Array(diriv)
             
-            // generate encrypted name
             guard let encryptedName = encryptFileName(clearString: orgname, diriv: dirIV) else {
                 return nil
             }
-
+            
             if name.hasPrefix("gocryptfs.longname.") {
                 for item in fromitems {
                     if item.name == "\(name).name", let id = item.id {
@@ -1223,13 +1178,10 @@ public class CryptGocryptfs: ChildStorage {
                     }
                 }
             }
-
+            
             if encryptedName.count <= 175 {
-                // short name
                 ret = await bs.rename(fileId: ret!, newname: encryptedName)
-            }
-            else {
-                // long name
+            } else {
                 guard let nameData = encryptedName.data(using: .utf8) else { return nil }
                 
                 let hashDigest = SHA256.hash(data: nameData)
@@ -1238,7 +1190,7 @@ public class CryptGocryptfs: ChildStorage {
                 let hashBase64 = encodeBase64(input: Array(hashData))
                 let baseName = "gocryptfs.longname.\(hashBase64)"
                 let nameFileName = "\(baseName).name"
-
+                
                 let nametarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try nameData.write(to: nametarget)
@@ -1246,35 +1198,48 @@ public class CryptGocryptfs: ChildStorage {
                         try FileManager.default.removeItem(at: nametarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
+                
                 ret = await bs.rename(fileId: ret!, newname: baseName)
             }
         }
-
-        // register record
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
-        return await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    item.id = ret
-                    item.parent = toParentId
-                    item.path = "\(toParentPath)/\(item.name ?? "")"
-                    try? viewContext.save()
-                    return ret
+        
+        if let newId = ret {
+            await viewContext.perform {
+                if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    CryptGocryptfs.cascadeDelete(item: existing, in: viewContext)
                 }
+                
+                let newItem = RemoteData(context: viewContext)
+                newItem.storage = storage
+                newItem.id = newId
+                newItem.name = orgname
+                
+                let comp = orgname.components(separatedBy: ".")
+                newItem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+                
+                newItem.cdate = props.cdate
+                newItem.mdate = props.mdate
+                newItem.folder = props.folder
+                newItem.size = props.size
+                newItem.parent = toParentId
+                
+                newItem.baseStorage = baseStorage
+                newItem.baseId = newId
+                newItem.path = "\(toParentPath)/\(orgname)"
+                
+                try? viewContext.save()
             }
-            return nil
+            await CloudFactory.shared.cache.remove(storage: storage, id: fileId)
+            return newId
         }
+        
+        return nil
     }
-
+    
     override func readFile(fileId: String, start: Int64?, length: Int64?) async throws -> Data? {
         guard let s = await CloudFactory.shared.storageList.get(baseRootStorage) else {
             return nil
@@ -1294,84 +1259,33 @@ public class CryptGocryptfs: ChildStorage {
             return nil
         }
         let parentPath = await getParentPath(parentId: parentId) ?? ""
-
+        
         guard let crypttarget = processFile(target: target) else {
             return nil
         }
-
+        
         let fixParentId = parentId == "" ? baseRootFileId : parentId
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
         let items = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixParentId)
-        var ret: String?
         let storage = storageName ?? ""
         let baseStorage = baseRootStorage
+        
+        var createdBaseId: String? = nil
+        
         if name_encryption, let dirivItem = items.first(where: { $0.name == "gocryptfs.diriv" }), let dirivId = dirivItem.id {
-            guard let diriv = try? await bs.read(fileId: dirivId) else {
-                return nil
-            }
+            guard let diriv = try? await bs.read(fileId: dirivId) else { return nil }
             let dirIV = Array(diriv)
-
-            let decryptSize = { size in
-                self.CalcDecryptedSize(crypt_size: size)
-            }
-
+            
             // generate encrypted name
-            guard let encryptedName = encryptFileName(clearString: uploadname, diriv: dirIV) else {
-                return nil
-            }
+            guard let encryptedName = encryptFileName(clearString: uploadname, diriv: dirIV) else { return nil }
+            
             if encryptedName.count <= 175 {
                 // short name
                 guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: encryptedName, target: crypttarget, progress: progress) else {
                     return nil
                 }
-
-                await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                        if let item = items.first {
-                            let newid = item.id!
-                            let newname = uploadname
-                            let newcdate = item.cdate
-                            let newmdate = item.mdate
-                            let newfolder = item.folder
-                            let newsize = decryptSize(item.size)
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                for object in result {
-                                    viewContext.delete(object as! NSManagedObject)
-                                }
-                            }
-                            
-                            let newitem = RemoteData(context: viewContext)
-                            newitem.storage = storage
-                            newitem.id = newid
-                            newitem.name = newname
-                            let comp = newname.components(separatedBy: ".")
-                            if comp.count >= 1 {
-                                newitem.ext = comp.last!.lowercased()
-                            }
-                            newitem.cdate = newcdate
-                            newitem.mdate = newmdate
-                            newitem.folder = newfolder
-                            newitem.size = newsize
-                            newitem.hashstr = ""
-                            newitem.parent = parentId
-                            if parentId == "" {
-                                newitem.path = "\(storage):/\(newname)"
-                            }
-                            else {
-                                newitem.path = "\(parentPath)/\(newname)"
-                            }
-                            ret = newid
-                        }
-                    }
-                }
-            }
-            else {
+                createdBaseId = newBaseId
+            } else {
                 // long name
                 guard let nameData = encryptedName.data(using: .utf8) else { return nil }
                 
@@ -1381,7 +1295,7 @@ public class CryptGocryptfs: ChildStorage {
                 let hashBase64 = encodeBase64(input: Array(hashData))
                 let baseName = "gocryptfs.longname.\(hashBase64)"
                 let nameFileName = "\(baseName).name"
-
+                
                 let nametarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
                 do {
                     try nameData.write(to: nametarget)
@@ -1389,122 +1303,84 @@ public class CryptGocryptfs: ChildStorage {
                         try FileManager.default.removeItem(at: nametarget)
                         return nil
                     }
-                }
-                catch {
+                } catch {
                     print(error)
                     return nil
                 }
-
+                
                 guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: baseName, target: crypttarget, progress: progress) else {
                     return nil
                 }
-
-                await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                    if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                        if let item = items.first {
-                            let newid = item.id!
-                            let newname = uploadname
-                            let newcdate = item.cdate
-                            let newmdate = item.mdate
-                            let newfolder = item.folder
-                            let newsize = decryptSize(item.size)
-                            
-                            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                            if let result = try? viewContext.fetch(fetchRequest) {
-                                for object in result {
-                                    viewContext.delete(object as! NSManagedObject)
-                                }
-                            }
-                            
-                            let newitem = RemoteData(context: viewContext)
-                            newitem.storage = storage
-                            newitem.id = newid
-                            newitem.name = newname
-                            let comp = newname.components(separatedBy: ".")
-                            if comp.count >= 1 {
-                                newitem.ext = comp.last!.lowercased()
-                            }
-                            newitem.cdate = newcdate
-                            newitem.mdate = newmdate
-                            newitem.folder = newfolder
-                            newitem.size = newsize
-                            newitem.hashstr = ""
-                            newitem.parent = parentId
-                            if parentId == "" {
-                                newitem.path = "\(storage):/\(newname)"
-                            }
-                            else {
-                                newitem.path = "\(parentPath)/\(newname)"
-                            }
-                            ret = newid
-                        }
-                    }
-                }
+                createdBaseId = newBaseId
             }
-        }
-        else {
+        } else {
             // raw create
             guard let newBaseId = try? await bs.upload(parentId: fixParentId, uploadname: uploadname, target: crypttarget, progress: progress) else {
                 return nil
             }
-            let decryptSize = { size in
-                self.CalcDecryptedSize(crypt_size: size)
-            }
-
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    if let item = items.first {
-                        let newid = item.id!
-                        let newname = item.name!
-                        let newcdate = item.cdate
-                        let newmdate = item.mdate
-                        let newfolder = item.folder
-                        let newsize = decryptSize(item.size)
-                        
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            for object in result {
-                                viewContext.delete(object as! NSManagedObject)
-                            }
-                        }
-                        
-                        let newitem = RemoteData(context: viewContext)
-                        newitem.storage = storage
-                        newitem.id = newid
-                        newitem.name = newname
-                        let comp = newname.components(separatedBy: ".")
-                        if comp.count >= 1 {
-                            newitem.ext = comp.last!.lowercased()
-                        }
-                        newitem.cdate = newcdate
-                        newitem.mdate = newmdate
-                        newitem.folder = newfolder
-                        newitem.size = newsize
-                        newitem.hashstr = ""
-                        newitem.parent = parentId
-                        if parentId == "" {
-                            newitem.path = "\(storage):/\(newname)"
-                        }
-                        else {
-                            newitem.path = "\(parentPath)/\(newname)"
-                        }
-                        ret = newid
-                    }
+            createdBaseId = newBaseId
+        }
+        guard let newBaseId = createdBaseId else { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        return await viewContext.perform {
+            var ret: String?
+            
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+            fetchRequest.fetchLimit = 1
+            
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                let newid = item.id!
+                let newname = uploadname
+                let newcdate = item.cdate
+                let newmdate = item.mdate
+                let newfolder = item.folder
+                let newsize = CryptGocryptfs.CalcDecryptedSize(crypt_size: item.size)
+                
+                // 既存アイテムがあれば cascadeDelete で一掃する
+                let existingFetch = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                existingFetch.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                existingFetch.fetchLimit = 1
+                if let existingResults = try? viewContext.fetch(existingFetch), let existing = existingResults.first {
+                    CryptGocryptfs.cascadeDelete(item: existing, in: viewContext)
                 }
+                
+                let newitem = RemoteData(context: viewContext)
+                newitem.storage = storage
+                newitem.id = newid
+                newitem.name = newname
+                
+                let comp = newname.components(separatedBy: ".")
+                if comp.count >= 1 {
+                    newitem.ext = comp.last!.lowercased()
+                } else {
+                    newitem.ext = ""
+                }
+                
+                newitem.cdate = newcdate
+                newitem.mdate = newmdate
+                newitem.folder = newfolder
+                newitem.size = newsize
+                newitem.hashstr = ""
+                newitem.parent = parentId
+                
+                newitem.baseStorage = baseStorage
+                newitem.baseId = newBaseId
+                
+                if parentId == "" {
+                    newitem.path = "\(storage):/\(newname)"
+                } else {
+                    newitem.path = "\(parentPath)/\(newname)"
+                }
+                
+                ret = newid
             }
-        }
-        await viewContext.perform {
             try? viewContext.save()
+            return ret
         }
-        return ret
     }
-
+    
     override func processFile(target: URL) -> URL? {
         let key = SymmetricKey(data: dataKey)
         let crypttarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
@@ -1531,7 +1407,7 @@ public class CryptGocryptfs: ChildStorage {
         let fileIDData = Data(fileID)
 
         // header
-        var magic = [UInt8](fileHeaderVersion)
+        var magic = [UInt8](CryptGocryptfs.fileHeaderVersion)
         guard magic.count == output.write(&magic, maxLength: magic.count) else {
             return nil
         }
@@ -1540,7 +1416,7 @@ public class CryptGocryptfs: ChildStorage {
             return nil
         }
         
-        var buffer = [UInt8](repeating: 0, count: Int(blockDataSize))
+        var buffer = [UInt8](repeating: 0, count: Int(CryptGocryptfs.blockDataSize))
         var blockNumber: UInt64 = 0
         var len = 0
         repeat {
@@ -1586,7 +1462,7 @@ public class CryptGocryptfs: ChildStorage {
             }
             
             blockNumber += 1
-        } while len == blockDataSize
+        } while len == CryptGocryptfs.blockDataSize
         
         return crypttarget
     }
@@ -1614,59 +1490,44 @@ public class RemoteCryptGocryptfsStream: SlotStream {
     let CryptedLength: Int64
     var fileID = [UInt8](repeating: 0, count: 16)
     let key: SymmetricKey
-
+    
     init(remote: CryptGocryptfsRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
-        CryptedLength = remote.remoteStorage.CalcEncryptedSize(org_size: OrignalLength)
+        CryptedLength = CryptGocryptfs.CalcEncryptedSize(org_size: OrignalLength)
         key = SymmetricKey(data: remote.remoteStorage.dataKey)
         await super.init(size: OrignalLength)
     }
-
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
-    }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
+    
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func fillHeader() async {
-        guard let data = try? await remote.read(start: 0, length: remote.remoteStorage.fileHeaderSize) else {
+        guard let data = try? await remote.read(start: 0, length: CryptGocryptfs.fileHeaderSize) else {
             print("error on header null")
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
-        if !remote.remoteStorage.fileHeaderVersion.elementsEqual(data.subdata(in: 0..<remote.remoteStorage.fileHeaderVersion.count)) {
+        if !CryptGocryptfs.fileHeaderVersion.elementsEqual(data.prefix(CryptGocryptfs.fileHeaderVersion.count)) {
             print("error on header check")
             await super.fillHeader()
-            error = true
+            await setError()
         }
-        fileID.replaceSubrange(0..<fileID.count, with: data.subdata(in: remote.remoteStorage.fileHeaderVersion.count..<data.count))
+        fileID.replaceSubrange(0..<fileID.count, with: data.dropFirst(CryptGocryptfs.fileHeaderVersion.count))
         await super.fillHeader()
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
-
-        let chunksize = remote.remoteStorage.chunkSize
-        let orgBlocksize = remote.remoteStorage.blockDataSize
-        let headersize = remote.remoteStorage.fileHeaderSize
+        
+        let chunksize = CryptGocryptfs.chunkSize
+        let orgBlocksize = CryptGocryptfs.blockDataSize
+        let headersize = CryptGocryptfs.fileHeaderSize
         if await !buffer.dataAvailable(pos: pos) {
             guard pos.lowerBound >= 0 && pos.upperBound < size else {
                 return
@@ -1676,7 +1537,7 @@ public class RemoteCryptGocryptfsStream: SlotStream {
             let pos2 = slot1 * chunksize + headersize
             var clen = len / orgBlocksize * chunksize
             if len % orgBlocksize != 0 {
-                clen += len % orgBlocksize + remote.remoteStorage.blockNonceSize + remote.remoteStorage.blockTagSize
+                clen += len % orgBlocksize + CryptGocryptfs.blockNonceSize + CryptGocryptfs.blockTagSize
             }
             guard pos2 >= 0 && pos2 < CryptedLength else {
                 return
@@ -1689,44 +1550,49 @@ public class RemoteCryptGocryptfsStream: SlotStream {
             }
             guard let data = try? await remote.read(start: pos2, length: clen) else {
                 print("error on readFile")
-                error = true
+                await setError()
                 return
             }
             var slot = slot1
             var plainBlock = Data()
-            for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                autoreleasepool {
-                    let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                    let chunk = data.subdata(in: start..<end)
-                    guard chunk.count >= 32 else {
-                        error = true
-                        return
-                    }
-                    let ivData = chunk.prefix(16)
-                    let tagData = chunk.suffix(16)
-                    let cipherData = chunk[chunk.startIndex + 16 ..< chunk.endIndex - 16]
-                    do {
-                        let nonce = try AES.GCM.Nonce(data: ivData)
-                        let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: cipherData, tag: tagData)
-                        
-                        var aad = Data()
-                        var bnBigEndian = slot.bigEndian
-                        withUnsafeBytes(of: &bnBigEndian) { bytes in
-                            aad.append(contentsOf: bytes)
-                        }
-                        aad.append(contentsOf: fileID)
-                        
-                        let plainData = try AES.GCM.open(sealedBox, using: key, authenticating: aad)
-                        plainBlock.append(plainData)
-                        
-                    }
-                    catch let error1 {
-                        print(error1)
-                        error = true
-                        return
-                    }
-                    slot += 1
+            
+            let dataStart = data.startIndex
+            // offset: 0..<data.count as relative
+            for offset in stride(from: 0, to: data.count, by: Int(chunksize)) {
+                let chunkStart = dataStart + offset
+                let chunkEnd = dataStart + min(offset + Int(chunksize), data.count)
+                
+                let chunk = data[chunkStart..<chunkEnd]
+                guard chunk.count >= 32 else {
+                    await setError()
+                    return
                 }
+                
+                let ivData = chunk.prefix(16)
+                let tagData = chunk.suffix(16)
+                let cipherData = chunk[chunk.startIndex + 16 ..< chunk.endIndex - 16]
+                
+                do {
+                    let nonce = try AES.GCM.Nonce(data: ivData)
+                    let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: cipherData, tag: tagData)
+                    
+                    var aad = Data()
+                    var bnBigEndian = slot.bigEndian
+                    withUnsafeBytes(of: &bnBigEndian) { bytes in
+                        aad.append(contentsOf: bytes)
+                    }
+                    aad.append(contentsOf: fileID)
+                    
+                    let plainData = try AES.GCM.open(sealedBox, using: key, authenticating: aad)
+                    plainBlock.append(plainData)
+                    
+                }
+                catch let error1 {
+                    print(error1)
+                    await setError()
+                    return
+                }
+                slot += 1
                 guard !error else {
                     return
                 }

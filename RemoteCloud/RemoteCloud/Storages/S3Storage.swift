@@ -1,5 +1,5 @@
 //
-//  FilenStorage.swift
+//  S3Storage.swift
 //  RemoteCloud
 //
 //  Created by rei8 on 2019/11/22.
@@ -72,7 +72,6 @@ struct S3LoginView: View {
                     
                     ok = true
                     Task {
-                        // Regionが空の場合は自動的に "us-east-1" などを設定するのもありです
                         let regionToUse = textRegion.isEmpty ? "us-east-1" : textRegion
                         
                         if let error = await callback(textEndpoint, textAccessKey, textSecretKey, regionToUse, textBucket, usePathStyle) {
@@ -245,33 +244,45 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
         let _ = await setKeyChain(key: "\(name)_bucket", value: bucket)
         let _ = await setKeyChain(key: "\(name)_pathStyle", value: pathStyle ? "true" : "false")
         
+        await tokenCache.setToken(access: "S3_AUTHED", refresh: "")
+        
         return nil
     }
     
     override func listChildren(fileId: String, path: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
+        guard let items = await listFolder(path: fileId) else { return }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id {
+                    existingDict[id] = item
                 }
             }
-        }
-        if let items = await listFolder(path: fileId) {
+            
             for item in items {
-                await storeItem(item: item, parentId: fileId, parentPath: path, context: viewContext)
+                if let id = item["id"] as? String {
+                    let existing = existingDict.removeValue(forKey: id)
+                    self.storeItem(item: item, existingItem: existing, parentId: fileId, parentPath: path, context: viewContext)
+                }
             }
-            await viewContext.perform {
-                try? viewContext.save()
+            
+            for (_, orphan) in existingDict {
+                S3Storage.cascadeDelete(item: orphan, in: viewContext)
             }
+            
+            try? viewContext.save()
         }
     }
     
-    private func storeItem(item: [String: Any], parentId: String, parentPath: String, context: NSManagedObjectContext) async {
+    private func storeItem(item: [String: Any], existingItem: RemoteData? = nil, parentId: String, parentPath: String, context: NSManagedObjectContext) {
         guard let id = item["id"] as? String,
               let name = item["name"] as? String,
               let isFolder = item["isFolder"] as? Bool else {
@@ -288,38 +299,42 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
             size = s
         }
         
-        await context.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = name
-            
-            let comp = name.components(separatedBy: ".")
-            if comp.count > 1 && !isFolder {
-                newitem.ext = comp.last!.lowercased()
-            } else {
-                newitem.ext = ""
-            }
-            
-            newitem.cdate = mtime
-            newitem.mdate = mtime
-            newitem.folder = isFolder
-            newitem.size = Int64(size)
-            
-            newitem.parent = parentId
-            if parentId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
-            } else {
-                newitem.path = "\(parentPath)/\(name)"
-            }
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            // 既存レコードの参照クリア（暗号化対応用）
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = self.storageName
+        targetItem.id = id
+        targetItem.name = name
+        
+        let comp = name.components(separatedBy: ".")
+        if comp.count > 1 && !isFolder {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        
+        targetItem.cdate = mtime
+        targetItem.mdate = mtime
+        targetItem.folder = isFolder
+        targetItem.size = Int64(size)
+        
+        targetItem.parent = parentId
+        if parentId == "" {
+            targetItem.path = "\(self.storageName ?? ""):/\(name)"
+        } else {
+            targetItem.path = "\(parentPath)/\(name)"
         }
     }
     
@@ -364,6 +379,27 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
             let emptyData = Data()
             let _ = try await sendS3Request(method: "PUT", path: newPrefix, body: emptyData)
             
+            let viewContext = CloudFactory.shared.data.backgroundContext
+            let storage = storageName ?? ""
+            
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newPrefix, storage)
+                fetchRequest.fetchLimit = 1
+                let existing = (try? viewContext.fetch(fetchRequest))?.first
+                
+                let mockItem: [String: Any] = [
+                    "id": newPrefix,
+                    "name": newname,
+                    "isFolder": true,
+                    "lastModified": Int(Date().timeIntervalSince1970 * 1000),
+                    "size": 0
+                ]
+                
+                self.storeItem(item: mockItem, existingItem: existing, parentId: parentId, parentPath: parentPath, context: viewContext)
+                try? viewContext.save()
+            }
+            
             return newPrefix
         } catch {
             os_log("%{public}@", log: log, type: .error, "makeFolder Error: \(error.localizedDescription)")
@@ -372,39 +408,44 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     public override func deleteItem(fileId: String) async -> Bool {
-        guard let item = await CloudFactory.shared.data.getData(storage: storageName ?? "", fileId: fileId) else {
-            return false
+        var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID // ⭐️ ここでIDを確保
+            }
         }
         
-        if item.folder {
-            return await deleteDir(fileId: fileId)
+        if isFolder {
+            return await deleteDir(fileId: fileId, objectID: targetObjectID)
         } else {
-            return await deleteFile(fileId: fileId)
+            return await deleteFile(fileId: fileId, objectID: targetObjectID)
         }
     }
     
     // MARK: remove file
-    func deleteFile(fileId: String) async -> Bool {
+    func deleteFile(fileId: String, objectID: NSManagedObjectID?) async -> Bool {
         do {
             os_log("%{public}@", log: log, type: .debug, "deleteFile(S3:\(storageName ?? "")) \(fileId)")
             
             let _ = try await sendS3Request(method: "DELETE", path: fileId)
             
-            let viewContext = CloudFactory.shared.data.viewContext
-            let storage = storageName ?? ""
+            let viewContext = CloudFactory.shared.data.backgroundContext
             
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
+                if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    S3Storage.cascadeDelete(item: existing, in: viewContext)
                 }
                 try? viewContext.save()
             }
-            
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             
             return true
         } catch {
@@ -414,7 +455,7 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     // MARK: remove folder
-    func deleteDir(fileId: String) async -> Bool {
+    func deleteDir(fileId: String, objectID: NSManagedObjectID?) async -> Bool {
         do {
             os_log("%{public}@", log: log, type: .debug, "deleteDir(S3:\(storageName ?? "")) \(fileId)")
             
@@ -451,26 +492,14 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
                 let _ = try await sendS3Request(method: "DELETE", path: fileId)
             }
             
-            let viewContext = CloudFactory.shared.data.viewContext
-            let storage = storageName ?? ""
+            let viewContext = CloudFactory.shared.data.backgroundContext
             
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
+                if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    S3Storage.cascadeDelete(item: existing, in: viewContext)
                 }
-            }
-            
-            deleteChildRecursive(parent: fileId, context: viewContext)
-            
-            await viewContext.perform {
                 try? viewContext.save()
             }
-            
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             
             return true
             
@@ -481,7 +510,6 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     // MARK: - Multi-Object Delete
-    
     private func deleteMultipleObjects(keys: [String]) async throws {
         guard !keys.isEmpty else { return }
         
@@ -522,21 +550,21 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     // MARK: - rename
-    
     public override func renameItem(fileId: String, newname: String) async -> String? {
         if fileId.isEmpty { return nil }
         
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
         
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                if let item = result.first {
-                    isFolder = item.folder
-                }
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
             }
         }
         
@@ -546,16 +574,8 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                    for object in result {
-                        viewContext.delete(object)
-                    }
-                }
-                
-                if isFolder {
-                    self.deleteChildRecursive(parent: fileId, context: viewContext)
+                if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    S3Storage.cascadeDelete(item: existing, in: viewContext)
                 }
                 
                 try? viewContext.save()
@@ -686,24 +706,24 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     // MARK: - Move
-    
     public override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if fileId.isEmpty { return nil }
         if fromParentId == toParentId {
             return nil
         }
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
         
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                if let item = result.first {
-                    isFolder = item.folder
-                }
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
             }
         }
         
@@ -713,16 +733,8 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
             
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                    for object in result {
-                        viewContext.delete(object)
-                    }
-                }
-                
-                if isFolder {
-                    self.deleteChildRecursive(parent: fileId, context: viewContext)
+                if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                    S3Storage.cascadeDelete(item: existing, in: viewContext)
                 }
                 
                 try? viewContext.save()
@@ -847,7 +859,6 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
     }
     
     // MARK: - file upload
-    
     public override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer { try? FileManager.default.removeItem(at: target) }
         
@@ -865,12 +876,14 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
         
         try await progress?(0, fileSize)
         
+        var finalKey: String? = nil
+        
         if fileSize <= Int64(chunkSize) {
             let fileData = try Data(contentsOf: target)
             let headers = ["Content-Type": mimeType, "Content-Length": "\(fileSize)"]
             let _ = try await sendS3Request(method: "PUT", path: newKey, additionalHeaders: headers, body: fileData)
             try await progress?(fileSize, fileSize)
-            return newKey
+            finalKey = newKey
             
         } else {
             var currentUploadId: String? = nil
@@ -922,7 +935,7 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
                 
                 let _ = try await sendS3Request(method: "POST", path: newKey, queryItems: completeQuery, additionalHeaders: ["Content-Type": "application/xml"], body: xmlBody)
                 
-                return newKey
+                finalKey = newKey
                 
             } catch {
                 if let uid = currentUploadId {
@@ -932,9 +945,38 @@ public class S3Storage: NetworkStorage, URLSessionDataDelegate {
                 throw error
             }
         }
+        
+        if let finalKey = finalKey {
+            let viewContext = CloudFactory.shared.data.backgroundContext
+            let storage = storageName ?? ""
+            
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", finalKey, storage)
+                fetchRequest.fetchLimit = 1
+                let existing = (try? viewContext.fetch(fetchRequest))?.first
+                
+                var parentPath = "\(storage):/"
+                if parentId != "" {
+                    parentPath = "\(storage):/\(parentId)"
+                }
+                
+                let mockItem: [String: Any] = [
+                    "id": finalKey,
+                    "name": uploadname,
+                    "isFolder": false,
+                    "lastModified": Int(Date().timeIntervalSince1970 * 1000),
+                    "size": Int(fileSize)
+                ]
+                
+                self.storeItem(item: mockItem, existingItem: existing, parentId: parentId, parentPath: parentPath, context: viewContext)
+                try? viewContext.save()
+            }
+        }
+        
+        return finalKey
     }
 }
-
 struct SigV4Signer {
 
     private static func hmac(key: [UInt8], stringData: String) -> [UInt8] {
@@ -1297,7 +1339,6 @@ class S3ListParser: NSObject, XMLParserDelegate {
     private var currentElement = ""
     private var currentValue = ""
     
-    // 現在パース中のオブジェクト情報
     private var currentItem: [String: Any]?
     
     init(data: Data, currentPrefix: String) {
@@ -1481,22 +1522,13 @@ public class RemoteS3Stream: SlotStream {
         await super.init(size: remote.size)
     }
     
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(60)) == .success else {
-            error = true
+            await setError()
             return
         }
         guard pos.lowerBound >= 0 && pos.upperBound < size else {
@@ -1515,7 +1547,7 @@ public class RemoteS3Stream: SlotStream {
                 if let data = await remote.remoteStorage.downloadChunk(fileId: remote.id, range: start...end) {
                     await buffer.store(pos: start, data: data)
                 } else {
-                    error = true
+                    await setError()
                     break
                 }
             }

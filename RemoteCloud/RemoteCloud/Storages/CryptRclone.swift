@@ -1200,7 +1200,7 @@ public class RemoteCryptRcloneStream: SlotStream {
     let CryptedLength: Int64
     var nonce = [UInt8](repeating: 0, count: 24)
     let key: [UInt8]
-
+    
     init(remote: CryptRcloneRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
@@ -1208,39 +1208,24 @@ public class RemoteCryptRcloneStream: SlotStream {
         key = remote.remoteStorage.dataKey
         await super.init(size: OrignalLength)
     }
-
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
-    }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
+    
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func fillHeader() async {
         guard let data = try? await remote.read(start: 0, length: remote.remoteStorage.fileHeaderSize) else {
             print("error on header null")
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
-        if !remote.remoteStorage.fileMagic.elementsEqual(data.subdata(in: 0..<remote.remoteStorage.fileMagic.count)) {
+        if !remote.remoteStorage.fileMagic.elementsEqual(data.prefix(remote.remoteStorage.fileMagic.count)) {
             print("error on header check")
             await super.fillHeader()
-            error = true
+            await setError()
         }
-        nonce.replaceSubrange(0..<nonce.count, with: data.subdata(in: remote.remoteStorage.fileMagic.count..<data.count))
+        nonce.replaceSubrange(0..<nonce.count, with: data.dropFirst(remote.remoteStorage.fileMagic.count))
         await super.fillHeader()
     }
     
@@ -1264,10 +1249,10 @@ public class RemoteCryptRcloneStream: SlotStream {
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
-
+        
         let chunksize = remote.remoteStorage.chunkSize
         let orgBlocksize = remote.remoteStorage.blockDataSize
         let headersize = Int64(remote.remoteStorage.fileHeaderSize)
@@ -1293,22 +1278,26 @@ public class RemoteCryptRcloneStream: SlotStream {
             }
             guard let data = try? await remote.read(start: pos2, length: clen) else {
                 print("error on readFile")
-                error = true
+                await setError()
                 return
             }
             var slot = slot1
             var plainBlock = Data()
-            for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                autoreleasepool {
-                    let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                    let chunk = data.subdata(in: start..<end)
-                    guard let plain = Secretbox.open(box: chunk, nonce: addNonce(pos: slot), key: key) else {
-                        error = true
-                        return
-                    }
-                    plainBlock.append(plain)
-                    slot += 1
+            
+            let dataStart = data.startIndex
+            
+            for offset in stride(from: 0, to: data.count, by: Int(chunksize)) {
+                let chunkStart = dataStart + offset
+                let chunkEnd = dataStart + min(offset + Int(chunksize), data.count)
+                
+                let chunk = data[chunkStart..<chunkEnd]
+                
+                guard let plain = Secretbox.open(box: chunk, nonce: addNonce(pos: slot), key: key) else {
+                    await setError()
+                    return
                 }
+                plainBlock.append(plain)
+                slot += 1
                 guard !error else {
                     return
                 }

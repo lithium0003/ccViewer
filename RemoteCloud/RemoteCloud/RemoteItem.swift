@@ -10,6 +10,7 @@ import Foundation
 import CoreData
 import CloudKit
 import CommonCrypto
+import UIKit
 
 class PlaylistDocument: UIDocument {
     var userData: [(String, String, String, String)] = []
@@ -34,8 +35,29 @@ class PlaylistDocument: UIDocument {
     }
 }
 
+public struct RemoteDataDTO: Sendable, Identifiable, Hashable {
+    public let cdate: Date?
+    public let ext: String?
+    public let folder: Bool
+    public let hashstr: String?
+    public let id: String?
+    public let mdate: Date?
+    public let name: String?
+    public let parent: String?
+    public let parentDate: Date?
+    public let path: String?
+    public let size: Int64
+    public let storage: String?
+    public let subend: Int64
+    public let subid: String?
+    public let subinfo: String?
+    public let substart: Int64
+    public let baseStorage: String?
+    public let baseId: String?
+}
+
 public class dataItems {
-    public func list(storage: String, targetID: String, force: Bool = false) async -> [RemoteData] {
+    public func list(storage: String, targetID: String, force: Bool = false) async -> [RemoteDataDTO] {
         guard let service = await CloudFactory.shared.storageList.get(storage) else {
             return []
         }
@@ -76,23 +98,48 @@ public class dataItems {
         }
     }
     
-    public func listData(storage: String, parentID: String) async -> [RemoteData]  {
-        let viewContext = viewContext
+    public func listData(storage: String, parentID: String) async -> [RemoteDataDTO] {
+        let viewContext = self.backgroundContext
         return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "folder", ascending: false),
-                                            NSSortDescriptor(key: "name", ascending: true)]
-            do{
-                return try viewContext.fetch(fetchrequest) as! [RemoteData]
-            }
-            catch{
-                print(error)
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
+            fetchRequest.sortDescriptors = [
+                NSSortDescriptor(key: "folder", ascending: false),
+                NSSortDescriptor(key: "name", ascending: true)
+            ]
+            
+            do {
+                let results = try viewContext.fetch(fetchRequest)
+                
+                return results.map { result in
+                    RemoteDataDTO(
+                        cdate: result.cdate,
+                        ext: result.ext,
+                        folder: result.folder,
+                        hashstr: result.hashstr,
+                        id: result.id,
+                        mdate: result.mdate,
+                        name: result.name,
+                        parent: result.parent,
+                        parentDate: result.parentDate,
+                        path: result.path,
+                        size: result.size,
+                        storage: result.storage,
+                        subend: result.subend,
+                        subid: result.subid,
+                        subinfo: result.subinfo,
+                        substart: result.substart,
+                        baseStorage: result.baseStorage,
+                        baseId: result.baseId,
+                    )
+                }
+            } catch {
+                print("Failed to fetch listData: \(error)")
                 return []
             }
         }
     }
-
+    
     public func getPlaylists() async -> [String] {
         let url: URL
         if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
@@ -152,7 +199,7 @@ public class dataItems {
         await playlistFile.close()
         return data
     }
-
+    
     public func setPlaylist(playlistName: String, items: [(String, String, String, String)]) async {
         let url: URL
         if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
@@ -182,7 +229,7 @@ public class dataItems {
         }
         await playlistFile.close()
     }
-
+    
     public func deletePlaylist(playlistName: String) async {
         let url: URL
         if UserDefaults.standard.bool(forKey: "cloudPlaylist"), FileManager.default.ubiquityIdentityToken != nil {
@@ -206,72 +253,128 @@ public class dataItems {
         try? FileManager.default.removeItem(at: url)
     }
     
-    public func getImage(storage: String, parentId: String, baseName: String) async -> RemoteData? {
-        let viewContext = viewContext
+    public func getImage(storage: String, parentId: String, baseName: String) async -> RemoteDataDTO? {
+        let viewContext = self.backgroundContext
         return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name BEGINSWITH %@", parentId, storage, baseName)
-            guard let results = try? viewContext.fetch(fetchrequest) as? [RemoteData] else {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name BEGINSWITH %@", parentId, storage, baseName)
+            
+            guard let results = try? viewContext.fetch(fetchRequest) else {
                 return nil
             }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".jpg")}).first {
-                return img
+            
+            let targetExtensions = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"]
+            var targetImage: RemoteData? = nil
+            for ext in targetExtensions {
+                if let img = results.first(where: { ($0.name ?? "").lowercased().hasSuffix(ext) }) {
+                    targetImage = img
+                    break
+                }
             }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".jpeg")}).first {
-                return img
+            
+            guard let result = targetImage else {
+                return nil
             }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".png")}).first {
-                return img
-            }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".tif")}).first {
-                return img
-            }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".tiff")}).first {
-                return img
-            }
-            if let img = results.filter({ ($0.name ?? "").hasSuffix(".bmp")}).first {
-                return img
+            
+            return RemoteDataDTO(
+                cdate: result.cdate,
+                ext: result.ext,
+                folder: result.folder,
+                hashstr: result.hashstr,
+                id: result.id,
+                mdate: result.mdate,
+                name: result.name,
+                parent: result.parent,
+                parentDate: result.parentDate,
+                path: result.path,
+                size: result.size,
+                storage: result.storage,
+                subend: result.subend,
+                subid: result.subid,
+                subinfo: result.subinfo,
+                substart: result.substart,
+                baseStorage: result.baseStorage,
+                baseId: result.baseId,
+            )
+        }
+    }
+    
+    public func getData(storage: String, fileId: String) async -> RemoteDataDTO? {
+        let context = self.backgroundContext
+        return await context.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let result = (try? context.fetch(fetchRequest))?.first {
+                return RemoteDataDTO(
+                    cdate: result.cdate,
+                    ext: result.ext,
+                    folder: result.folder,
+                    hashstr: result.hashstr,
+                    id: result.id,
+                    mdate: result.mdate,
+                    name: result.name,
+                    parent: result.parent,
+                    parentDate: result.parentDate,
+                    path: result.path,
+                    size: result.size,
+                    storage: result.storage,
+                    subend: result.subend,
+                    subid: result.subid,
+                    subinfo: result.subinfo,
+                    substart: result.substart,
+                    baseStorage: result.baseStorage,
+                    baseId: result.baseId
+                )
             }
             return nil
         }
     }
-
-    public func getData(storage: String, fileId: String) async -> RemoteData? {
-        let viewContext = self.viewContext
-        return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let results = try? viewContext.fetch(fetchrequest) as? [RemoteData], let result = results.first {
-                return result
+    
+    public func getData(path: String) async -> RemoteDataDTO? {
+        let context = self.backgroundContext
+        return await context.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "path == %@", path)
+            fetchRequest.fetchLimit = 1
+            if let result = (try? context.fetch(fetchRequest))?.first {
+                return RemoteDataDTO(
+                    cdate: result.cdate,
+                    ext: result.ext,
+                    folder: result.folder,
+                    hashstr: result.hashstr,
+                    id: result.id,
+                    mdate: result.mdate,
+                    name: result.name,
+                    parent: result.parent,
+                    parentDate: result.parentDate,
+                    path: result.path,
+                    size: result.size,
+                    storage: result.storage,
+                    subend: result.subend,
+                    subid: result.subid,
+                    subinfo: result.subinfo,
+                    substart: result.substart,
+                    baseStorage: result.baseStorage,
+                    baseId: result.baseId
+                )
             }
             return nil
         }
     }
-
-    public func getData(path: String) async -> RemoteData? {
-        let viewContext = self.viewContext
-        return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchrequest.predicate = NSPredicate(format: "path == %@", path)
-            if let results = try? viewContext.fetch(fetchrequest) as? [RemoteData], let result = results.first {
-                return result
-            }
-            return nil
-        }
-    }
-
+    
     public func clearAllData() async throws {
-        let viewContext = self.viewContext
-        try await viewContext.perform {
+        let context = self.backgroundContext
+        try await context.perform {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
             let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
             batchDeleteRequest.resultType = .resultTypeObjectIDs
             
-            let result = try viewContext.execute(batchDeleteRequest) as? NSBatchDeleteResult
+            let result = try context.execute(batchDeleteRequest) as? NSBatchDeleteResult
             let objectIDArray = result?.result as? [NSManagedObjectID] ?? []
             
             let changes = [NSDeletedObjectsKey: objectIDArray]
-            NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [viewContext])
+            NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [context])
         }
     }
     
@@ -318,7 +421,9 @@ public class dataItems {
         return container
     }()
 
-    public lazy var viewContext = {
-        persistentContainer.newBackgroundContext()
+    public lazy var backgroundContext = {
+        let context = persistentContainer.newBackgroundContext()
+        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        return context
     }()
 }

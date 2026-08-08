@@ -217,7 +217,6 @@ public class Cryptomator: ChildStorage {
 
     func base64URLDecode(_ string: String) -> Data? {
         var stringtoDecode = string.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        // 文字数に応じて末に「=」を追加する
         switch stringtoDecode.count % 4 {
         case 2:
             stringtoDecode += "=="
@@ -416,7 +415,7 @@ public class Cryptomator: ChildStorage {
         return s1 && s2 && s3
     }
     
-    func findParentStorage(baseId: String = "") async -> [RemoteData] {
+    func findParentStorage(baseId: String = "") async -> [RemoteDataDTO] {
         let fixId = baseId == "" ? baseRootFileId: baseId
         let cached = await CloudFactory.shared.data.listData(storage: baseRootStorage, parentID: fixId)
         if cached.isEmpty {
@@ -428,17 +427,17 @@ public class Cryptomator: ChildStorage {
         }
     }
 
-    func findParentStorage(path: ArraySlice<String>, baseId: String = "", expand: Bool = true) async -> [RemoteItem] {
+    func findParentStorage(path: ArraySlice<String>, baseId: String = "", expand: Bool = true) async -> [RemoteDataDTO] {
         if path.count == 0 {
-            guard let item = await CloudFactory.shared.storageList.get(baseRootStorage)?.get(fileId: baseId == "" ? baseRootFileId : baseId) else {
+            guard let item = await CloudFactory.shared.data.getData(storage: baseRootStorage, fileId: baseId == "" ? baseRootFileId : baseId) else {
                 return []
             }
-            if item.isFolder && expand {
+            if item.folder && expand {
                 let items = await findParentStorage(baseId: baseId == "" ? baseRootFileId : baseId)
                 let ret = await withTaskGroup { group in
                     for id in items.compactMap({ $0.id }) {
                         group.addTask {
-                            await CloudFactory.shared.storageList.get(self.baseRootStorage)?.get(fileId: id)
+                            await CloudFactory.shared.data.getData(storage: self.baseRootStorage, fileId: id)
                         }
                     }
                     return await group.reduce(into: []) { result, item in
@@ -462,9 +461,9 @@ public class Cryptomator: ChildStorage {
         return []
     }
 
-    func makeParentStorage(path: ArraySlice<String>, baseId: String = "") async -> RemoteItem? {
+    func makeParentStorage(path: ArraySlice<String>, baseId: String = "") async -> RemoteDataDTO? {
         if path.count == 0 {
-            guard let item = await CloudFactory.shared.storageList.get(baseRootStorage)?.get(fileId: baseId == "" ? baseRootFileId : baseId) else {
+            guard let item = await CloudFactory.shared.data.getData(storage: baseRootStorage, fileId: baseId == "" ? baseRootFileId : baseId) else {
                 return nil
             }
             return item
@@ -479,15 +478,15 @@ public class Cryptomator: ChildStorage {
                 return await makeParentStorage(path: path.dropFirst(), baseId: id)
             }
         }
-        guard let item = await CloudFactory.shared.storageList.get(self.baseRootStorage)?.get(fileId: baseId == "" ? self.baseRootFileId : baseId) else {
+        guard let bs = await CloudFactory.shared.storageList.get(self.baseRootStorage) as? RemoteStorageBase else {
             return nil
         }
-        guard let newid = await item.mkdir(newname: p[0]) else {
+        guard let newid = await bs.mkdir(parentId: baseId == "" ? self.baseRootFileId : baseId, newname: p[0]) else {
             return nil
         }
         return await makeParentStorage(path: path.dropFirst(), baseId: newid)
     }
-
+    
     func writeMasterKeyFile(json: [String: Any]) async -> Bool {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) else {
             return false
@@ -612,161 +611,144 @@ public class Cryptomator: ChildStorage {
         return json
     }
 
-    func storeItem(parentId: String, item: RemoteItem, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, context: NSManagedObjectContext) {
-        os_log("%{public}@", log: log, type: .debug, "storeItem(cryptomator:\(storageName ?? "")) \(name)")
+    private class func storeItem(parentId: String, item: RemoteDataDTO, name: String, isFolder: Bool, dirId: String, deflatedName: String, path: String, storage: String, baseStorage: String, existingItem: RemoteData? = nil, context: NSManagedObjectContext) {
+        let newid = "\(dirId)/\(deflatedName)"
+        let newsize = CalcDecryptedSize(crypt_size: item.size)
         
-        context.performAndWait {
-            let newid = "\(dirId)/\(deflatedName)"
-            let newname = name
-            let newcdate = item.cDate
-            let newmdate = item.mDate
-            let newfolder = isFolder
-            let newsize = self.ConvertDecryptSize(size: item.size)
-
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = newid
-            newitem.name = newname
-            let comp = newname.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = newcdate
-            newitem.mdate = newmdate
-            newitem.folder = newfolder
-            newitem.size = newsize
-            newitem.hashstr = ""
-            newitem.parent = parentId
-            if parentId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(newname)"
-            }
-            else {
-                newitem.path = "\(path)/\(newname)"
-            }
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = storage
+        targetItem.id = newid
+        targetItem.name = name
+        
+        let comp = name.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        
+        targetItem.cdate = item.cdate
+        targetItem.mdate = item.mdate
+        targetItem.folder = isFolder
+        targetItem.size = newsize
+        targetItem.hashstr = ""
+        targetItem.parent = parentId
+        
+        targetItem.baseStorage = baseStorage
+        targetItem.baseId = item.id
+        
+        if parentId == "" {
+            targetItem.path = "\(storage):/\(name)"
+        } else {
+            targetItem.path = "\(path)/\(name)"
         }
     }
     
     func subListChildren(dirId: String, fileId: String, path: String) async {
-        guard let dirIdHash = resolveDirectory(dirId: dirId) else {
-            return
-        }
+        guard let dirIdHash = resolveDirectory(dirId: dirId) else { return }
+        
         let items = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))])
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        var processedItems: [(id: String, name: String, item: RemoteDataDTO, deflatedName: String, isFolder: Bool)] = []
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return }
+        
         for item in items {
-            if item.name == "dirid.c9r" {
-            }
-            else if item.name.hasSuffix(shortened_ext) {
+            guard let itemName = item.name else { continue }
+            if itemName == "dirid.c9r" { continue }
+            else if itemName.hasSuffix(shortened_ext) {
                 // long name
-                let subitems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), item.name])
-                guard let nameitem = subitems.first(where: { $0.name == "name.c9s" }) else {
-                    continue
-                }
-
-                guard let namedata = try? await nameitem.read() else {
-                    continue
-                }
-                guard let orgname = String(bytes: namedata, encoding: .utf8) else {
-                    continue
-                }
-
-                guard let decryptedName = decryptFilename(ciphertextName: orgname.replacing(normal_ext, with: ""), dirId: dirId) else {
-                    continue
-                }
-
-                if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }) {
-                    guard let dirdata = try? await diridItem.read() else {
-                        continue
-                    }
-                    guard let subdirId = String(bytes: dirdata, encoding: .utf8) else {
-                        continue
-                    }
-                    guard let subdirIdHash = resolveDirectory(dirId: subdirId) else {
-                        return
-                    }
-
-                    guard let dirTargetItem = await findParentStorage(path: [DATA_DIR_NAME, String(subdirIdHash.prefix(2)), String(subdirIdHash.suffix(30))], expand: false).first else {
-                        return
-                    }
-
-                    storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: viewContext)
+                let subitems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), itemName])
+                guard let nameitem = subitems.first(where: { $0.name == "name.c9s" }), let nameitemId = nameitem.id else { continue }
+                guard let namedata = try? await bs.read(fileId: nameitemId) else { continue }
+                guard let orgname = String(bytes: namedata, encoding: .utf8) else { continue }
+                guard let decryptedName = decryptFilename(ciphertextName: orgname.replacingOccurrences(of: normal_ext, with: ""), dirId: dirId) else { continue }
+                
+                if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }), let diridItemId = diridItem.id {
+                    guard let dirdata = try? await bs.read(fileId: diridItemId) else { continue }
+                    guard let subdirId = String(bytes: dirdata, encoding: .utf8) else { continue }
+                    guard let subdirIdHash = resolveDirectory(dirId: subdirId) else { continue }
+                    guard let dirTargetItem = await findParentStorage(path: [DATA_DIR_NAME, String(subdirIdHash.prefix(2)), String(subdirIdHash.suffix(30))], expand: false).first else { continue }
+                    
+                    processedItems.append((id: dirTargetItem.id ?? "", name: decryptedName, item: dirTargetItem, deflatedName: "\(itemName)/\(subdirId)", isFolder: true))
                 }
                 else if let contentItem = subitems.first(where: { $0.name == "contents.c9r" }) {
-                    storeItem(parentId: fileId, item: contentItem, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: viewContext)
+                    processedItems.append((id: contentItem.id ?? "", name: decryptedName, item: contentItem, deflatedName: itemName, isFolder: false))
                 }
             }
-            else if item.name.hasSuffix(normal_ext) {
-                guard let decryptedName = decryptFilename(ciphertextName: item.name.replacing(normal_ext, with: ""), dirId: dirId) else {
-                    continue
-                }
-                if item.isFolder {
-                    let subitems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), item.name])
-
-                    if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }) {
-                        guard let dirdata = try? await diridItem.read() else {
-                            continue
-                        }
-                        guard let subdirId = String(bytes: dirdata, encoding: .utf8) else {
-                            continue
-                        }
-
-                        guard let subdirIdHash = resolveDirectory(dirId: subdirId) else {
-                            return
-                        }
-
-                        guard let dirTargetItem = await findParentStorage(path: [DATA_DIR_NAME, String(subdirIdHash.prefix(2)), String(subdirIdHash.suffix(30))], expand: false).first else {
-                            return
-                        }
-
-                        storeItem(parentId: fileId, item: dirTargetItem, name: decryptedName, isFolder: true, dirId: dirId, deflatedName: item.name+"/"+subdirId, path: path, context: viewContext)
+            else if itemName.hasSuffix(normal_ext) {
+                guard let decryptedName = decryptFilename(ciphertextName: itemName.replacingOccurrences(of: normal_ext, with: ""), dirId: dirId) else { continue }
+                
+                if item.folder {
+                    let subitems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), itemName])
+                    if let diridItem = subitems.first(where: { $0.name == "dir.c9r" }), let diridItemId = diridItem.id {
+                        guard let dirdata = try? await bs.read(fileId: diridItemId) else { continue }
+                        guard let subdirId = String(bytes: dirdata, encoding: .utf8) else { continue }
+                        guard let subdirIdHash = resolveDirectory(dirId: subdirId) else { continue }
+                        guard let dirTargetItem = await findParentStorage(path: [DATA_DIR_NAME, String(subdirIdHash.prefix(2)), String(subdirIdHash.suffix(30))], expand: false).first else { continue }
+                        
+                        processedItems.append((id: dirTargetItem.id ?? "", name: decryptedName, item: dirTargetItem, deflatedName: "\(itemName)/\(subdirId)", isFolder: true))
                     }
                 }
                 else {
-                    storeItem(parentId: fileId, item: item, name: decryptedName, isFolder: false, dirId: dirId, deflatedName: item.name, path: path, context: viewContext)
+                    processedItems.append((id: item.id ?? "", name: decryptedName, item: item, deflatedName: itemName, isFolder: false))
                 }
             }
         }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storageNameStr = storageName ?? ""
+        let baseStorage = baseRootStorage
+        
         await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storageNameStr)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id { existingDict[id] = item }
+            }
+            
+            for processed in processedItems {
+                let genId = "\(dirId)/\(processed.deflatedName)"
+                let existing = existingDict.removeValue(forKey: genId)
+                Cryptomator.storeItem(parentId: fileId, item: processed.item, name: processed.name, isFolder: processed.isFolder, dirId: dirId, deflatedName: processed.deflatedName, path: path, storage: storageNameStr, baseStorage: baseStorage, existingItem: existing, context: viewContext)
+            }
+            
+            for (_, orphan) in existingDict {
+                Cryptomator.cascadeDelete(item: orphan, in: viewContext)
+            }
+            
             try? viewContext.save()
         }
     }
     
     override func listChildren(fileId: String, path: String) async {
-        // fileId file: parentDirId/deflatedName
-        // fileId dir: parentDirId/deflatedName/dirId
         os_log("%{public}@", log: log, type: .debug, "ListChildren(cryptomator:\(storageName ?? "")) \(fileId)")
-
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-        }
-        await viewContext.perform {
-            try? viewContext.save()
-        }
+        await recoverBaseRootIfNeeded()
 
         if fileId == "" {
             await subListChildren(dirId: "", fileId: fileId, path: path)
+        } else {
+            let array = fileId.components(separatedBy: "/")
+            let dirId = array.last!
+            await subListChildren(dirId: dirId, fileId: fileId, path: path)
         }
-
-        let array = fileId.components(separatedBy: "/")
-        let dirId = array.last!
-        await subListChildren(dirId: dirId, fileId: fileId, path: path)
     }
-
+    
     func deflate(longFileName: String) -> String? {
         guard let longFileNameBytes = longFileName.data(using: .utf8) else {
             return nil
@@ -877,349 +859,212 @@ public class Cryptomator: ChildStorage {
     
     public override func makeFolder(parentId: String, parentPath: String, newname: String) async -> String? {
         os_log("%{public}@", log: log, type: .debug, "makeFolder(\(String(describing: type(of: self))):\(storageName ?? "") \(parentId)(\(parentPath)) \(newname)")
-
-        guard let s = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
-            return nil
-        }
-
-        let parentDirId: String
-        if parentId == "" {
-            parentDirId = ""
-        }
-        else {
-            let array = parentId.components(separatedBy: "/")
-            parentDirId = array.last!
-        }
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-            return nil
-        }
-
-        // generate encrypted name
-        guard var encFilename = encryptFilename(cleartextName: newname, dirId: parentDirId) else {
-            return nil
-        }
+        
+        guard let s = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
+        
+        let parentDirId = parentId == "" ? "" : parentId.components(separatedBy: "/").last!
+        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+        
+        guard var encFilename = encryptFilename(cleartextName: newname, dirId: parentDirId) else { return nil }
         encFilename += normal_ext
-        // generate new dirid
+        
         let newDirId = UUID().uuidString.lowercased()
-        guard let dirIdHash = resolveDirectory(dirId: newDirId) else {
-            return nil
-        }
-        // make directory for new dirid
-        guard let newCreateDirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]) else {
-            return nil
-        }
-
+        guard let dirIdHash = resolveDirectory(dirId: newDirId) else { return nil }
+        guard let newCreateDirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))]), let newCreateDirItemId = newCreateDirItem.id else { return nil }
+        
         let target = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        do {
-            try newDirId.write(to: target, atomically: true, encoding: .utf8)
-        }
-        catch {
-            print(error)
-            return nil
-        }
-        guard let diridFile = processFile(target: target) else {
-            return nil
-        }
-        guard (try? await s.upload(parentId: newCreateDirItem.id, uploadname: "dirid.c9r", target: diridFile)) != nil else {
-            return nil
-        }
-
-        let viewContext = CloudFactory.shared.data.viewContext
-        // if needed filename shorten
+        do { try newDirId.write(to: target, atomically: true, encoding: .utf8) } catch { return nil }
+        
+        guard let diridFile = processFile(target: target) else { return nil }
+        guard (try? await s.upload(parentId: newCreateDirItemId, uploadname: "dirid.c9r", target: diridFile)) != nil else { return nil }
+        
+        var targetDeflatedName: String
+        var uploadedDirItem: RemoteDataDTO?
+        
         if encFilename.count > shorteningThreshold {
             let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-            do {
-                try encFilename.write(to: target2, atomically: true, encoding: .utf8)
-            }
-            catch {
-                print(error)
-                return nil
-            }
-            guard let deflatedName = deflate(longFileName: encFilename) else {
-                return nil
-            }
-            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflatedName]) else {
-                return nil
-            }
-            guard (try? await s.upload(parentId: dirItem.id, uploadname: "dir.c9r", target: target)) != nil else {
-                return nil
-            }
-            guard (try? await s.upload(parentId: dirItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                return nil
-            }
-            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            let newid = "\(parentDirId)/\(dirItem.name)/\(newDirId)"
-            let storage = storageName ?? ""
-            return await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
-                    return newitem.id
-                }
-                return nil
-            }
+            do { try encFilename.write(to: target2, atomically: true, encoding: .utf8) } catch { return nil }
+            guard let deflatedName = deflate(longFileName: encFilename) else { return nil }
+            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflatedName]), let dirItemId = dirItem.id else { return nil }
+            
+            guard (try? await s.upload(parentId: dirItemId, uploadname: "dir.c9r", target: target)) != nil else { return nil }
+            guard (try? await s.upload(parentId: dirItemId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+            
+            targetDeflatedName = "\(dirItem.name ?? "")/\(newDirId)"
+            uploadedDirItem = dirItem
+        } else {
+            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), encFilename]), let dirItemId = dirItem.id else { return nil }
+            guard (try? await s.upload(parentId: dirItemId, uploadname: "dir.c9r", target: target)) != nil else { return nil }
+            
+            targetDeflatedName = "\(dirItem.name ?? "")/\(newDirId)"
+            uploadedDirItem = dirItem
         }
-        else {
-            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), encFilename]) else {
-                return nil
-            }
-            guard (try? await s.upload(parentId: dirItem.id, uploadname: "dir.c9r", target: target)) != nil else {
-                return nil
-            }
-            storeItem(parentId: parentId, item: newCreateDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: dirItem.name+"/"+newDirId, path: parentPath+"/"+newname, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            let newid = "\(parentDirId)/\(dirItem.name)/\(newDirId)"
-            let storage = storageName ?? ""
-            return await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData], let newitem = items.first {
-                    return newitem.id
-                }
-                return nil
-            }
+        guard let uploadedDirItem else {
+            return nil
+        }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        let baseStrage = baseRootStorage
+        return await viewContext.perform {
+            let newid = "\(parentDirId)/\(targetDeflatedName)"
+            
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+            fetchRequest.fetchLimit = 1
+            let existing = (try? viewContext.fetch(fetchRequest))?.first
+            
+            Cryptomator.storeItem(parentId: parentId, item: uploadedDirItem, name: newname, isFolder: true, dirId: parentDirId, deflatedName: targetDeflatedName, path: parentPath + "/" + newname, storage: storage, baseStorage: baseStrage, existingItem: existing, context: viewContext)
+            
+            try? viewContext.save()
+            return newid
         }
     }
     
     override func deleteItem(fileId: String) async -> Bool {
-        guard fileId != "" else {
-            return false
-        }
-
+        guard fileId != "" else { return false }
+        
         os_log("%{public}@", log: log, type: .debug, "deleteItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)")
-
+        
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return false }
+        
         let array = fileId.components(separatedBy: "/")
         let parentDirId = array[0]
         let deflateId = array[1]
-
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-            return false
-        }
-
+        
+        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return false }
+        
         let items = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30))])
-        guard let item = items.first(where: { $0.name == deflateId }) else {
-            return false
-        }
-
-        guard await item.delete() else {
-            return false
-        }
-
+        guard let item = items.first(where: { $0.name == deflateId }), let itemId = item.id else { return false }
+        
+        guard await bs.delete(fileId: itemId) else { return false }
+        
         if array.count == 3, let newDirId = array.last {
-            guard let newIdHash = resolveDirectory(dirId: newDirId) else {
-                return false
-            }
-            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(newIdHash.prefix(2)), String(newIdHash.suffix(30))], expand: false).first else {
-                return false
-            }
-            guard await item.delete() else {
-                return false
-            }
+            guard let newIdHash = resolveDirectory(dirId: newDirId) else { return false }
+            guard let dirItem = await findParentStorage(path: [DATA_DIR_NAME, String(newIdHash.prefix(2)), String(newIdHash.suffix(30))], expand: false).first, let dirItemId = dirItem.id else { return false }
+            guard await bs.delete(fileId: dirItemId) else { return false }
         }
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
+        var targetObjectID: NSManagedObjectID? = nil
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    viewContext.delete(item)
-                }
-                try? viewContext.save()
-            }
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
         }
+        
+        await viewContext.perform {
+            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                Cryptomator.cascadeDelete(item: existing, in: viewContext)
+            }
+            try? viewContext.save()
+        }
+        
         return true
     }
-
+    
     override func renameItem(fileId: String, newname: String) async -> String? {
         let newname = newname.precomposedStringWithCanonicalMapping
-        guard fileId != "" else {
-            return nil
-        }
+        guard fileId != "" else { return nil }
         
         os_log("%{public}@", log: log, type: .debug, "renameItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)->\(newname)")
         
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
+        
         let array = fileId.components(separatedBy: "/")
         let parentDirId = array[0]
         let deflateId = array[1]
         
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-            return nil
+        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+        guard let parentBaseitem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30))], expand: false).first, let parentBaseitemId = parentBaseitem.id else { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        let baseStorage = baseRootStorage
+        var targetObjectID: NSManagedObjectID? = nil
+        var parentId: String? = nil
+        var oldItemProps: (cdate: Date?, mdate: Date?, size: Int64, folder: Bool, path: String?)? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+                parentId = item.parent
+                oldItemProps = (item.cdate, item.mdate, item.size, item.folder, item.path)
+            }
+        }
+        guard let c = oldItemProps else { return nil }
+        
+        var parentPath = ""
+        if let pId = parentId, pId != "" {
+            parentPath = await getParentPath(parentId: pId) ?? ""
         }
         
-        guard let parentBaseitem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30))], expand: false).first else {
-            return nil
-        }
-        
-        guard let c = await CloudFactory.shared.storageList.get(storageName!)?.get(fileId: fileId) else {
-            return nil
-        }
-        let newcdate = c.cDate
-        let newmdate = c.mDate
-        let newfolder = c.isFolder
-        let newsize = c.size
-        guard let s = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
-            return nil
-        }
-        
-        var parentPath: String? = nil
-        let parentId = c.parent
-        if parentId != "" {
-            parentPath = await getParentPath(parentId: parentId)
-        }
-        guard let parentPath = parentPath else {
-            return nil
-        }
-        
-        guard var encFilename = encryptFilename(cleartextName: newname, dirId: parentDirId) else {
-            return nil
-        }
+        guard var encFilename = encryptFilename(cleartextName: newname, dirId: parentDirId) else { return nil }
         encFilename += normal_ext
         
-        guard let currentBaseItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first else {
-            return nil
-        }
+        guard let currentBaseItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first, let currentBaseItemId = currentBaseItem.id else { return nil }
         
         var retId: String
         if encFilename.count > shorteningThreshold {
-            guard let deflatedName = deflate(longFileName: encFilename) else {
-                return nil
-            }
+            guard let deflatedName = deflate(longFileName: encFilename) else { return nil }
             if deflateId.hasSuffix(normal_ext) {
-                // normal -> shorten
                 let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-                do {
-                    try encFilename.write(to: target2, atomically: true, encoding: .utf8)
-                }
-                catch {
-                    print(error)
-                    return nil
-                }
-                if c.isFolder {
-                    // already folder
-                    guard (try? await s.upload(parentId: currentBaseItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                        return nil
-                    }
-                    guard await currentBaseItem.rename(newname: deflatedName) != nil else {
-                        return nil
-                    }
+                do { try encFilename.write(to: target2, atomically: true, encoding: .utf8) } catch { return nil }
+                if c.folder {
+                    guard (try? await bs.upload(parentId: currentBaseItemId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+                    guard await bs.rename(fileId: currentBaseItemId, newname: deflatedName) != nil else { return nil }
                     retId = "\(parentDirId)/\(deflatedName)/\(array[2])"
-                }
-                else {
-                    guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflatedName]) else {
-                        return nil
-                    }
-                    guard (try? await s.upload(parentId: dirItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                        return nil
-                    }
-                    guard let renameId = await currentBaseItem.rename(newname: "contents.c9r") else {
-                        return nil
-                    }
-                    await s.list(fileId: parentBaseitem.id)
-                    guard let renamedItem = await s.get(fileId: renameId) else {
-                        return nil
-                    }
-                    guard await renamedItem.move(toParentId: dirItem.id) != nil else {
-                        return nil
-                    }
+                } else {
+                    guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflatedName]), let dirItemId = dirItem.id else { return nil }
+                    guard (try? await bs.upload(parentId: dirItemId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+                    guard let renameId = await bs.rename(fileId: currentBaseItemId, newname: "contents.c9r") else { return nil }
+                    await bs.list(fileId: parentBaseitemId)
+                    guard await bs.move(fileId: renameId, fromParent: parentBaseitemId, toParent: dirItemId) != nil else { return nil }
                     retId = "\(parentDirId)/\(deflatedName)"
                 }
-            }
-            else {
-                // shorten -> shorten
-                if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first {
-                    guard await nameItem.delete() else {
-                        return nil
-                    }
+            } else {
+                if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first, let nameItemId = nameItem.id {
+                    guard await bs.delete(fileId: nameItemId) else { return nil }
                 }
                 let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-                do {
-                    try encFilename.write(to: target2, atomically: true, encoding: .utf8)
-                }
-                catch {
-                    print(error)
-                    return nil
-                }
-                guard (try? await s.upload(parentId: currentBaseItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                    return nil
-                }
-                guard await currentBaseItem.rename(newname: deflatedName) != nil else {
-                    return nil
-                }
-                if array.count == 3 {
-                    retId = "\(parentDirId)/\(deflatedName)/\(array[2])"
-                }
-                else {
-                    retId = "\(parentDirId)/\(deflatedName)"
-                }
+                do { try encFilename.write(to: target2, atomically: true, encoding: .utf8) } catch { return nil }
+                guard (try? await bs.upload(parentId: currentBaseItemId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+                guard await bs.rename(fileId: currentBaseItemId, newname: deflatedName) != nil else { return nil }
+                retId = array.count == 3 ? "\(parentDirId)/\(deflatedName)/\(array[2])" : "\(parentDirId)/\(deflatedName)"
             }
-        }
-        else {
+        } else {
             if deflateId.hasSuffix(normal_ext) {
-                // normal -> normal
-                guard await currentBaseItem.rename(newname: encFilename) != nil else {
-                    return nil
-                }
-                if array.count == 3 {
+                guard await bs.rename(fileId: currentBaseItemId, newname: encFilename) != nil else { return nil }
+                retId = array.count == 3 ? "\(parentDirId)/\(encFilename)/\(array[2])" : "\(parentDirId)/\(encFilename)"
+            } else {
+                if c.folder {
+                    if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first, let nameItemId = nameItem.id {
+                        guard await bs.delete(fileId: nameItemId) else { return nil }
+                    }
+                    guard await bs.rename(fileId: currentBaseItemId, newname: encFilename) != nil else { return nil }
                     retId = "\(parentDirId)/\(encFilename)/\(array[2])"
-                }
-                else {
-                    retId = "\(parentDirId)/\(encFilename)"
-                }
-            }
-            else {
-                // shorten -> normal
-                if c.isFolder {
-                    // keep folder
-                    if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first {
-                        guard await nameItem.delete() else {
-                            return nil
-                        }
+                } else {
+                    if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first, let nameItemId = nameItem.id {
+                        guard await bs.delete(fileId: nameItemId) else { return nil }
                     }
-                    guard await currentBaseItem.rename(newname: encFilename) != nil else {
-                        return nil
-                    }
-                    retId = "\(parentDirId)/\(encFilename)/\(array[2])"
-                }
-                else {
-                    // folder -> file
-                    if let nameItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "name.c9s"], expand: false).first {
-                        guard await nameItem.delete() else {
-                            return nil
-                        }
-                    }
-                    guard let contentItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "contents.c9r"], expand: false).first else  {
-                        return nil
-                    }
-                    guard let renameId = await contentItem.rename(newname: encFilename) else {
-                        return nil
-                    }
-                    await s.list(fileId: currentBaseItem.id)
-                    guard let renamedItem = await s.get(fileId: renameId) else {
-                        return nil
-                    }
-                    guard await renamedItem.move(toParentId: parentBaseitem.id) != nil else {
-                        return nil
-                    }
+                    guard let contentItem = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "contents.c9r"], expand: false).first, let contentItemId = contentItem.id else { return nil }
+                    guard let renameId = await bs.rename(fileId: contentItemId, newname: encFilename) else { return nil }
+                    await bs.list(fileId: currentBaseItemId)
+                    guard await bs.move(fileId: renameId, fromParent: currentBaseItemId, toParent: parentBaseitemId) != nil else { return nil }
                     retId = "\(parentDirId)/\(encFilename)"
                 }
             }
         }
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    viewContext.delete(item)
-                }
+            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                Cryptomator.cascadeDelete(item: existing, in: viewContext)
             }
             
             let newitem = RemoteData(context: viewContext)
@@ -1227,127 +1072,98 @@ public class Cryptomator: ChildStorage {
             newitem.id = retId
             newitem.name = newname
             let comp = newname.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = newcdate
-            newitem.mdate = newmdate
-            newitem.folder = newfolder
-            newitem.size = newsize
-            newitem.hashstr = ""
+            newitem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+            newitem.cdate = c.cdate
+            newitem.mdate = c.mdate
+            newitem.folder = c.folder
+            newitem.size = c.size
             newitem.parent = parentId
-            newitem.path = "\(parentPath)/\(newname)"
             
+            newitem.baseStorage = baseStorage
+            newitem.baseId = currentBaseItem.id
+            
+            newitem.path = "\(parentPath)/\(newname)"
             try? viewContext.save()
         }
         return retId
     }
-
+    
     override func changeTime(fileId: String, newdate: Date) async -> String? {
-        guard fileId != "" else {
-            return nil
-        }
+        guard fileId != "" else { return nil }
         
         os_log("%{public}@", log: log, type: .debug, "changeTime(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)->\(newdate)")
+        
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
         
         let array = fileId.components(separatedBy: "/")
         let parentDirId = array[0]
         let deflateId = array[1]
-
+        
         let newBaseId: String
         if array.count == 3 {
             let targetDirId = array[2]
-            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-                return nil
-            }
-            
-            guard let item1 = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first else {
-                return nil
-            }
-            newBaseId = item1.id
-
-            guard let targetDirIdHash = resolveDirectory(dirId: targetDirId) else {
-                return nil
-            }
-            
-            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(targetDirIdHash.prefix(2)), String(targetDirIdHash.suffix(30))], expand: false).first else {
-                return nil
-            }
-
-            guard await item.changetime(newdate: newdate) != nil else {
-                return nil
-            }
-        }
-        else if deflateId.hasSuffix(normal_ext) {
-            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-                return nil
-            }
-            
-            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first else {
-                return nil
-            }
-
-            guard let id = await item.changetime(newdate: newdate) else {
-                return nil
-            }
+            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+            guard let item1 = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first, let item1Id = item1.id else { return nil }
+            newBaseId = item1Id
+            guard let targetDirIdHash = resolveDirectory(dirId: targetDirId) else { return nil }
+            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(targetDirIdHash.prefix(2)), String(targetDirIdHash.suffix(30))], expand: false).first, let itemId = item.id else { return nil }
+            guard await bs.changeTime(fileId: itemId, newdate: newdate) != nil else { return nil }
+        } else if deflateId.hasSuffix(normal_ext) {
+            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first, let itemId = item.id else { return nil }
+            guard let id = await bs.changeTime(fileId: itemId, newdate: newdate) else { return nil }
             newBaseId = id
+        } else {
+            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+            guard let item1 = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first, let item1Id = item1.id else { return nil }
+            newBaseId = item1Id
+            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "contents.c9r"], expand: false).first, let itemId = item.id else { return nil }
+            guard await bs.changeTime(fileId: itemId, newdate: newdate) != nil else { return nil }
         }
-        else {
-            guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-                return nil
-            }
-            
-            guard let item1 = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first else {
-                return nil
-            }
-            newBaseId = item1.id
-
-            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId, "contents.c9r"], expand: false).first else {
-                return nil
-            }
-
-            guard await item.changetime(newdate: newdate) != nil else {
-                return nil
-            }
-        }
-
-        let viewContext = CloudFactory.shared.data.viewContext
-        let baseRootStorage = baseRootStorage
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
+        let baseStorage = baseRootStorage
+        var targetObjectID: NSManagedObjectID? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         await viewContext.perform {
             var newcdate: Date? = nil
             var newmdate: Date? = nil
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseRootStorage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let baseItem = items.first {
-                    newcdate = baseItem.cdate
-                    newmdate = baseItem.mdate
-                }
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let baseItem = results.first {
+                newcdate = baseItem.cdate
+                newmdate = baseItem.mdate
             }
-
-            let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest2), let items1 = result as? [RemoteData] {
-                if let pitem = items1.first {
-                    pitem.cdate = newcdate
-                    pitem.mdate = newmdate
-                    try? viewContext.save()
-                }
+            
+            if let objID = targetObjectID, let pitem = try? viewContext.existingObject(with: objID) as? RemoteData {
+                pitem.cdate = newcdate ?? newdate
+                pitem.mdate = newmdate ?? newdate
+                pitem.baseId = newBaseId
+                try? viewContext.save()
             }
         }
         return fileId
     }
-
+    
     func getOrgName(fileId: String) async -> String? {
         var orgname: String? = nil
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         return await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest) {
+                if let item = results.first {
                     orgname = item.name
                 }
             }
@@ -1356,314 +1172,168 @@ public class Cryptomator: ChildStorage {
     }
     
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        guard fileId != "" else {
-            return nil
-        }
-
-        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
-            return nil
-        }
+        guard fileId != "" else { return nil }
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
+        guard let orgname = await getOrgName(fileId: fileId) else { return nil }
+        guard fromParentId != toParentId else { return nil }
         
-        guard let orgname = await getOrgName(fileId: fileId) else {
-            return nil
-        }
-
-        guard fromParentId != toParentId else {
-            return nil
-        }
-
         var toParentPath: String
         if toParentId != "" {
-            guard let p = await getParentPath(parentId: toParentId) else {
-                return nil
-            }
+            guard let p = await getParentPath(parentId: toParentId) else { return nil }
             toParentPath = p
-        }
-        else {
+        } else {
             toParentPath = "\(storageName ?? ""):"
         }
-
+        
         os_log("%{public}@", log: log, type: .debug, "moveItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId) \(fromParentId)->\(toParentId)")
-
-        // move target item
+        
         let array = fileId.components(separatedBy: "/")
         let parentDirId = array[0]
         let deflateId = array[1]
-
-        // moveto target item
-        let toParentDirId: String
-        if toParentId == "" {
-            toParentDirId = ""
-        }
-        else {
-            let array2 = toParentId.components(separatedBy: "/")
-            guard array2.count == 3 else {
-                return nil
-            }
-            toParentDirId = array2[2]
-        }
         
-        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else {
-            return nil
-        }
-
-        guard let toParentIdHash = resolveDirectory(dirId: toParentDirId) else {
-            return nil
-        }
-
-        guard let toItem = await findParentStorage(path: [DATA_DIR_NAME, String(toParentIdHash.prefix(2)), String(toParentIdHash.suffix(30))], expand: false).first else {
-            return nil
-        }
-
-        guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first else {
-            return nil
-        }
-
-        // move base item to toDir
-        guard let newBaseId = await item.move(toParentId: toItem.id) else {
-            return nil
-        }
-        await bs.list(fileId: toItem.id)
-
-        // parent dirid is changed, encrypted name will be changed
-        guard var encFilename = encryptFilename(cleartextName: orgname, dirId: toParentDirId) else {
-            return nil
-        }
+        let toParentDirId = toParentId == "" ? "" : toParentId.components(separatedBy: "/")[2]
+        guard let parentIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+        guard let toParentIdHash = resolveDirectory(dirId: toParentDirId) else { return nil }
+        
+        guard let toItem = await findParentStorage(path: [DATA_DIR_NAME, String(toParentIdHash.prefix(2)), String(toParentIdHash.suffix(30))], expand: false).first, let toItemId = toItem.id else { return nil }
+        guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentIdHash.prefix(2)), String(parentIdHash.suffix(30)), deflateId], expand: false).first, let itemId = item.id else { return nil }
+        
+        guard let newBaseId = await bs.move(fileId: itemId, fromParent: item.parent ?? "", toParent: toItemId) else { return nil }
+        await bs.list(fileId: toItemId)
+        
+        guard var encFilename = encryptFilename(cleartextName: orgname, dirId: toParentDirId) else { return nil }
         encFilename += normal_ext
-
-        // if needed filename shorten
+        
         let newid: String
         if encFilename.count > shorteningThreshold {
             let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-            do {
-                try encFilename.write(to: target2, atomically: true, encoding: .utf8)
-            }
-            catch {
-                print(error)
-                return nil
-            }
-            guard let deflatedName = deflate(longFileName: encFilename) else {
-                return nil
-            }
-            guard let newBaseItem = await bs.get(fileId: newBaseId) else {
-                return nil
-            }
-            guard let newRenamedId = await newBaseItem.rename(newname: deflatedName) else {
-                return nil
-            }
-            await bs.list(fileId: toItem.id)
-            guard let newRenamedItem = await bs.get(fileId: newRenamedId) else {
-                return nil
-            }
-            guard (try? await bs.upload(parentId: newRenamedItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                return nil
-            }
-            if array.count == 3 {
-                newid = "\(toParentDirId)/\(deflatedName)/\(array[2])"
-            }
-            else {
-                newid = "\(toParentDirId)/\(deflatedName)"
-            }
+            do { try encFilename.write(to: target2, atomically: true, encoding: .utf8) } catch { return nil }
+            guard let deflatedName = deflate(longFileName: encFilename) else { return nil }
+            guard let newRenamedId = await bs.rename(fileId: newBaseId, newname: deflatedName) else { return nil }
+            await bs.list(fileId: toItemId)
+            guard (try? await bs.upload(parentId: newRenamedId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+            newid = array.count == 3 ? "\(toParentDirId)/\(deflatedName)/\(array[2])" : "\(toParentDirId)/\(deflatedName)"
+        } else {
+            guard await bs.rename(fileId: newBaseId, newname: encFilename) != nil else { return nil }
+            await bs.list(fileId: toItemId)
+            newid = array.count == 3 ? "\(toParentDirId)/\(encFilename)/\(array[2])" : "\(toParentDirId)/\(encFilename)"
         }
-        else {
-            guard let newBaseItem = await bs.get(fileId: newBaseId) else {
-                return nil
-            }
-            guard await newBaseItem.rename(newname: encFilename) != nil else {
-                return nil
-            }
-            await bs.list(fileId: toItem.id)
-            if array.count == 3 {
-                newid = "\(toParentDirId)/\(encFilename)/\(array[2])"
-            }
-            else {
-                newid = "\(toParentDirId)/\(encFilename)"
-            }
-        }
-
-        // register record
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
-        return await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        let baseStorage = baseRootStorage
+        var targetObjectID: NSManagedObjectID? = nil
+        var oldItemProps: (cdate: Date?, mdate: Date?, size: Int64, folder: Bool)? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                if let item = items.first {
-                    item.id = newid
-                    item.parent = toParentId
-                    item.path = "\(toParentPath)/\(item.name ?? "")"
-                    try? viewContext.save()
-                    return newid
-                }
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+                oldItemProps = (item.cdate, item.mdate, item.size, item.folder)
             }
-            return nil
+        }
+        guard let props = oldItemProps else { return nil }
+        
+        return await viewContext.perform {
+            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                Cryptomator.cascadeDelete(item: existing, in: viewContext)
+            }
+            
+            let newItem = RemoteData(context: viewContext)
+            newItem.storage = storage
+            newItem.id = newid
+            newItem.name = orgname
+            
+            let comp = orgname.components(separatedBy: ".")
+            newItem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+            
+            newItem.cdate = props.cdate
+            newItem.mdate = props.mdate
+            newItem.folder = props.folder
+            newItem.size = props.size
+            newItem.parent = toParentId
+            
+            newItem.baseStorage = baseStorage
+            newItem.baseId = newBaseId
+            
+            newItem.path = "\(toParentPath)/\(orgname)"
+            
+            try? viewContext.save()
+            return newid
         }
     }
-
+    
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
         }
-
+        
         let uploadname = uploadname.precomposedStringWithCanonicalMapping
         os_log("%{public}@", log: log, type: .debug, "uploadFile(\(String(describing: type(of: self))):\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
-        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else {
-            return nil
-        }
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
         let parentPath = await getParentPath(parentId: parentId) ?? ""
-
-        let parentDirId: String
-        if parentId == "" {
-            parentDirId = ""
-        }
-        else {
-            let array = parentId.components(separatedBy: "/")
-            guard array.count == 3 else {
-                return nil
-            }
-            parentDirId = array[2]
-        }
-
-        guard let parentDirIdHash = resolveDirectory(dirId: parentDirId) else {
-            return nil
-        }
-
-        guard var encFilename = encryptFilename(cleartextName: uploadname, dirId: parentDirId) else {
-            return nil
-        }
+        
+        let parentDirId = parentId == "" ? "" : parentId.components(separatedBy: "/")[2]
+        guard let parentDirIdHash = resolveDirectory(dirId: parentDirId) else { return nil }
+        
+        guard var encFilename = encryptFilename(cleartextName: uploadname, dirId: parentDirId) else { return nil }
         encFilename += normal_ext
-
-        guard let crypttarget = processFile(target: target) else {
-            return nil
-        }
-
-        // if needed filename shorten
+        
+        guard let crypttarget = processFile(target: target) else { return nil }
+        
+        var targetDeflatedName: String
+        var uploadedContentId: String?
+        
         if encFilename.count > shorteningThreshold {
             let target2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-            do {
-                try encFilename.write(to: target2, atomically: true, encoding: .utf8)
-            }
-            catch {
-                print(error)
-                return nil
-            }
-            guard let deflatedName = deflate(longFileName: encFilename) else {
-                return nil
-            }
-
-            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentDirIdHash.prefix(2)), String(parentDirIdHash.suffix(30)), deflatedName]) else {
-                return nil
-            }
-            guard (try? await bs.upload(parentId: dirItem.id, uploadname: "name.c9s", target: target2)) != nil else {
-                return nil
-            }
-
-            guard let newContentId = try? await bs.upload(parentId: dirItem.id, uploadname: "contents.c9r", target: crypttarget, progress: progress) else {
-                return nil
-            }
-
-            // register record
-            let viewContext = CloudFactory.shared.data.viewContext
-            let storage = storageName ?? ""
-            let baseStorage = baseRootStorage
-            let convertDecryptSize = {
-                self.ConvertDecryptSize(size: $0)
-            }
-            return await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newContentId, baseStorage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    if let item = items.first {
-                        let newid = "\(parentDirId)/\(encFilename)"
-                        let newname = uploadname
-                        let newcdate = item.cdate
-                        let newmdate = item.mdate
-                        let newsize = convertDecryptSize(item.size)
-                        
-                        let newitem = RemoteData(context: viewContext)
-                        newitem.storage = storage
-                        newitem.id = newid
-                        newitem.name = newname
-                        let comp = newname.components(separatedBy: ".")
-                        if comp.count >= 1 {
-                            newitem.ext = comp.last!.lowercased()
-                        }
-                        newitem.cdate = newcdate
-                        newitem.mdate = newmdate
-                        newitem.folder = false
-                        newitem.size = newsize
-                        newitem.hashstr = ""
-                        newitem.parent = parentId
-                        if parentId == "" {
-                            newitem.path = "\(storage):/\(newname)"
-                        }
-                        else {
-                            newitem.path = "\(parentPath)/\(newname)"
-                        }
-                        try? viewContext.save()
-                        return newid
-                    }
-                }
-                return nil
-            }
+            do { try encFilename.write(to: target2, atomically: true, encoding: .utf8) } catch { return nil }
+            guard let deflatedName = deflate(longFileName: encFilename) else { return nil }
+            
+            guard let dirItem = await makeParentStorage(path: [DATA_DIR_NAME, String(parentDirIdHash.prefix(2)), String(parentDirIdHash.suffix(30)), deflatedName]), let dirItemId = dirItem.id else { return nil }
+            guard (try? await bs.upload(parentId: dirItemId, uploadname: "name.c9s", target: target2)) != nil else { return nil }
+            
+            guard let newContentId = try? await bs.upload(parentId: dirItemId, uploadname: "contents.c9r", target: crypttarget, progress: progress) else { return nil }
+            targetDeflatedName = encFilename
+            uploadedContentId = newContentId
+        } else {
+            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentDirIdHash.prefix(2)), String(parentDirIdHash.suffix(30))], expand: false).first, let itemId = item.id else { return nil }
+            guard let newBaseId = try? await bs.upload(parentId: itemId, uploadname: encFilename, target: crypttarget, progress: progress) else { return nil }
+            targetDeflatedName = encFilename
+            uploadedContentId = newBaseId
         }
-        else {
-            guard let item = await findParentStorage(path: [DATA_DIR_NAME, String(parentDirIdHash.prefix(2)), String(parentDirIdHash.suffix(30))], expand: false).first else {
-                return nil
+        
+        guard let newBaseId = uploadedContentId else { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        let baseStorage = baseRootStorage
+        
+        return await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest), let item = results.first {
+                let newid = "\(parentDirId)/\(targetDeflatedName)"
+                
+                let existingFetch = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                existingFetch.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                existingFetch.fetchLimit = 1
+                let existing = (try? viewContext.fetch(existingFetch))?.first
+                
+                let itemDTO = RemoteDataDTO(cdate: item.cdate, ext: item.ext, folder: item.folder, hashstr: item.hashstr, id: item.id, mdate: item.mdate, name: item.name, parent: item.parent, parentDate: item.parentDate, path: item.path, size: item.size, storage: item.storage, subend: item.subend, subid: item.subid, subinfo: item.subinfo, substart: item.substart, baseStorage: baseStorage, baseId: newBaseId)
+                
+                Cryptomator.storeItem(parentId: parentId, item: itemDTO, name: uploadname, isFolder: false, dirId: parentDirId, deflatedName: targetDeflatedName, path: parentPath + "/" + uploadname, storage: storage, baseStorage: baseStorage, existingItem: existing, context: viewContext)
+                
+                try? viewContext.save()
+                return newid
             }
-
-            guard let newBaseId = try? await bs.upload(parentId: item.id, uploadname: encFilename, target: crypttarget, progress: progress) else {
-                return nil
-            }
-
-            // register record
-            let viewContext = CloudFactory.shared.data.viewContext 
-            let storage = storageName ?? ""
-            let baseStorage = baseRootStorage
-            let convertDecryptSize = {
-                self.ConvertDecryptSize(size: $0)
-            }
-            return await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newBaseId, baseStorage)
-                if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    if let item = items.first {
-                        let newid = "\(parentDirId)/\(encFilename)"
-                        let newname = uploadname
-                        let newcdate = item.cdate
-                        let newmdate = item.mdate
-                        let newsize = convertDecryptSize(item.size)
-                        
-                        let newitem = RemoteData(context: viewContext)
-                        newitem.storage = storage
-                        newitem.id = newid
-                        newitem.name = newname
-                        let comp = newname.components(separatedBy: ".")
-                        if comp.count >= 1 {
-                            newitem.ext = comp.last!.lowercased()
-                        }
-                        newitem.cdate = newcdate
-                        newitem.mdate = newmdate
-                        newitem.folder = false
-                        newitem.size = newsize
-                        newitem.hashstr = ""
-                        newitem.parent = parentId
-                        if parentId == "" {
-                            newitem.path = "\(storage):/\(newname)"
-                        }
-                        else {
-                            newitem.path = "\(parentPath)/\(newname)"
-                        }
-                        try? viewContext.save()
-                        return newid
-                    }
-                }
-                return nil
-            }
+            return nil
         }
     }
-
+    
     override func processFile(target: URL) -> URL? {
         let crypttarget = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID.init().uuidString)
         
@@ -1721,6 +1391,7 @@ public class Cryptomator: ChildStorage {
     override func readFile(fileId: String, start: Int64?, length: Int64?) async throws -> Data? {
         os_log("%{public}@", log: log, type: .debug, "readFile(cryptomator:\(storageName ?? "")) \(fileId)")
         
+        guard let bs = await CloudFactory.shared.storageList.get(baseRootStorage) as? RemoteStorageBase else { return nil }
         let array = fileId.components(separatedBy: "/")
         let dirId = array[0]
         let deflateId = array[1]
@@ -1736,14 +1407,15 @@ public class Cryptomator: ChildStorage {
         let items = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30))])
         for item in items {
             if item.name == deflateId {
-                if item.isFolder {
+                if item.folder {
                     let subItems = await findParentStorage(path: [DATA_DIR_NAME, String(dirIdHash.prefix(2)), String(dirIdHash.suffix(30)), deflateId])
-                    if let contentItem = subItems.first(where: { $0.name == "contents.c9r" }) {
-                        return try await contentItem.read(start: start, length: length)
+                    if let contentItem = subItems.first(where: { $0.name == "contents.c9r" }), let contentItemId = contentItem.id {
+                        return try await bs.read(fileId: contentItemId, start: start, length: length)
                     }
-                }
-                else {
-                    return try await item.read(start: start, length: length)
+                } else {
+                    if let itemId = item.id {
+                        return try await bs.read(fileId: itemId, start: start, length: length)
+                    }
                 }
             }
         }
@@ -1751,19 +1423,19 @@ public class Cryptomator: ChildStorage {
     }
     
     override func ConvertDecryptSize(size: Int64) -> Int64 {
-        return Int64(CalcDecryptedSize(crypt_size: Int(size)))
+        return Cryptomator.CalcDecryptedSize(crypt_size: size)
     }
     
     override func ConvertEncryptSize(size: Int64) -> Int64 {
-        return Int64(CalcEncryptedSize(org_size: Int(size)))
+        return Cryptomator.CalcEncryptedSize(org_size: size)
     }
 
-    func CalcEncryptedSize(org_size: Int) -> Int {
+    class func CalcEncryptedSize(org_size: Int64) -> Int64 {
         if org_size < 0 {
             return 0
         }
-        let cleartextChunkSize = CryptomatorCryptor.payloadSize
-        let ciphertextChunkSize = CryptomatorCryptor.chunkSize
+        let cleartextChunkSize = Int64(CryptomatorCryptor.payloadSize)
+        let ciphertextChunkSize = Int64(CryptomatorCryptor.chunkSize)
         let overheadPerChunk = ciphertextChunkSize - cleartextChunkSize
         let numFullChunks = org_size / cleartextChunkSize // floor by int-truncation
         let additionalCleartextBytes = org_size % cleartextChunkSize
@@ -1771,19 +1443,19 @@ public class Cryptomator: ChildStorage {
         guard additionalCiphertextBytes >= 0 else {
             return 0
         }
-        return ciphertextChunkSize * numFullChunks + additionalCiphertextBytes + CryptomatorCryptor.headerSize
+        return ciphertextChunkSize * numFullChunks + additionalCiphertextBytes + Int64(CryptomatorCryptor.headerSize)
     }
     
-    func CalcDecryptedSize(crypt_size: Int) -> Int {
+    class func CalcDecryptedSize(crypt_size: Int64) -> Int64 {
         if crypt_size <= 0 {
             return 0
         }
-        let size = crypt_size - CryptomatorCryptor.headerSize
+        let size = crypt_size - Int64(CryptomatorCryptor.headerSize)
         if size < 0 {
             return 0
         }
-        let cleartextChunkSize = CryptomatorCryptor.payloadSize
-        let ciphertextChunkSize = CryptomatorCryptor.chunkSize
+        let cleartextChunkSize = Int64(CryptomatorCryptor.payloadSize)
+        let ciphertextChunkSize = Int64(CryptomatorCryptor.chunkSize)
         let overheadPerChunk = ciphertextChunkSize - cleartextChunkSize
         let numFullChunks = size / ciphertextChunkSize // floor by int-truncation
         let additionalCiphertextBytes = size % ciphertextChunkSize
@@ -1880,12 +1552,12 @@ class CryptomatorCryptor {
             print("error on header size check")
             return false
         }
-        let nonce = [UInt8](header[0..<CryptomatorCryptor.nonceLen])
+        let nonce = [UInt8](header.prefix(CryptomatorCryptor.nonceLen))
         guard let cleartext = try? decryptHeader([UInt8](header), key: encryptionMasterKey) else {
             return false
         }
         headerNonce = nonce
-        contentKey = [UInt8](cleartext[CryptomatorCryptor.contentKeyOffset...])
+        contentKey = [UInt8](cleartext.dropFirst(CryptomatorCryptor.contentKeyOffset))
         return true
     }
 
@@ -1947,39 +1619,24 @@ public class RemoteCryptomatorStream: SlotStream {
     init(remote: CryptomatorRemoteItem) async {
         self.remote = remote
         OrignalLength = remote.size
-        CryptedLength = Int64(remote.remoteStorage.CalcEncryptedSize(org_size: Int(OrignalLength)))
+        CryptedLength = Cryptomator.CalcEncryptedSize(org_size: OrignalLength)
         cipher = CryptomatorCryptor(encryptionMasterKey: remote.remoteStorage.encryptionMasterKey, macMasterKey: remote.remoteStorage.macMasterKey)
         await super.init(size: OrignalLength)
     }
-
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
-    }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
+    
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func fillHeader() async {
         guard let data = try? await remote.read(start: 0, length: Int64(CryptomatorCryptor.headerSize)) else {
             print("error on header null")
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
         guard cipher.decryptHeader(header: data) else {
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
@@ -1988,10 +1645,10 @@ public class RemoteCryptomatorStream: SlotStream {
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
-
+        
         let chunksize = Int64(CryptomatorCryptor.chunkSize)
         let orgBlocksize = Int64(CryptomatorCryptor.payloadSize)
         let headersize = Int64(CryptomatorCryptor.headerSize)
@@ -2014,16 +1671,20 @@ public class RemoteCryptomatorStream: SlotStream {
             }
             guard let data = try? await remote.read(start: pos2, length: clen) else {
                 print("error on readFile")
-                error = true
+                await setError()
                 return
             }
             var slot = UInt64(slot1)
             var plainBlock = Data()
-            for start in stride(from: 0, to: data.count, by: Int(chunksize)) {
-                let end = (start+Int(chunksize) >= data.count) ? data.count : start+Int(chunksize)
-                let chunk = data.subdata(in: start..<end)
+            
+            let dataStart = data.startIndex
+            for offset in stride(from: 0, to: data.count, by: Int(chunksize)) {
+                let chunkStart = dataStart + offset
+                let chunkEnd = dataStart + min(offset + Int(chunksize), data.count)
+                
+                let chunk = data[chunkStart..<chunkEnd]
                 guard let plain = cipher.decryptChunk(chunk: chunk, chunkId: slot) else {
-                    error = true
+                    await setError()
                     return
                 }
                 plainBlock.append(plain)

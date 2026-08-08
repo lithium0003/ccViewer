@@ -17,6 +17,13 @@ struct TutorialUIView: View {
                     Text("Welcome to CryptCloudViewer!")
                         .font(.largeTitle)
                         .padding()
+                    Button {
+                        tutorial = true
+                        UserDefaults.standard.set(true, forKey: "tutorial")
+                    } label: {
+                        Text("Skip tutorial")
+                    }
+                    .padding()
                     Spacer()
                     Text("First, add your cloud strage.")
                         .padding()
@@ -24,12 +31,6 @@ struct TutorialUIView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 300, maxHeight: 300)
-                    Button {
-                        tutorial = true
-                        UserDefaults.standard.set(true, forKey: "tutorial")
-                    } label: {
-                        Text("Skip tutorial")
-                    }
                     Spacer()
                 }
                 .padding()
@@ -37,6 +38,14 @@ struct TutorialUIView: View {
 
             Tab {
                 VStack {
+                    Button {
+                        tutorial = true
+                        UserDefaults.standard.set(true, forKey: "tutorial")
+                    } label: {
+                        Text("Skip tutorial")
+                    }
+                    .padding()
+                    Spacer()
                     Text("If you keep this app to be secure, set password.")
                         .padding()
                     HStack {
@@ -51,22 +60,25 @@ struct TutorialUIView: View {
                     }
                     Text("If set any password, protection is ON. Turn off if enter empty password.")
                         .padding()
-                    Button {
-                        tutorial = true
-                        UserDefaults.standard.set(true, forKey: "tutorial")
-                    } label: {
-                        Text("Skip tutorial")
-                    }
+                    Spacer()
                 }
                 .padding()
             }
 
             Tab {
                 VStack {
-                    Text("If you plan to add encrypted folder, register base storage before add the crypto storage.")
-                        .padding()
-                    Text("(Filen.io has cryption storage its own, so just add it.)")
-                        .padding()
+                    Button {
+                        tutorial = true
+                        UserDefaults.standard.set(true, forKey: "tutorial")
+                    } label: {
+                        Text("End tutorial")
+                    }
+                    .padding()
+                    Spacer()
+                    Group {
+                        Text("If you plan to add encrypted folder, register base storage before add the crypto storage.")
+                        Text("(Filen.io has cryption storage its own, so just add it.)")
+                    }
                     HStack {
                         Image("tutorial4")
                             .resizable()
@@ -85,12 +97,7 @@ struct TutorialUIView: View {
                         Text("(5) Tap 'Done'.")
                     }
                     .padding()
-                    Button {
-                        tutorial = true
-                        UserDefaults.standard.set(true, forKey: "tutorial")
-                    } label: {
-                        Text("End tutorial")
-                    }
+                    Spacer()
                 }
                 .padding()
             }

@@ -18,7 +18,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     
     var webAuthSession: ASWebAuthenticationSession?
     let uploadSemaphore = Semaphore(value: 5)
-
+    
     public convenience init(name: String) {
         self.init()
         service = CloudFactory.getServiceName(service: .pCloud)
@@ -29,7 +29,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     private let secret = SecretItems.pCloud.client_secret
     private let callbackUrlScheme = SecretItems.pCloud.callbackUrlScheme
     private let redirect = "\(SecretItems.pCloud.callbackUrlScheme)://oauth2redirect"
-
+    
     override var authURL: URL {
         let url = "https://my.pcloud.com/oauth2/authorize?client_id=\(clientid)&response_type=code&redirect_uri=\(redirect)"
         return URL(string: url)!
@@ -40,7 +40,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     override var additionalHeaderFields: [String: String] {
         return [:]
     }
-
+    
     var cache_hostname: String = ""
     func hostname() async -> String {
         if cache_hostname != "" {
@@ -56,7 +56,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return "api.pcloud.com"
         }
     }
-
+    
     override func signIn(_ successURL: URL) async throws -> Bool {
         let oauthToken = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "code"}).first
         let hostname = NSURLComponents(string: (successURL.absoluteString))?.queryItems?.filter({$0.name == "hostname"}).first
@@ -69,20 +69,20 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         }
         return false
     }
-
+    
     override func getToken(oauthToken: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "getToken(pCloud:\(storageName ?? ""))")
-
+        
         var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/oauth2_token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-
+        
         let post = "client_id=\(clientid)&client_secret=\(secret)&code=\(oauthToken)"
         let postData = post.data(using: .ascii, allowLossyConversion: false)!
         let postLength = "\(postData.count)"
         request.setValue(postLength, forHTTPHeaderField: "Content-Length")
         request.httpBody = postData
-    
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             let object = try JSONSerialization.jsonObject(with: data, options: [])
@@ -104,7 +104,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         }
         return false
     }
-
+    
     override func checkToken() async -> Bool {
         return await accessToken() != ""
     }
@@ -115,13 +115,12 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 return
             }
             os_log("%{public}@", log: log, type: .info, "saveToken")
-            cacheTokenDate = Date()
-            cache_accessToken = accessToken
+            await tokenCache.setToken(access: accessToken, refresh: accountId)
             _ = await setKeyChain(key: "\(name)_accessToken", value: accessToken)
             _ = await setKeyChain(key: "\(name)_accountId", value: accountId)
         }
     }
-
+    
     public override func logout() async {
         if let name = storageName {
             let _ = await delKeyChain(key: "\(name)_accountId")
@@ -132,11 +131,11 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     
     override func revokeToken(token: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "revokeToken(pCloud:\(storageName ?? ""))")
-    
+        
         var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/logout")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-    
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             let object = try JSONSerialization.jsonObject(with: data, options: [])
@@ -154,12 +153,12 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         }
         return false
     }
-
+    
     override func isAuthorized() async -> Bool {
         var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/userinfo")!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             let object = try JSONSerialization.jsonObject(with: data, options: [])
@@ -175,18 +174,18 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         }
         return false
     }
-
+    
     func listFolder(folderId: Int) async -> [[String:Any]]? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "listFolder(pCloud:\(storageName ?? ""))")
-
+                
                 let url = "https://\(await hostname())/listfolder?folderid=\(folderId)&timeformat=timestamp"
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: url)!)
                 request.httpMethod = "GET"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -214,80 +213,57 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
-        guard let id = item["id"] as? String else {
-            return
-        }
-        guard let name = item["name"] as? String else {
-            return
-        }
-        guard let ctime = item["created"] as? Int else {
-            return
-        }
-        guard let mtime = item["modified"] as? Int else {
-            return
-        }
-        guard let folder = item["isfolder"] as? Bool else {
+    func storeItem(item: [String: Any], existingItem: RemoteData? = nil, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
+        guard let id = item["id"] as? String,
+              let name = item["name"] as? String,
+              let ctime = item["created"] as? Int,
+              let mtime = item["modified"] as? Int,
+              let folder = item["isfolder"] as? Bool else {
             return
         }
         let size = item["size"] as? Int64 ?? 0
         let hashint = item["hash"] as? Int
         
-        context.performAndWait {
-            var prevParent: String?
-            var prevPath: String?
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    if let item = object as? RemoteData {
-                        prevPath = item.path
-                        let component = prevPath?.components(separatedBy: "/")
-                        prevPath = component?.dropLast().joined(separator: "/")
-                        prevParent = item.parent
-                    }
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = name
-            let comp = name.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = Date(timeIntervalSince1970: TimeInterval(ctime))
-            newitem.mdate = Date(timeIntervalSince1970: TimeInterval(mtime))
-            newitem.folder = folder
-            newitem.size = size
-            newitem.hashstr = (hashint == nil) ? "" : String(hashint!)
-            newitem.parent = (parentFileId == nil) ? prevParent : parentFileId
-            if parentFileId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
-            }
-            else {
-                if let path = (parentPath == nil) ? prevPath : parentPath {
-                    newitem.path = "\(path)/\(name)"
-                }
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = self.storageName
+        targetItem.id = id
+        targetItem.name = name
+        let comp = name.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        }
+        targetItem.cdate = Date(timeIntervalSince1970: TimeInterval(ctime))
+        targetItem.mdate = Date(timeIntervalSince1970: TimeInterval(mtime))
+        targetItem.folder = folder
+        targetItem.size = size
+        targetItem.hashstr = (hashint == nil) ? "" : String(hashint!)
+        
+        targetItem.parent = (parentFileId == nil) ? targetItem.parent : parentFileId
+        if parentFileId == "" {
+            targetItem.path = "\(self.storageName ?? ""):/\(name)"
+        }
+        else {
+            let pPath = (parentPath == nil) ? targetItem.path?.components(separatedBy: "/").dropLast().joined(separator: "/") : parentPath
+            if let pPath = pPath {
+                targetItem.path = "\(pPath)/\(name)"
             }
         }
     }
-
+    
     override func listChildren(fileId: String, path: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-        }
         let folderId: Int
         if fileId == "" {
             folderId = 0
@@ -298,16 +274,39 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         else {
             return
         }
-        if let items = await listFolder(folderId: folderId) {
+        
+        guard let items = await listFolder(folderId: folderId) else { return }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id {
+                    existingDict[id] = item
+                }
+            }
+            
             for item in items {
-                storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
+                if let id = item["id"] as? String {
+                    let existing = existingDict.removeValue(forKey: id)
+                    self.storeItem(item: item, existingItem: existing, parentFileId: fileId, parentPath: path, context: viewContext)
+                }
             }
-            await viewContext.perform {
-                try? viewContext.save()
+            
+            for (_, orphan) in existingDict {
+                pCloudStorage.cascadeDelete(item: orphan, in: viewContext)
             }
+            
+            try? viewContext.save()
         }
     }
-
+    
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
         let id: Int
         if fileId.starts(with: "f") {
@@ -316,22 +315,22 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         else {
             return nil
         }
-
+        
         if let cache = await CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
             if let data = try? Data(contentsOf: cache) {
                 os_log("%{public}@", log: log, type: .debug, "hit cache(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
                 return data
             }
         }
-
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "readFile(pCloud:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://\(await hostname())/getfilelink?fileid=\(id)")!)
                 request.httpMethod = "GET"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-
+                
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let object = try JSONSerialization.jsonObject(with: data, options: [])
                 guard let json = object as? [String: Any] else {
@@ -350,7 +349,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                     throw RetryError.Retry
                 }
                 let downLink = "https://" + hosts.first! + path
-
+                
                 var request2: URLRequest = URLRequest(url: URL(string: downLink)!)
                 request2.httpMethod = "GET"
                 request2.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
@@ -361,7 +360,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 else {
                     request2.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
                 }
-
+                
                 guard let (data2, _) = try? await URLSession.shared.data(for: request2) else {
                     throw RetryError.Retry
                 }
@@ -376,7 +375,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     public override func getRaw(fileId: String) async -> RemoteItem? {
         return await NetworkRemoteItem(storage: storageName ?? "", id: fileId)
     }
@@ -384,7 +383,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
     public override func getRaw(path: String) async -> RemoteItem? {
         return await NetworkRemoteItem(path: path)
     }
-
+    
     func createfolder(folderid: Int, name: String) async -> [String: Any]? {
         do {
             return try await callWithRetry(action: { [self] in
@@ -393,7 +392,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -421,18 +420,23 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         guard parentId.starts(with: "d") || parentId == "" else {
             return nil
         }
-
+        
         os_log("%{public}@", log: log, type: .debug, "makeFolder(pCloud:\(storageName ?? "") \(parentId) \(newname)")
         let id = Int(parentId.dropFirst()) ?? 0
-
-        let metadata = await createfolder(folderid: id, name: newname)
-        guard let metadata = metadata, let newid = metadata["id"] as? String else {
+        
+        guard let metadata = await createfolder(folderid: id, name: newname), let newid = metadata["id"] as? String else {
             return nil
         }
-
-        let viewContext = CloudFactory.shared.data.viewContext
-        storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
         await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+            fetchRequest.fetchLimit = 1
+            let existing = (try? viewContext.fetch(fetchRequest))?.first
+            
+            self.storeItem(item: metadata, existingItem: existing, parentFileId: parentId, parentPath: parentPath, context: viewContext)
             try? viewContext.save()
         }
         return newid
@@ -446,7 +450,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -465,7 +469,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return false
         }
     }
-
+    
     func deletefile(fileId: Int) async -> Bool {
         do {
             return try await callWithRetry(action: { [self] in
@@ -474,7 +478,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = body.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -493,56 +497,33 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return false
         }
     }
-
+    
     override func deleteItem(fileId: String) async -> Bool {
         os_log("%{public}@", log: log, type: .debug, "deleteItem(pCloud:\(storageName ?? "") \(fileId)")
         
         if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard await deletefile(fileId: id) else {
-                return false
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            let storage = storageName ?? ""
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
-                }
-            }
-            deleteChildRecursive(parent: fileId, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            return true
-        }
-        else if fileId.starts(with: "d") {
+            guard await deletefile(fileId: id) else { return false }
+        } else if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard await deletefolderrecursive(folderId: id) else {
-                return false
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            let storage = storageName ?? ""
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
-                }
-            }
-            deleteChildRecursive(parent: fileId, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-            return true
+            guard await deletefolderrecursive(folderId: id) else { return false }
+        } else {
+            return false
         }
-        return false
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let existing = (try? viewContext.fetch(fetchRequest))?.first {
+                pCloudStorage.cascadeDelete(item: existing, in: viewContext)
+            }
+            try? viewContext.save()
+        }
+        await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+        return true
     }
     
     func renamefile(fileId: Int, toFolderId: Int? = nil, toName: String? = nil) async -> [String: Any]? {
@@ -562,7 +543,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = rename.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -585,7 +566,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     func renamefolder(folderId: Int, toFolderId: Int? = nil, toName: String? = nil) async -> [String: Any]? {
         guard toFolderId != nil || toName != nil else {
             return nil
@@ -603,7 +584,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.httpBody = rename.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -626,42 +607,48 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     override func renameItem(fileId: String, newname: String) async -> String? {
         os_log("%{public}@", log: log, type: .debug, "renameItem(pCloud:\(storageName ?? "") \(fileId) \(newname)")
         
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
+        let metadata: [String: Any]?
         if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard let metadata = await renamefile(fileId: id, toName: newname), let newid = metadata["id"] as? String else {
-                return nil
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            storeItem(item: metadata, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            return newid
-        }
-        else if fileId.starts(with: "d") {
+            metadata = await renamefile(fileId: id, toName: newname)
+        } else if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard let metadata = await renamefolder(folderId: id, toName: newname), let newid = metadata["id"] as? String else {
-                return nil
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            storeItem(item: metadata, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-            return newid
-        }
-        return nil
-    }
-
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        if fromParentId == toParentId {
+            metadata = await renamefolder(folderId: id, toName: newname)
+        } else {
             return nil
         }
+        
+        guard let meta = metadata, let newid = meta["id"] as? String else { return nil }
+        
+        await viewContext.perform {
+            var existing: RemoteData? = nil
+            if let objID = targetObjectID {
+                existing = try? viewContext.existingObject(with: objID) as? RemoteData
+            }
+            self.storeItem(item: meta, existingItem: existing, context: viewContext)
+            try? viewContext.save()
+        }
+        await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+        return newid
+    }
+    
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
+        if fromParentId == toParentId { return nil }
         if !(fromParentId == "" || fromParentId.starts(with: "d")) || !(toParentId == "" || toParentId.starts(with: "d")) {
             return nil
         }
@@ -669,42 +656,52 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         
         os_log("%{public}@", log: log, type: .debug, "moveItem(pCloud:\(storageName ?? "") \(fileId) \(fromParentId) \(toParentId)")
         
+        var targetObjectID: NSManagedObjectID? = nil
+        var toParentPath: String? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest1 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest1.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest1))?.first?.objectID
+            
+            if toParentId != "" {
+                let fetchRequest2 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
+                fetchRequest2.fetchLimit = 1
+                toParentPath = (try? viewContext.fetch(fetchRequest2))?.first?.path
+            }
+        }
+        
+        let metadata: [String: Any]?
         if fileId.starts(with: "d") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard let metadata = await renamefolder(folderId: id, toFolderId: toId), let newid = metadata["id"] as? String else {
-                return nil
-            }
-            var toParentPath = ""
-            if toParentId != "" {
-                toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            return newid
-        }
-        else if fileId.starts(with: "f") {
+            metadata = await renamefolder(folderId: id, toFolderId: toId)
+        } else if fileId.starts(with: "f") {
             let id = Int(fileId.dropFirst()) ?? 0
-            guard let metadata = await renamefile(fileId: id, toFolderId: toId), let newid = metadata["id"] as? String else {
-                return nil
-            }
-            var toParentPath = ""
-            if toParentId != "" {
-                toParentPath = await getParentPath(parentId: toParentId) ?? toParentPath
-            }
-            let viewContext = CloudFactory.shared.data.viewContext
-            storeItem(item: metadata, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
-            await viewContext.perform {
-                try? viewContext.save()
-            }
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-            return newid
+            metadata = await renamefile(fileId: id, toFolderId: toId)
+        } else {
+            return nil
         }
-        return nil
+        
+        guard let meta = metadata, let newid = meta["id"] as? String else { return nil }
+        
+        await viewContext.perform {
+            var existing: RemoteData? = nil
+            if let objID = targetObjectID {
+                existing = try? viewContext.existingObject(with: objID) as? RemoteData
+            }
+            self.storeItem(item: meta, existingItem: existing, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
+            try? viewContext.save()
+        }
+        if fileId.starts(with: "f") {
+            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+        }
+        return newid
     }
-
+    
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
@@ -717,10 +714,10 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "uploadFile(pCloud:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
+                
                 let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                 let fileSize = attr[.size] as! UInt64
-
+                
                 var parentPath = "\(storageName ?? ""):/"
                 if parentId != "" {
                     parentPath = await getParentPath(parentId: parentId) ?? parentPath
@@ -794,12 +791,12 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                 let attr2 = try FileManager.default.attributesOfItem(atPath: tmpurl.path)
                 let fileSize2 = attr2[.size] as! UInt64
                 try await progress?(0, Int64(fileSize2))
-
+                
                 await uploadProgressManeger.setCallback(url: request.url!, total: Int64(fileSize2), callback: progress)
                 defer {
                     Task { await uploadProgressManeger.removeCallback(url: request.url!) }
                 }
-
+                
                 guard let (data, _) = try? await URLSession.shared.upload(for: request, fromFile: tmpurl, delegate: self) else {
                     throw RetryError.Retry
                 }
@@ -818,9 +815,17 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
                     print(object)
                     throw RetryError.Retry
                 }
-                let viewContext = CloudFactory.shared.data.viewContext
-                storeItem(item: metadata, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                let storage = storageName ?? ""
                 await viewContext.perform {
+                    // アップロードで新規作成されるため重複確認で fetchLimit = 1 を使う
+                    let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                    fetchRequest.fetchLimit = 1
+                    let existing = (try? viewContext.fetch(fetchRequest))?.first
+                    
+                    self.storeItem(item: metadata, existingItem: existing, parentFileId: parentId, parentPath: parentPath, context: viewContext)
                     try? viewContext.save()
                 }
                 try await progress?(Int64(fileSize2), Int64(fileSize2))
@@ -831,7 +836,7 @@ public class pCloudStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         if let url = task.originalRequest?.url {
             Task {

@@ -158,7 +158,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 if let eobj = e as? [String: Any] {
                     if let ecode = eobj["code"] as? Int, ecode == 401 {
                         os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(storageName ?? ""))")
-                        cacheTokenDate = Date(timeIntervalSince1970: 0)
+                        await tokenCache.clear()
                     }
                 }
                 print(e)
@@ -211,7 +211,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     if let eobj = e as? [String: Any] {
                         if let ecode = eobj["code"] as? Int, ecode == 401 {
                             os_log("%{public}@", log: self.log, type: .debug, "Invalid token (google:\(storageName ?? ""))")
-                            cacheTokenDate = Date(timeIntervalSince1970: 0)
+                            await tokenCache.clear()
                         }
                     }
                     print(e)
@@ -235,228 +235,202 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
 
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, teamID: String? = nil, context: NSManagedObjectContext) {
+    func storeItem(item: [String: Any], existingItem: RemoteData? = nil, parentFileId: String? = nil, parentPath: String? = nil, teamID: String? = nil, context: NSManagedObjectContext) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
-
-        guard let id = item["id"] as? String else {
+        
+        guard let id = item["id"] as? String,
+              let name = item["name"] as? String,
+              let ctime = item["createdTime"] as? String,
+              let mtime = item["modifiedTime"] as? String,
+              let mimeType = item["mimeType"] as? String else {
             return
         }
-        guard let name = item["name"] as? String else {
-            return
+        
+        let isTrashed: Bool
+        if let tBool = item["trashed"] as? Bool {
+            isTrashed = tBool
+        } else if let tInt = item["trashed"] as? Int {
+            isTrashed = (tInt != 0)
+        } else {
+            isTrashed = false
         }
-        guard let ctime = item["createdTime"] as? String else {
-            return
-        }
-        guard let mtime = item["modifiedTime"] as? String else {
-            return
-        }
-        guard let mimeType = item["mimeType"] as? String else {
-            return
-        }
-        guard let trashed = item["trashed"] as? Int else {
-            return
-        }
+        
         let size = Int64(item["size"] as? String ?? "0") ?? 0
         let hashstr = item["md5Checksum"] as? String ?? ""
         
-        let fixId: String
-        if let teamid = teamID {
-            fixId = "\(teamid) \(id)"
-        }
-        else {
-            fixId = id
-        }
-
-        context.performAndWait {
-            var prevParent: String?
-            var prevPath: String?
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fixId, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    if let item = object as? RemoteData {
-                        prevPath = item.path
-                        let component = prevPath?.components(separatedBy: "/")
-                        prevPath = component?.dropLast().joined(separator: "/")
-                        prevParent = item.parent
-                    }
-                    context.delete(object as! NSManagedObject)
-                }
+        let fixId: String = (teamID != nil) ? "\(teamID!) \(id)" : id
+        
+        if isTrashed {
+            if let existing = existingItem {
+                GoogleDriveStorage.cascadeDelete(item: existing, in: context)
             }
-            
-            if trashed == 0 {
-                let newitem = RemoteData(context: context)
-                newitem.storage = self.storageName
-                newitem.id = fixId
-                newitem.name = name
-                let comp = name.components(separatedBy: ".")
-                if comp.count >= 1 {
-                    newitem.ext = comp.last!.lowercased()
-                }
-                newitem.cdate = formatter.date(from: ctime)
-                newitem.mdate = formatter.date(from: mtime)
-                newitem.folder = mimeType == "application/vnd.google-apps.folder"
-                newitem.size = size
-                newitem.hashstr = hashstr
-                newitem.parent = (parentFileId == nil) ? prevParent : parentFileId
-                if parentFileId == "" {
-                    newitem.path = "\(self.storageName ?? ""):/\(name)"
-                }
-                else {
-                    if let path = (parentPath == nil) ? prevPath : parentPath {
-                        newitem.path = "\(path)/\(name)"
-                    }
-                }
+            return
+        }
+        
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = self.storageName
+        targetItem.id = fixId
+        targetItem.name = name
+        let comp = name.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        }
+        targetItem.cdate = formatter.date(from: ctime)
+        targetItem.mdate = formatter.date(from: mtime)
+        targetItem.folder = mimeType == "application/vnd.google-apps.folder"
+        targetItem.size = size
+        targetItem.hashstr = hashstr
+        
+        targetItem.parent = (parentFileId == nil) ? targetItem.parent : parentFileId
+        if parentFileId == "" {
+            targetItem.path = "\(self.storageName ?? ""):/\(name)"
+        } else {
+            let pPath = (parentPath == nil) ? targetItem.path?.components(separatedBy: "/").dropLast().joined(separator: "/") : parentPath
+            if let pPath = pPath {
+                targetItem.path = "\(pPath)/\(name)"
             }
         }
     }
-
+    
     func storeRootItems(context: NSManagedObjectContext) {
-        context.perform {
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest1.predicate = NSPredicate(format: "parent == %@ && storage == %@", "", self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest1) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-
-            let items = ["mydrive","teamdrives"]
-            let names = [items[0]: "myDrive", items[1]: "teamDrives"]
+        let items = ["mydrive", "teamdrives"]
+        let names = ["mydrive": "myDrive", "teamdrives": "teamDrives"]
+        
+        for id in items {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+            fetchRequest.fetchLimit = 1
+            let existing = (try? context.fetch(fetchRequest))?.first
             
-            for id in items {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-                if let result = try? context.fetch(fetchRequest) {
-                    if result.count > 0 {
-                        continue
-                    }
+            let targetItem = existing ?? RemoteData(context: context)
+            targetItem.storage = self.storageName
+            targetItem.id = id
+            targetItem.name = names[id]
+            targetItem.ext = ""
+            targetItem.cdate = nil
+            targetItem.mdate = nil
+            targetItem.folder = true
+            targetItem.size = 0
+            targetItem.hashstr = nil
+            targetItem.parent = ""
+            targetItem.path = "\(self.storageName ?? ""):/\(names[id]!)"
+        }
+        
+        let fetchRequest1 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+        fetchRequest1.predicate = NSPredicate(format: "parent == %@ && storage == %@", "", self.storageName ?? "")
+        if let results = try? context.fetch(fetchRequest1) {
+            for object in results {
+                if !items.contains(object.id ?? "") {
+                    GoogleDriveStorage.cascadeDelete(item: object, in: context)
                 }
-
-                let newitem = RemoteData(context: context)
-                newitem.storage = self.storageName
-                newitem.id = id
-                newitem.name = names[id]
-                newitem.ext = ""
-                newitem.cdate = nil
-                newitem.mdate = nil
-                newitem.folder = true
-                newitem.size = 0
-                newitem.hashstr = ""
-                newitem.parent = ""
-                newitem.path = "\(self.storageName ?? ""):/\(names[id]!)"
             }
         }
     }
-
-    func storeTeamDriveItem(item: [String: Any], context: NSManagedObjectContext) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions.insert(.withFractionalSeconds)
+    
+    func storeTeamDriveItem(item: [String: Any], existingItem: RemoteData? = nil, context: NSManagedObjectContext) {
+        guard let id = item["id"] as? String, let name = item["name"] as? String else { return }
         
-        guard let id = item["id"] as? String else {
-            return
-        }
-        guard let name = item["name"] as? String else {
-            return
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+        } else {
+            targetItem = RemoteData(context: context)
         }
         
-        context.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", "\(id) \(id)", self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = "\(id) \(id)"
-            newitem.name = name
-            newitem.ext = ""
-            newitem.cdate = nil
-            newitem.mdate = nil
-            newitem.folder = true
-            newitem.size = 0
-            newitem.hashstr = ""
-            newitem.parent = "teamdrives"
-            newitem.path = "\(self.storageName ?? ""):/teamDrives/\(name)"
-
-        }
+        targetItem.storage = self.storageName
+        targetItem.id = "\(id) \(id)"
+        targetItem.name = name
+        targetItem.ext = ""
+        targetItem.cdate = nil
+        targetItem.mdate = nil
+        targetItem.folder = true
+        targetItem.size = 0
+        targetItem.hashstr = nil
+        targetItem.parent = "teamdrives"
+        targetItem.path = "\(self.storageName ?? ""):/teamDrives/\(name)"
     }
-
+    
     override func listChildren(fileId: String, path: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-        }
-        if spaces == "appDataFolder" {
-            let fixFileId = (fileId == "") ? rootName : fileId
-            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
-            if let items = result {
-                for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
-                }
-                await viewContext.perform {
-                    try? viewContext.save()
-                }
-            }
-            return
-        }
+        
+        var networkItems: [[String: Any]]? = nil
+        var isTeamDriveList = false
+        
         if fileId == "" {
-            storeRootItems(context: viewContext)
             await viewContext.perform {
+                self.storeRootItems(context: viewContext)
                 try? viewContext.save()
             }
             return
-        }
-        if fileId == "teamdrives" {
-            let result = await listTeamdrives(q: "", pageToken: "")
-            if let items = result {
-                for item in items {
-                    storeTeamDriveItem(item: item, context: viewContext)
-                }
-                await viewContext.perform {
-                    try? viewContext.save()
-                }
-            }
-            return
-        }
-        if fileId.contains(" ") {
-            // team drive
+        } else if fileId == "teamdrives" {
+            networkItems = await listTeamdrives(q: "", pageToken: "")
+            isTeamDriveList = true
+        } else if spaces == "appDataFolder" {
+            let fixFileId = (fileId == "") ? rootName : fileId
+            networkItems = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
+        } else if fileId.contains(" ") {
             let comp = fileId.components(separatedBy: " ")
             let teamId = comp[0]
             let fixFileId = comp[1]
-            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId)
-            if let items = result {
-                for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, teamID: teamId, context: viewContext)
-                }
-                await viewContext.perform {
-                    try? viewContext.save()
-                }
-            }
-        }
-        else {
+            networkItems = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "", teamDrive: teamId)
+        } else {
             let fixFileId = (fileId == "mydrive") ? rootName : fileId
-            let result = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
-            if let items = result {
-                for item in items {
-                    storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
-                }
-                await viewContext.perform {
-                    try? viewContext.save()
+            networkItems = await listFiles(q: "'\(fixFileId)'+in+parents", pageToken: "")
+        }
+        
+        guard let items = networkItems else { return }
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id {
+                    existingDict[id] = item
                 }
             }
+            
+            if isTeamDriveList {
+                for item in items {
+                    if let id = item["id"] as? String {
+                        let fixId = "\(id) \(id)"
+                        let existing = existingDict.removeValue(forKey: fixId)
+                        self.storeTeamDriveItem(item: item, existingItem: existing, context: viewContext)
+                    }
+                }
+            } else {
+                let teamID: String? = fileId.contains(" ") ? fileId.components(separatedBy: " ")[0] : nil
+                for item in items {
+                    if let id = item["id"] as? String {
+                        let fixId = (teamID != nil) ? "\(teamID!) \(id)" : id
+                        let existing = existingDict.removeValue(forKey: fixId)
+                        self.storeItem(item: item, existingItem: existing, parentFileId: fileId, parentPath: path, teamID: teamID, context: viewContext)
+                    }
+                }
+            }
+            
+            for (_, orphan) in existingDict {
+                GoogleDriveStorage.cascadeDelete(item: orphan, in: viewContext)
+            }
+            
+            try? viewContext.save()
         }
     }
     
@@ -541,9 +515,9 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     throw RetryError.Retry
                 }
                 
-                let viewContext = CloudFactory.shared.data.viewContext
-                storeTeamDriveItem(item: json, context: viewContext)
+                let viewContext = CloudFactory.shared.data.backgroundContext
                 await viewContext.perform {
+                    self.storeTeamDriveItem(item: json, context: viewContext)
                     try? viewContext.save()
                 }
                 return id
@@ -604,13 +578,8 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let fixId: String
-                if let teamID = teamID {
-                    fixId = "\(teamID) \(id)"
-                }
-                else {
-                    fixId = id
-                }
+                let fixId: String = (teamID != nil) ? "\(teamID!) \(id)" : id
+                
                 if await getFile(fileId: fixId, parentId: parentId, parentPath: parentPath) {
                     return fixId
                 }
@@ -622,25 +591,29 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
 
-    func getFile(fileId: String, parentId: String? = nil, parentPath: String? = nil) async -> Bool {
+    func getFile(fileId: String, parentId: String? = nil, parentPath: String? = nil, objectID: NSManagedObjectID? = nil) async -> Bool {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "getFile(google:\(storageName ?? "") \(fileId)")
                 let fields = "id,mimeType,name,trashed,parents,viewedByMeTime,modifiedTime,createdTime,md5Checksum,size"
                 
                 let fixFileId: String
+                let teamID: String?
                 if fileId.contains(" ") {
                     let comp = fileId.components(separatedBy: " ")
+                    teamID = comp[0]
                     fixFileId = comp[1]
                 }
                 else {
+                    teamID = nil
                     fixFileId = fileId
                 }
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/files/\(fixFileId)?fields=\(fields)&supportsTeamDrives=true")!)
                 request.httpMethod = "GET"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
                 request.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -652,17 +625,20 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     print(e)
                     throw RetryError.Retry
                 }
-                let viewContext = CloudFactory.shared.data.viewContext
-                let teamID: String?
-                if fileId.contains(" ") {
-                    let comp = fileId.components(separatedBy: " ")
-                    teamID = comp[0]
-                }
-                else {
-                    teamID = nil
-                }
-                storeItem(item: json, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: viewContext)
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
                 await viewContext.perform {
+                    var existing: RemoteData? = nil
+                    if let objID = objectID {
+                        existing = try? viewContext.existingObject(with: objID) as? RemoteData
+                    } else {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+                        fetchRequest.fetchLimit = 1
+                        existing = (try? viewContext.fetch(fetchRequest))?.first
+                    }
+                    
+                    self.storeItem(item: json, existingItem: existing, parentFileId: parentId, parentPath: parentPath, teamID: teamID, context: viewContext)
                     try? viewContext.save()
                 }
                 return true
@@ -672,12 +648,12 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return false
         }
     }
-
-    func updateFile(fileId: String, metadata: [String: Any]) async -> String? {
+    
+    func updateFile(fileId: String, metadata: [String: Any], objectID: NSManagedObjectID? = nil) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "updateFile(google:\(storageName ?? "") \(fileId)")
-
+                
                 let fixFileId: String
                 if fileId.contains(" ") {
                     let comp = fileId.components(separatedBy: " ")
@@ -693,7 +669,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
                 let postData = try? JSONSerialization.data(withJSONObject: metadata)
                 request.httpBody = postData
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -708,16 +684,10 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let fixId: String
-                if fileId.contains(" ") {
-                    let comp = fileId.components(separatedBy: " ")
-                    fixId = "\(comp[0]) \(id)"
-                }
-                else {
-                    fixId = id
-                }
+                let fixId: String = fileId.contains(" ") ? "\(fileId.components(separatedBy: " ")[0]) \(id)" : id
+                
                 try? await Task.sleep(for: .seconds(1))
-                if await getFile(fileId: fixId) {
+                if await getFile(fileId: fixId, objectID: objectID) {
                     return fixId
                 }
                 return nil
@@ -727,7 +697,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         if toParentId == fromParentId {
             return nil
@@ -745,35 +715,25 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         }
         do {
             return try await callWithRetry(action: { [self] in
-                let toParentFix: String
-                if toParentId.contains(" ") {
-                    let comp = toParentId.components(separatedBy: " ")
-                    toParentFix = comp[1]
-                }
-                else {
-                    toParentFix = (toParentId == "") ? rootName : toParentId
-                }
+                let toParentFix: String = toParentId.contains(" ") ? toParentId.components(separatedBy: " ")[1] : ((toParentId == "") ? rootName : toParentId)
+                let formParentFix: String = fromParentId.contains(" ") ? fromParentId.components(separatedBy: " ")[1] : ((fromParentId == "") ? rootName : fromParentId)
+                
                 var toParentPath: String?
-                let formParentFix: String
-                if fromParentId.contains(" ") {
-                    let comp = fromParentId.components(separatedBy: " ")
-                    formParentFix = comp[1]
-                }
-                else {
-                    formParentFix = (fromParentId == "") ? rootName : fromParentId
-                }
-
-                if toParentId != "" {
-                    let viewContext = CloudFactory.shared.data.viewContext
-                    let storage = storageName ?? ""
-                    await viewContext.perform {
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                var targetObjectID: NSManagedObjectID? = nil
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                let storage = storageName ?? ""
+                
+                await viewContext.perform {
+                    let fetchRequest1 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                    fetchRequest1.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+                    fetchRequest1.fetchLimit = 1
+                    targetObjectID = (try? viewContext.fetch(fetchRequest1))?.first?.objectID
+                    
+                    if toParentId != "" {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            if let items = result as? [RemoteData] {
-                                toParentPath = items.first?.path ?? ""
-                            }
-                        }
+                        fetchRequest.fetchLimit = 1
+                        toParentPath = (try? viewContext.fetch(fetchRequest))?.first?.path
                     }
                 }
                 os_log("%{public}@", log: log, type: .debug, "moveItem(google:\(storageName ?? "") \(formParentFix)->\(toParentFix)")
@@ -786,7 +746,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 let json: [String: Any] = [:]
                 let postData = try? JSONSerialization.data(withJSONObject: json)
                 request.httpBody = postData
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
@@ -801,17 +761,9 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let fixId: String
-                if fileId.contains(" ") {
-                    // teamdrive
-                    let comp = fileId.components(separatedBy: " ")
-                    let driveId = comp[0]
-                    fixId = "\(driveId) \(id)"
-                }
-                else {
-                    fixId = id
-                }
-                if await getFile(fileId: fixId, parentId: toParentId, parentPath: toParentPath) {
+                let fixId: String = fileId.contains(" ") ? "\(fileId.components(separatedBy: " ")[0]) \(id)" : id
+                
+                if await getFile(fileId: fixId, parentId: toParentId, parentPath: toParentPath, objectID: targetObjectID) {
                     await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                     return fixId
                 }
@@ -822,27 +774,26 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     func deleteDrive(driveId: String) async -> Bool {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteDrive(google:\(storageName ?? "") \(driveId)")
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
                 request.httpMethod = "DELETE"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request) else {
                     throw RetryError.Retry
                 }
                 if data.count == 0 {
                     return await CloudFactory.shared.data.persistentContainer.performBackgroundTask { context in
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                         fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", "\(driveId) \(driveId)", self.storageName ?? "")
-                        if let result = try? context.fetch(fetchRequest) {
-                            for object in result {
-                                context.delete(object as! NSManagedObject)
-                            }
+                        fetchRequest.fetchLimit = 1
+                        if let existing = (try? context.fetch(fetchRequest))?.first {
+                            GoogleDriveStorage.cascadeDelete(item: existing, in: context)
                         }
                         try? context.save()
                         return true
@@ -860,6 +811,16 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
             return false
         }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        var targetObjectID: NSManagedObjectID? = nil
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         if fileId.contains(" ") {
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
@@ -868,32 +829,30 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard await deleteDrive(driveId: driveId) else {
                     return false
                 }
-                let viewContext = CloudFactory.shared.data.viewContext
-                deleteChildRecursive(parent: driveId, context: viewContext)
                 await viewContext.perform {
+                    if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        GoogleDriveStorage.cascadeDelete(item: existing, in: viewContext)
+                    }
                     try? viewContext.save()
                 }
                 return true
             }
         }
+        
         let json: [String: Any] = ["trashed": true]
-        guard let id = await updateFile(fileId: fileId, metadata: json) else {
+        guard let _ = await updateFile(fileId: fileId, metadata: json, objectID: targetObjectID) else {
             return false
         }
-        let viewContext = CloudFactory.shared.data.viewContext
-        deleteChildRecursive(parent: id, context: viewContext)
-        await viewContext.perform {
-            try? viewContext.save()
-        }
+        
         await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
         return true
     }
-
-    func updateDrive(driveId: String, metadata: [String: Any]) async -> String? {
+    
+    func updateDrive(driveId: String, metadata: [String: Any], objectID: NSManagedObjectID? = nil) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "updateDrive(google:\(storageName ?? "") \(driveId)")
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/drives/\(driveId)")!)
                 request.httpMethod = "PATCH"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
@@ -916,9 +875,18 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let id = json["id"] as? String else {
                     throw RetryError.Retry
                 }
-                let viewContext = CloudFactory.shared.data.viewContext
-                storeTeamDriveItem(item: json, context: viewContext)
+                let viewContext = CloudFactory.shared.data.backgroundContext
                 await viewContext.perform {
+                    var existing: RemoteData? = nil
+                    if let objID = objectID {
+                        existing = try? viewContext.existingObject(with: objID) as? RemoteData
+                    } else {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", "\(driveId) \(driveId)", self.storageName ?? "")
+                        fetchRequest.fetchLimit = 1
+                        existing = (try? viewContext.fetch(fetchRequest))?.first
+                    }
+                    self.storeTeamDriveItem(item: json, existingItem: existing, context: viewContext)
                     try? viewContext.save()
                 }
                 return id
@@ -928,34 +896,46 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     override func renameItem(fileId: String, newname: String) async -> String? {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
             return nil
         }
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         let json: [String: Any] = ["name": newname]
         if fileId.contains(" ") {
-            // teamdrive
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
             let fixFileId = comp[1]
             if driveId == fixFileId {
-                return await updateDrive(driveId: driveId, metadata: json)
+                let newid = await updateDrive(driveId: driveId, metadata: json, objectID: targetObjectID)
+                if newid != nil {
+                    await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                }
+                return newid
             }
         }
-        let newid = await updateFile(fileId: fileId, metadata: json)
+        let newid = await updateFile(fileId: fileId, metadata: json, objectID: targetObjectID)
         if newid != nil {
             await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
         }
         return newid
     }
-
+    
     override func changeTime(fileId: String, newdate: Date) async -> String? {
         if fileId == "" || fileId == "mydrive" || fileId == "teamdrives" {
             return nil
         }
         if fileId.contains(" ") {
-            // teamdrive
             let comp = fileId.components(separatedBy: " ")
             let driveId = comp[0]
             let fixFileId = comp[1]
@@ -963,10 +943,20 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 return nil
             }
         }
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
         let json: [String: Any] = ["modifiedTime": formatter.string(from: newdate)]
-        return await updateFile(fileId: fileId, metadata: json)
+        return await updateFile(fileId: fileId, metadata: json, objectID: targetObjectID)
     }
     
     public override func getRaw(fileId: String) async -> RemoteItem? {
@@ -981,7 +971,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         defer {
             try? FileManager.default.removeItem(at: target)
         }
-
+        
         if parentId == "teamdrives" {
             return nil
         }
@@ -1005,20 +995,20 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
         if fixParentId != rootName {
             parentPath = await getParentPath(parentId: parentId) ?? parentPath
         }
-
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "uploadFile(google:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
+                
                 let handle = try FileHandle(forReadingFrom: target)
                 defer {
                     try? handle.close()
                 }
-
+                
                 let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
                 let fileSize = attr[.size] as! UInt64
                 try await progress?(0, Int64(fileSize))
-
+                
                 var request: URLRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsTeamDrives=true")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(await accessToken())", forHTTPHeaderField: "Authorization")
@@ -1045,12 +1035,12 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                 let uploadUrl = URL(string: location)!
                 var request2: URLRequest = URLRequest(url: uploadUrl)
                 request2.httpMethod = "PUT"
-
+                
                 await uploadProgressManeger.setCallback(url: uploadUrl, total: Int64(fileSize), callback: progress)
                 defer {
                     Task { await uploadProgressManeger.removeCallback(url: uploadUrl) }
                 }
-
+                
                 var offset = 0
                 var eof = false
                 while !eof {
@@ -1063,7 +1053,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     request2.setValue("bytes \(offset)-\(offset+srcData.count-1)/\(fileSize)", forHTTPHeaderField: "Content-Range")
                     await uploadProgressManeger.setOffset(url: uploadUrl, offset: Int64(offset))
                     offset += srcData.count
-
+                    
                     guard let (data2, response2) = try? await URLSession.shared.upload(for: request2, from: srcData, delegate: self) else {
                         throw RetryError.Retry
                     }
@@ -1093,7 +1083,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                             throw RetryError.Retry
                         }
                         let reqOffset = (Int(range.replacingOccurrences(of: #"bytes=\d+-(\d+)"#, with: "$1", options: .regularExpression)) ?? -1) + 1
-
+                        
                         print(reqOffset)
                         
                         if offset != reqOffset {
@@ -1104,7 +1094,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                         continue
                     case 404:
                         print("404 start from begining")
-
+                        
                         try handle.seek(toOffset: 0)
                         offset = 0
                         eof = false
@@ -1113,7 +1103,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
                     default:
                         print("\(httpResponse.statusCode) resume request")
                         print("\(httpResponse.allHeaderFields)")
-
+                        
                         try handle.seek(toOffset: 0)
                         offset = 0
                         eof = false
@@ -1127,7 +1117,7 @@ public class GoogleDriveStorage: NetworkStorage, URLSessionDataDelegate {
             return nil
         }
     }
-
+    
     public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         if let url = task.originalRequest?.url {
             Task {

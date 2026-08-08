@@ -373,6 +373,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessDerivedMasterKeys", value: derivedMasterKeys)
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessMasterKeys", value: plainMasterKeys)
         let _ = await setKeyChain(key: "\(storageName ?? "")_accessBaseFolder", value: await getBaseFolder())
+        await tokenCache.setToken(access: apiKey, refresh: "")
         return nil
     }
     
@@ -492,28 +493,21 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         return uuid
     }
     
-    func storeItem(item: [String: Any], parentPath: String? = nil, context: NSManagedObjectContext) async {
-        guard let id = item["uuid"] as? String else {
-            return
-        }
-        guard let name = item["name"] as? String else {
-            return
-        }
-        guard let parent = item["parent"] as? String else {
-            return
-        }
-        guard let isFolder = item["isFolder"] as? Bool else {
+    func storeItem(item: [String: Any], existingItem: RemoteData? = nil, parentPath: String? = nil, baseFolderId: String, context: NSManagedObjectContext) {
+        guard let id = item["uuid"] as? String,
+              let name = item["name"] as? String,
+              let parent = item["parent"] as? String,
+              let isFolder = item["isFolder"] as? Bool else {
             return
         }
         var ctime = Date(timeIntervalSince1970: 0)
         var mtime = Date(timeIntervalSince1970: 0)
         var hashstr = ""
         var size = 0
-        let baseId = await baseFolder()
+        
         if let lastModified = item["lastModified"] as? Int {
             mtime = Date(timeIntervalSince1970: Double(lastModified)/1000)
-        }
-        else if let timestamp = item["timestamp"] as? Int {
+        } else if let timestamp = item["timestamp"] as? Int {
             mtime = Date(timeIntervalSince1970: Double(timestamp))
         }
         if let creation = item["creation"] as? Int {
@@ -526,66 +520,76 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             size = s
         }
         
-        await context.perform {
-            var prevPath: String?
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    if let item = object as? RemoteData {
-                        prevPath = item.path
-                        let component = prevPath?.components(separatedBy: "/")
-                        prevPath = component?.dropLast().joined(separator: "/")
-                    }
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = name
-            let comp = name.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = ctime
-            newitem.mdate = mtime
-            newitem.folder = isFolder
-            newitem.size = Int64(size)
-            newitem.hashstr = hashstr
-            newitem.parent = parent == baseId ? "" : parent
-            if parent == baseId {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
-            }
-            else {
-                if let path = (parentPath == nil) ? prevPath : parentPath {
-                    newitem.path = "\(path)/\(name)"
-                }
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = self.storageName
+        targetItem.id = id
+        targetItem.name = name
+        
+        let comp = name.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        targetItem.cdate = ctime
+        targetItem.mdate = mtime
+        targetItem.folder = isFolder
+        targetItem.size = Int64(size)
+        targetItem.hashstr = hashstr
+        
+        targetItem.parent = parent == baseFolderId ? "" : parent
+        if parent == baseFolderId {
+            targetItem.path = "\(self.storageName ?? ""):/\(name)"
+        } else {
+            let pPath = (parentPath == nil) ? targetItem.path?.components(separatedBy: "/").dropLast().joined(separator: "/") : parentPath
+            if let pPath = pPath {
+                targetItem.path = "\(pPath)/\(name)"
             }
         }
     }
     
     override func listChildren(fileId: String, path: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
+        guard let items = await listFolder(fileId: fileId) else { return }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
+        let baseFolderId = await baseFolder()
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id { existingDict[id] = item }
+            }
+            
+            for item in items {
+                if let id = item["uuid"] as? String {
+                    let existing = existingDict.removeValue(forKey: id)
+                    self.storeItem(item: item, existingItem: existing, parentPath: path, baseFolderId: baseFolderId, context: viewContext)
                 }
             }
-        }
-        if let items = await listFolder(fileId: fileId) {
-            for item in items {
-                await storeItem(item: item, parentPath: path, context: viewContext)
+            
+            for (_, orphan) in existingDict {
+                FilenStorage.cascadeDelete(item: orphan, in: viewContext)
             }
-            await viewContext.perform {
-                try? viewContext.save()
-            }
+            
+            try? viewContext.save()
         }
     }
     
@@ -614,7 +618,6 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                 guard let json = object as? [String: Any] else {
                     return nil
                 }
-                print(json)
                 guard let dataField = json["data"] as? [String: Any] else {
                     return nil
                 }
@@ -819,32 +822,45 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue("Bearer \(await apiKey())", forHTTPHeaderField: "Authorization")
                 
-                let jsondata: [String: Any] = await [
+                let baseId = await baseFolder()
+                let targetParent = parentId == "" ? baseId : parentId
+                
+                let jsondata: [String: Any] = [
                     "uuid": uuid,
                     "name": metadataEncrypted,
                     "nameHashed": nameHashed,
-                    "parent": parentId == "" ? baseFolder(): parentId,
+                    "parent": targetParent,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return nil
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
+                guard let jsonObj = object as? [String: Any], let dataField = jsonObj["data"] as? [String: Any], let newid = dataField["uuid"] as? String else {
                     return nil
                 }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return nil
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                let storage = storageName ?? ""
+                
+                await viewContext.perform {
+                    let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                    fetchRequest.fetchLimit = 1
+                    let existing = (try? viewContext.fetch(fetchRequest))?.first
+                    
+                    let mockItem: [String: Any] = [
+                        "uuid": newid,
+                        "name": newname,
+                        "isFolder": true,
+                        "parent": targetParent,
+                        "timestamp": Int(Date().timeIntervalSince1970)
+                    ]
+                    
+                    self.storeItem(item: mockItem, existingItem: existing, parentPath: parentPath, baseFolderId: baseId, context: viewContext)
+                    try? viewContext.save()
                 }
-                guard let json = object as? [String: Any] else {
-                    return nil
-                }
-                guard let dataField = json["data"] as? [String: Any] else {
-                    return nil
-                }
-                guard let newid = dataField["uuid"] as? String else {
-                    return nil
-                }
+                
                 return newid
             })
         }
@@ -853,7 +869,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func deleteFile(fileId: String) async -> Bool {
+    func deleteFile(fileId: String, objectID: NSManagedObjectID?) async -> Bool {
         do {
             let ret = try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteFile(Filen:\(storageName ?? "") \(fileId)")
@@ -866,37 +882,18 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                 let jsondata: [String: Any] = [
                     "uuid": fileId,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return false
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return false }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return false
-                }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return false
-                }
-                guard let json = object as? [String: Any] else {
-                    return false
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return false
-                }
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return false }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return false }
+                guard let status = object["status"] as? Bool, status else { return false }
                 
-                let viewContext = CloudFactory.shared.data.viewContext
-                let storage = storageName ?? ""
+                let viewContext = CloudFactory.shared.data.backgroundContext
                 await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
-                        }
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        FilenStorage.cascadeDelete(item: existing, in: viewContext)
                     }
-                }
-                deleteChildRecursive(parent: fileId, context: viewContext)
-                await viewContext.perform {
                     try? viewContext.save()
                 }
                 return true
@@ -911,7 +908,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func deleteDir(fileId: String) async -> Bool {
+    func deleteDir(fileId: String, objectID: NSManagedObjectID?) async -> Bool {
         do {
             let ret = try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteDir(Filen:\(storageName ?? "") \(fileId)")
@@ -924,37 +921,18 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                 let jsondata: [String: Any] = [
                     "uuid": fileId,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return false
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return false }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return false
-                }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return false
-                }
-                guard let json = object as? [String: Any] else {
-                    return false
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return false
-                }
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return false }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return false }
+                guard let status = object["status"] as? Bool, status else { return false }
                 
-                let viewContext = CloudFactory.shared.data.viewContext
-                let storage = storageName ?? ""
+                let viewContext = CloudFactory.shared.data.backgroundContext
                 await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
-                        }
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        FilenStorage.cascadeDelete(item: existing, in: viewContext)
                     }
-                }
-                deleteChildRecursive(parent: fileId, context: viewContext)
-                await viewContext.perform {
                     try? viewContext.save()
                 }
                 return true
@@ -970,48 +948,60 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     override func deleteItem(fileId: String) async -> Bool {
-        guard let item = await CloudFactory.shared.data.getData(storage: storageName ?? "", fileId: fileId) else { return false }
-        if item.folder {
-            return await deleteDir(fileId: fileId)
+        var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
+            }
+        }
+        
+        if isFolder {
+            return await deleteDir(fileId: fileId, objectID: targetObjectID)
         }
         else {
-            return await deleteFile(fileId: fileId)
+            return await deleteFile(fileId: fileId, objectID: targetObjectID)
         }
     }
     
     override func renameItem(fileId: String, newname: String) async -> String? {
         if fileId == "" { return nil }
         
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
         
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                if let item = result.first {
-                    isFolder = item.folder
-                }
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
             }
         }
+        
         if isFolder {
-            let newid = await renameDir(fileId: fileId, newname: newname)
-            if newid != nil {
-                await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-            }
+            let newid = await renameDir(fileId: fileId, newname: newname, objectID: targetObjectID)
+            if newid != nil { await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId) }
             return newid
         }
         else {
-            let newid = await renameFile(fileId: fileId, newname: newname)
-            if newid != nil {
-                await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-            }
+            let newid = await renameFile(fileId: fileId, newname: newname, objectID: targetObjectID)
+            if newid != nil { await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId) }
             return newid
         }
     }
     
-    func renameFile(fileId: String, newname: String) async -> String? {
+    func renameFile(fileId: String, newname: String, objectID: NSManagedObjectID?) async -> String? {
         guard let oldInfo = await getFileInfo(fileId: fileId) else { return nil }
         guard let key = await masterKeys().first else { return nil }
         
@@ -1049,23 +1039,27 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     "metadata": metadataEncrypted,
                     "nameHashed": nameHashed,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return nil
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return nil
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+                guard let status = object["status"] as? Bool, status else { return nil }
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                await viewContext.perform {
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        existing.name = newname
+                        let comp = newname.components(separatedBy: ".")
+                        if comp.count > 1 {
+                            existing.ext = comp.last!.lowercased()
+                        } else {
+                            existing.ext = ""
+                        }
+                    }
+                    try? viewContext.save()
                 }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return nil
-                }
-                guard let json = object as? [String: Any] else {
-                    return nil
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return nil
-                }
+                
                 return fileId
             })
         }
@@ -1074,7 +1068,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func renameDir(fileId: String, newname: String) async -> String? {
+    func renameDir(fileId: String, newname: String, objectID: NSManagedObjectID?) async -> String? {
         guard let key = await masterKeys().first else { return nil }
         
         let nameHashed = hashFn(newname)
@@ -1095,23 +1089,21 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     "name": metadataEncrypted,
                     "nameHashed": nameHashed,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return nil
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return nil
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+                guard let status = object["status"] as? Bool, status else { return nil }
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                await viewContext.perform {
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        FilenStorage.cascadeDelete(item: existing, in: viewContext)
+                    }
+                    try? viewContext.save()
                 }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return nil
-                }
-                guard let json = object as? [String: Any] else {
-                    return nil
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return nil
-                }
+                
                 return fileId
             })
         }
@@ -1121,53 +1113,44 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
     }
     
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        if fromParentId == toParentId {
-            return nil
-        }
+        if fromParentId == toParentId { return nil }
         
-        let viewContext = CloudFactory.shared.data.viewContext
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         var isFolder = false
         
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) as? [RemoteData] {
-                if let item = result.first {
-                    isFolder = item.folder
-                }
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
             }
         }
         
+        let targetParent = toParentId == "" ? await baseFolder() : toParentId
+        
         if isFolder {
-            let newid = await moveDir(fileId: fileId, toParentId: toParentId == "" ? baseFolder() : toParentId)
+            let newid = await moveDir(fileId: fileId, toParentId: targetParent, objectID: targetObjectID)
             if newid != nil {
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: fromParentId)
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: toParentId)
-                deleteChildRecursive(parent: fromParentId, context: viewContext)
-                deleteChildRecursive(parent: toParentId, context: viewContext)
-                await viewContext.perform {
-                    try? viewContext.save()
-                }
             }
             return newid
         }
         else {
-            let newid = await moveFile(fileId: fileId, toParentId: toParentId == "" ? baseFolder() : toParentId)
+            let newid = await moveFile(fileId: fileId, toParentId: targetParent, objectID: targetObjectID)
             if newid != nil {
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: fromParentId)
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: toParentId)
-                deleteChildRecursive(parent: fromParentId, context: viewContext)
-                deleteChildRecursive(parent: toParentId, context: viewContext)
-                await viewContext.perform {
-                    try? viewContext.save()
-                }
             }
             return newid
         }
     }
     
-    func moveFile(fileId: String, toParentId: String) async -> String? {
+    func moveFile(fileId: String, toParentId: String, objectID: NSManagedObjectID?) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "moveFile(Filen:\(storageName ?? "")) \(toParentId)")
@@ -1181,23 +1164,21 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     "uuid": fileId,
                     "to": toParentId,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return nil
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return nil
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+                guard let status = object["status"] as? Bool, status else { return nil }
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                await viewContext.perform {
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        FilenStorage.cascadeDelete(item: existing, in: viewContext)
+                    }
+                    try? viewContext.save()
                 }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return nil
-                }
-                guard let json = object as? [String: Any] else {
-                    return nil
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return nil
-                }
+                
                 return fileId
             })
         }
@@ -1206,7 +1187,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         }
     }
     
-    func moveDir(fileId: String, toParentId: String) async -> String? {
+    func moveDir(fileId: String, toParentId: String, objectID: NSManagedObjectID?) async -> String? {
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "moveDir(Filen:\(storageName ?? "")) \(toParentId)")
@@ -1220,23 +1201,21 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     "uuid": fileId,
                     "to": toParentId,
                 ]
-                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-                    return nil
-                }
+                guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
                 request.httpBody = postData
                 
-                guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-                    return nil
+                guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+                guard let status = object["status"] as? Bool, status else { return nil }
+                
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                await viewContext.perform {
+                    if let objID = objectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        FilenStorage.cascadeDelete(item: existing, in: viewContext)
+                    }
+                    try? viewContext.save()
                 }
-                guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-                    return nil
-                }
-                guard let json = object as? [String: Any] else {
-                    return nil
-                }
-                guard let status = json["status"] as? Bool, status else {
-                    return nil
-                }
+                
                 return fileId
             })
         }
@@ -1339,13 +1318,14 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         let fileSize = attr[.size] as! UInt64
         let modifiedDate = attr[.modificationDate] as! Date
         let creationDate = attr[.creationDate] as! Date
-        os_log("%{public}@", log: log, type: .debug, "uploadFile(dropbox:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
+        os_log("%{public}@", log: log, type: .debug, "uploadFile(Filen:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
         
         let fileUUID = UUID().uuidString.lowercased()
         let encryptionKey = generateRandomHexString(32)
         let rm = generateRandomString(32)
         let uploadKey = generateRandomString(32)
-        let parentId = await parentId == "" ? getBaseFolder() : parentId
+        let baseId = await getBaseFolder()
+        let targetParentId = parentId == "" ? baseId : parentId
         
         guard let (url, pos, hash) = processFile(target: target, key: encryptionKey) else { return nil }
         defer {
@@ -1358,26 +1338,18 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
         await withTaskGroup { group in
             var count = 0
             for chunk in 0..<chunks {
-                if Task.isCancelled {
-                    break
-                }
+                if Task.isCancelled { break }
                 group.addTask { ()->(Int, String)? in
-                    guard let handle = try? FileHandle(forReadingFrom: url) else {
-                        return nil
-                    }
-                    defer {
-                        try? handle.close()
-                    }
+                    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+                    defer { try? handle.close() }
                     try? handle.seek(toOffset: UInt64(pos[chunk]))
-                    guard let srcData = try? handle.read(upToCount: pos[chunk+1]-pos[chunk]) else {
-                        return nil
-                    }
+                    guard let srcData = try? handle.read(upToCount: pos[chunk+1]-pos[chunk]) else { return nil }
                     let chunkHash = SHA512.hash(data: srcData).map({ String(format: "%02x", $0) }).joined()
                     let host = hosts.randomElement()!
                     let url = URL(string: "https://\(host)/v3/upload")!.appending(queryItems: [
                         .init(name: "uuid", value: fileUUID),
                         .init(name: "index", value: "\(chunk)"),
-                        .init(name: "parent", value: parentId),
+                        .init(name: "parent", value: targetParentId),
                         .init(name: "uploadKey", value: uploadKey),
                         .init(name: "hash", value: chunkHash),
                     ])
@@ -1387,9 +1359,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     request.setValue("Bearer \(api_key)", forHTTPHeaderField: "Authorization")
                     request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
                     
-                    guard let (data, _) = try? await URLSession.shared.upload(for: request, from: srcData) else {
-                        return nil
-                    }
+                    guard let (data, _) = try? await URLSession.shared.upload(for: request, from: srcData) else { return nil }
                     return (chunk, String(data: data, encoding: .utf8)!)
                 }
                 count += 1
@@ -1397,31 +1367,17 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
                     if let next = await group.next(), let (i, str) = next {
                         print(i, str)
                         doneCount += 1
-                        do {
-                            try await progress?(Int64(pos[doneCount]), Int64(pos.last!))
-                        }
-                        catch {
-                            print(error)
-                            return
-                        }
+                        do { try await progress?(Int64(pos[doneCount]), Int64(pos.last!)) } catch { return }
                     }
                     count -= 1
                 }
             }
             while count > 0 {
-                if Task.isCancelled {
-                    break
-                }
+                if Task.isCancelled { break }
                 if let next = await group.next(), let (i, str) = next {
                     print(i, str)
                     doneCount += 1
-                    do {
-                        try await progress?(Int64(pos[doneCount]), Int64(pos.last!))
-                    }
-                    catch {
-                        print(error)
-                        return
-                    }
+                    do { try await progress?(Int64(pos[doneCount]), Int64(pos.last!)) } catch { return }
                 }
                 count -= 1
             }
@@ -1440,9 +1396,7 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             "creation": Int(creationDate.timeIntervalSince1970 * 1000),
             "hash": hash.map({ String(format: "%02x", $0) }).joined(),
         ]
-        guard let metadataData = try? JSONSerialization.data(withJSONObject: metadataJson) else {
-            return nil
-        }
+        guard let metadataData = try? JSONSerialization.data(withJSONObject: metadataJson) else { return nil }
         guard let metadata = await encodeMetadata(key: key, metadata: String(data: metadataData, encoding: .utf8)!) else { return nil }
         let hashFilename = hashFn(uploadname)
         
@@ -1463,24 +1417,40 @@ public class FilenStorage: NetworkStorage, URLSessionDataDelegate {
             "version": 3,
             "uploadKey": uploadKey,
         ]
-        guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else {
-            return nil
-        }
+        guard let postData = try? JSONSerialization.data(withJSONObject: jsondata) else { return nil }
         request.httpBody = postData
         
-        guard let (data, _) = try? await URLSession.shared.data(for: request) else {
-            return nil
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        guard let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else { return nil }
+        guard let status = object["status"] as? Bool, status else { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        var parentPath = "\(storage):/"
+        if parentId != "" {
+            parentPath = await getParentPath(parentId: parentId) ?? parentPath
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
-            return nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileUUID, storage)
+            fetchRequest.fetchLimit = 1
+            let existing = (try? viewContext.fetch(fetchRequest))?.first
+            
+            let mockItem: [String: Any] = [
+                "uuid": fileUUID,
+                "name": uploadname,
+                "parent": targetParentId,
+                "isFolder": false,
+                "lastModified": Int(modifiedDate.timeIntervalSince1970 * 1000),
+                "creation": Int(creationDate.timeIntervalSince1970 * 1000),
+                "hash": hash.map({ String(format: "%02x", $0) }).joined(),
+                "size": Int(fileSize)
+            ]
+            self.storeItem(item: mockItem, existingItem: existing, parentPath: parentPath, baseFolderId: baseId, context: viewContext)
+            try? viewContext.save()
         }
-        guard let json = object as? [String: Any] else {
-            return nil
-        }
-        print(json)
-        guard let status = json["status"] as? Bool, status else {
-            return nil
-        }
+        
         return fileUUID
     }
 }
@@ -1511,17 +1481,8 @@ public class RemoteFilenStream: SlotStream {
         await super.init(size: remote.size)
     }
     
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func fillHeader() async {
@@ -1530,14 +1491,14 @@ public class RemoteFilenStream: SlotStream {
         }
         else {
             print("error on getinfo")
-            error = true
+            await setError()
         }
         await super.fillHeader()
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(60)) == .success else {
-            error = true
+            await setError()
             return
         }
         guard pos.lowerBound >= 0 && pos.upperBound < size else {
@@ -1618,7 +1579,7 @@ public class RemoteFilenStream: SlotStream {
         guard let key = info["key"] as? String else { return }
         guard let version = info["version"] as? Int, version == 2 || version == 3 else { return }
         guard let data = await remote.remoteStorage.downloadChunk(fileinfo: info, chunk: chunk) else {
-            error = true
+            await setError()
             return
         }
         guard let plain = await decodeData(key: key, data: data) else { return }

@@ -26,7 +26,7 @@ public class DVDRemoteItem: RemoteSubItem {
         guard let comp1 = subid?.dropFirst(3).components(separatedBy: "\n"), comp1.count > 1 else {
             return nil
         }
-        guard let title_set_num = Int(comp1[0]) else { return }
+        guard let title_set_num = Int(comp1[0]) else { return nil }
         let chapt = comp1[1...].filter { !$0.isEmpty }
         for c in chapt {
             let citems = c.components(separatedBy: "\t")
@@ -47,7 +47,7 @@ public class DVDRemoteItem: RemoteSubItem {
         
         let maxoffset = chapters.map{ $0.0.map(\.1).max() ?? 0 }.max() ?? 0
         
-        let viewContext = CloudFactory.shared.data.viewContext
+        let context = CloudFactory.shared.data.backgroundContext
         guard let baseItem = await CloudFactory.shared.data.getData(storage: storage, fileId: parent)?.getItem() else {
             return nil
         }
@@ -56,14 +56,34 @@ public class DVDRemoteItem: RemoteSubItem {
         var curOffset: Int64 = 0
         while curOffset < maxoffset {
             let vob_file = "VTS_\(String(format: "%02d", title_set_num))_\(i).VOB"
-            let vobdata = await viewContext.perform { () -> RemoteData? in
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let vobdata = await context.perform { () -> RemoteDataDTO? in
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name == %@", parent, storage, vob_file)
+                fetchRequest.fetchLimit = 1
                 
-                guard let result = try? viewContext.fetch(fetchRequest) as? [RemoteData], let ifodata = result.first else {
+                guard let result = (try? context.fetch(fetchRequest))?.first else {
                     return nil
                 }
-                return ifodata
+                return RemoteDataDTO(
+                    cdate: result.cdate,
+                    ext: result.ext,
+                    folder: result.folder,
+                    hashstr: result.hashstr,
+                    id: result.id,
+                    mdate: result.mdate,
+                    name: result.name,
+                    parent: result.parent,
+                    parentDate: result.parentDate,
+                    path: result.path,
+                    size: result.size,
+                    storage: result.storage,
+                    subend: result.subend,
+                    subid: result.subid,
+                    subinfo: result.subinfo,
+                    substart: result.substart,
+                    baseStorage: result.baseStorage,
+                    baseId: result.baseId
+                )
             }
             guard let vobdata, let item = await vobdata.getItem() else {
                 break
@@ -76,13 +96,14 @@ public class DVDRemoteItem: RemoteSubItem {
     }
     
     class func Create(from item: RemoteItem) async -> RemoteItem? {
-        let viewContext = CloudFactory.shared.data.viewContext
+        let context = CloudFactory.shared.data.backgroundContext // ⭐️ 修正: backgroundContextを使用
         let itemid = item.id
         let storage = item.storage
+        
         guard await CloudFactory.shared.data.listData(storage: storage, parentID: itemid).isEmpty else {
             return item
         }
-
+        
         let stream = await item.open()
         guard let data = try? await stream.read() else {
             return nil
@@ -121,17 +142,47 @@ public class DVDRemoteItem: RemoteSubItem {
                 titles.append(("VTS_\(String(format: "%02d", title_set_num))_0.IFO", Int(vts_title_num), Int(title_set_num)))
             }
         }
+        
+        struct TitleData {
+            let id: String
+            let name: String
+            let size: Int64
+            let subid: String
+            let subinfo: String
+        }
+        var titlesToAdd: [TitleData] = []
+        
         for (index, (vts_ifo, title_num, title_set_num)) in titles.enumerated() {
             print("VTS: \(vts_ifo)")
             let itemparent = item.parent
-            let ifodata = await viewContext.perform { () -> RemoteData? in
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let ifodata = await context.perform { () -> RemoteDataDTO? in
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name == %@", itemparent, storage, vts_ifo)
+                fetchRequest.fetchLimit = 1
                 
-                guard let result = try? viewContext.fetch(fetchRequest) as? [RemoteData], let ifodata = result.first else {
+                guard let result = (try? context.fetch(fetchRequest))?.first else {
                     return nil
                 }
-                return ifodata
+                return RemoteDataDTO(
+                    cdate: result.cdate,
+                    ext: result.ext,
+                    folder: result.folder,
+                    hashstr: result.hashstr,
+                    id: result.id,
+                    mdate: result.mdate,
+                    name: result.name,
+                    parent: result.parent,
+                    parentDate: result.parentDate,
+                    path: result.path,
+                    size: result.size,
+                    storage: result.storage,
+                    subend: result.subend,
+                    subid: result.subid,
+                    subinfo: result.subinfo,
+                    substart: result.substart,
+                    baseStorage: result.baseStorage,
+                    baseId: result.baseId
+                )
             }
             if let ifodata, let data2 = try? await ifodata.getItem()?.open().read() {
                 let magic = data2.prefix(12)
@@ -226,7 +277,7 @@ public class DVDRemoteItem: RemoteSubItem {
                     }
                     
                     let pgc_absolute_offset = vts_pgciti_offset + Int(pgc_relative_offset)
-
+                    
                     var paletteStr = "palette: "
                     if data2.count >= pgc_absolute_offset + 0x00A4 + 64 {
                         data2.withUnsafeBytes { buffer in
@@ -272,7 +323,7 @@ public class DVDRemoteItem: RemoteSubItem {
                         for c in 0..<Int(cell_count) {
                             let cell_offset = c_pbit_absolute + (c * 24)
                             guard data2.count >= cell_offset + 24 else { return }
-
+                            
                             let time_sec = data2.withUnsafeBytes { buffer -> Double in
                                 let b0 = buffer.load(fromByteOffset: cell_offset + 4, as: UInt8.self)
                                 let b1 = buffer.load(fromByteOffset: cell_offset + 5, as: UInt8.self)
@@ -299,6 +350,7 @@ public class DVDRemoteItem: RemoteSubItem {
                         pgc.append((program_map,cell_offsets,paletteStr))
                     }
                 }
+                
                 let id = "\(itemid)\t\(index)"
                 var subid = "\(title_set_num)\n"
                 var size = 0
@@ -336,31 +388,36 @@ public class DVDRemoteItem: RemoteSubItem {
                     size += tmp_size
                 }
                 
-                let size2 = size
-                let subid2 = subid
-                let cDate = item.cDate
-                let mDate = item.mDate
-                let path = item.path
-                await viewContext.perform {
-                    let newitem = RemoteData(context: viewContext)
-                    newitem.storage = storage
-                    newitem.id = id
-                    newitem.name = "Title\(String(format: "%02d", index+1))"
-                    newitem.ext = "mpg"
-                    newitem.cdate = cDate
-                    newitem.mdate = mDate
-                    newitem.folder = false
-                    newitem.size = Int64(size2) * 2048
-                    newitem.hashstr = ""
-                    newitem.parent = itemid
-                    newitem.path = path + "/\(index)"
-                    newitem.subid = "DVD"+subid2
-                    newitem.subinfo = "\(chapter_count) Chapters"
-
-                    try? viewContext.save()
-                }
+                titlesToAdd.append(TitleData(id: id, name: "Title\(String(format: "%02d", index+1))", size: Int64(size) * 2048, subid: "DVD" + subid, subinfo: "\(chapter_count) Chapters"))
             }
         }
+        
+        let cDate = item.cDate
+        let mDate = item.mDate
+        let path = item.path
+        
+        await context.perform {
+            for title in titlesToAdd {
+                let newitem = RemoteData(context: context)
+                newitem.storage = storage
+                newitem.id = title.id
+                newitem.name = title.name
+                newitem.ext = "mpg"
+                newitem.cdate = cDate
+                newitem.mdate = mDate
+                newitem.folder = false
+                newitem.size = title.size
+                newitem.hashstr = ""
+                newitem.parent = itemid
+                newitem.path = path + "/\(title.name.suffix(2))"
+                newitem.subid = title.subid
+                newitem.subinfo = title.subinfo
+                newitem.baseStorage = storage
+                newitem.baseId = itemid
+            }
+            try? context.save()
+        }
+        
         return item
     }
     
@@ -453,28 +510,13 @@ public class DVDItemStream: SlotStream {
         await super.init(size: remote.size)
     }
 
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
-    }
-
+    
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
         if await !buffer.dataAvailable(pos: pos), isLive {
@@ -484,7 +526,7 @@ public class DVDItemStream: SlotStream {
             }
             else {
                 print("error on readFile")
-                error = true
+                await setError()
             }
         }
     }

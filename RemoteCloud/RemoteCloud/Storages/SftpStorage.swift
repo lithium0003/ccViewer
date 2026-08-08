@@ -74,7 +74,7 @@ enum SSHError: Error, LocalizedError {
     }
 }
 
-public struct SftpFileStat {
+public struct SftpFileStat: Sendable {
     public let name: String
     public let isDirectory: Bool
     public let size: Int64
@@ -936,7 +936,7 @@ struct SftpLoginView: View {
 public class SftpStorage: NetworkStorage {
     private let poolSize = 4
     var connections: [SftpConnection] = []
-
+    
     private var nextConnectionIndex = 0
     private let poolLock = NSLock()
     
@@ -950,7 +950,7 @@ public class SftpStorage: NetworkStorage {
             connections.append(SftpConnection())
         }
     }
-
+    
     func getConnection() async -> SftpConnection {
         if sshconfig == nil {
             sshconfig = SSHConfig(
@@ -984,7 +984,7 @@ public class SftpStorage: NetworkStorage {
     public override func getStorageType() -> CloudStorages {
         return .sftp
     }
-
+    
     var cache_hostname = ""
     var cache_port = ""
     var cache_username = ""
@@ -993,43 +993,43 @@ public class SftpStorage: NetworkStorage {
     var cache_passphrase = ""
     var cache_rootpath = ""
     var sshconfig: SSHConfig?
-
+    
     func getHostname() async -> String {
         if !cache_hostname.isEmpty { return cache_hostname }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_hostname") { cache_hostname = val }
         return cache_hostname
     }
-
+    
     func getPort() async -> String {
         if !cache_port.isEmpty { return cache_port }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_port") { cache_port = val }
         return cache_port
     }
-
+    
     func getUsername() async -> String {
         if !cache_username.isEmpty { return cache_username }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_username") { cache_username = val }
         return cache_username
     }
-
+    
     func getPassword() async -> String {
         if !cache_password.isEmpty { return cache_password }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_password") { cache_password = val }
         return cache_password
     }
-
+    
     func getPrivatekey() async -> String {
         if !cache_privatekey.isEmpty { return cache_privatekey }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_privatekey") { cache_privatekey = val }
         return cache_privatekey
     }
-
+    
     func getPassphrase() async -> String {
         if !cache_passphrase.isEmpty { return cache_passphrase }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_passphrase") { cache_passphrase = val }
         return cache_passphrase
     }
-
+    
     func getRootPath() async -> String {
         if !cache_rootpath.isEmpty { return cache_rootpath }
         if let name = storageName, let val = await getKeyChain(key: "\(name)_rootpath") { cache_rootpath = val }
@@ -1067,7 +1067,7 @@ public class SftpStorage: NetworkStorage {
         }
         return isAnyConnected
     }
-
+    
     public override func logout() async {
         if let name = storageName {
             let _ = await delKeyChain(key: "\(name)_hostname")
@@ -1090,7 +1090,7 @@ public class SftpStorage: NetworkStorage {
         }
         await super.logout()
     }
-
+    
     public override func auth(callback: @escaping (any View, CheckedContinuation<Bool, Never>) -> Void,  webAuthenticationSession: WebAuthenticationSession, selectItem: @escaping () async -> (String, String)?) async -> Bool {
         
         let authRet = await withCheckedContinuation { authContinuation in
@@ -1108,7 +1108,7 @@ public class SftpStorage: NetworkStorage {
         }
         return authRet
     }
-
+    
     func authCallback(config: SSHConfig, handler: @escaping (String) async -> Bool) async -> String? {
         await mainConnection.setConnectionInfo(config)
         await mainConnection.setOnHostKeyVerification { message in
@@ -1134,20 +1134,8 @@ public class SftpStorage: NetworkStorage {
         let _ = await setKeyChain(key: "\(name)_rootpath", value: config.rootPath)
         return nil
     }
-
+    
     override func listChildren(fileId: String = "", path: String = "") async {
-        let viewContext = CloudFactory.shared.data.viewContext
-        let storage = storageName ?? ""
-        
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-        }
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "listFolder(\(String(describing: type(of: self))):\(storageName ?? ""))")
@@ -1156,11 +1144,52 @@ public class SftpStorage: NetworkStorage {
                     let conn = await getConnection()
                     let files = try await conn.listDirectory(path: fileId)
                     
-                    for file in files {
-                        await storeItem(item: file, parentId: fileId, parentPath: path, context: viewContext)
-                    }
-
+                    let viewContext = CloudFactory.shared.data.backgroundContext
+                    let storage = storageName ?? ""
+                    
                     await viewContext.perform {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+                        let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+                        
+                        var existingDict = [String: RemoteData]()
+                        for item in existingItems {
+                            if let id = item.id { existingDict[id] = item }
+                        }
+                        
+                        for file in files {
+                            let id = fileId.isEmpty ? file.name : "\(fileId)/\(file.name)"
+                            let existing = existingDict.removeValue(forKey: id)
+                            let targetItem = existing ?? RemoteData(context: viewContext)
+                            
+                            targetItem.hashstr = nil
+                            targetItem.subinfo = nil
+                            targetItem.subid = nil
+                            targetItem.substart = 0
+                            targetItem.subend = 0
+                            targetItem.baseId = nil
+                            targetItem.baseStorage = nil
+                            
+                            targetItem.storage = storage
+                            targetItem.id = id
+                            targetItem.name = file.name
+                            
+                            let comp = file.name.components(separatedBy: ".")
+                            targetItem.ext = (comp.count > 1 && !file.isDirectory) ? comp.last!.lowercased() : ""
+                            
+                            targetItem.cdate = file.modificationDate
+                            targetItem.mdate = file.modificationDate
+                            targetItem.folder = file.isDirectory
+                            targetItem.size = file.size
+                            
+                            targetItem.parent = fileId
+                            targetItem.path = fileId.isEmpty ? "\(storage):/\(file.name)" : "\(path)/\(file.name)"
+                        }
+                        
+                        for (_, orphan) in existingDict {
+                            SftpStorage.cascadeDelete(item: orphan, in: viewContext)
+                        }
+                        
                         try? viewContext.save()
                     }
                 } catch {
@@ -1174,48 +1203,6 @@ public class SftpStorage: NetworkStorage {
         }
     }
     
-    private func storeItem(item: SftpFileStat, parentId: String, parentPath: String, context: NSManagedObjectContext) async {
-        let id = parentId.isEmpty ? item.name : parentId + "/" + item.name
-        let name = item.name
-        let isDirectory = item.isDirectory
-        let modificationDate = item.modificationDate
-        let size = item.size
-        let storage = storageName ?? ""
-        await context.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            let newitem = RemoteData(context: context)
-            newitem.storage = storage
-            newitem.id = id
-            newitem.name = name
-            
-            let comp = name.components(separatedBy: ".")
-            if comp.count > 1 && !isDirectory {
-                newitem.ext = comp.last!.lowercased()
-            } else {
-                newitem.ext = ""
-            }
-            
-            newitem.cdate = modificationDate
-            newitem.mdate = modificationDate
-            newitem.folder = isDirectory
-            newitem.size = Int64(size)
-            
-            newitem.parent = parentId
-            if parentId == "" {
-                newitem.path = "\(storage):/\(name)"
-            } else {
-                newitem.path = "\(parentPath)/\(name)"
-            }
-        }
-    }
-
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async -> Data? {
         return nil
     }
@@ -1226,10 +1213,42 @@ public class SftpStorage: NetworkStorage {
                 os_log("%{public}@", log: log, type: .debug, "makeFolder(\(String(describing: type(of: self))):\(storageName ?? "") \(parentId) \(newname)")
                 do {
                     let targetPath = parentId.isEmpty ? newname : "\(parentId)/\(newname)"
-
+                    
                     let conn = await getConnection()
                     try await conn.mkdir(path: targetPath)
+                    
+                    let viewContext = CloudFactory.shared.data.backgroundContext
+                    let storage = storageName ?? ""
+                    
+                    await viewContext.perform {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", targetPath, storage)
+                        fetchRequest.fetchLimit = 1
+                        let existing = (try? viewContext.fetch(fetchRequest))?.first
+                        
+                        let targetItem = existing ?? RemoteData(context: viewContext)
+                        targetItem.hashstr = nil
+                        targetItem.subinfo = nil
+                        targetItem.subid = nil
+                        targetItem.substart = 0
+                        targetItem.subend = 0
+                        targetItem.baseId = nil
+                        targetItem.baseStorage = nil
 
+                        targetItem.storage = storage
+                        targetItem.id = targetPath
+                        targetItem.name = newname
+                        targetItem.ext = ""
+                        targetItem.cdate = Date()
+                        targetItem.mdate = Date()
+                        targetItem.folder = true
+                        targetItem.size = 0
+                        targetItem.parent = parentId
+                        targetItem.path = "\(storage):/\(targetPath)"
+                        
+                        try? viewContext.save()
+                    }
+                    
                     return targetPath
                 } catch {
                     print("makeFolder error: \(error)")
@@ -1242,42 +1261,31 @@ public class SftpStorage: NetworkStorage {
         }
     }
     
-    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        if toParentId == fromParentId {
-            return nil
-        }
-        do {
-            return try await callWithRetry(action: { [self] in
-                os_log("%{public}@", log: log, type: .debug, "moveItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId) \(fromParentId) \(toParentId)")
-                do {
-                    let fileName = fileId.components(separatedBy: "/").last ?? fileId
-                    let newPath = toParentId.isEmpty ? fileName : "\(toParentId)/\(fileName)"
-                    
-                    let conn = await getConnection()
-                    try await conn.rename(oldPath: fileId, newPath: newPath)
-
-                    await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
-                    return newPath
-                } catch {
-                    print("moveItem error: \(error)")
-                    return nil
-                }
-            })
-        }
-        catch {
-            return nil
-        }
-    }
-    
     override func deleteItem(fileId: String) async -> Bool {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId)")
                 do {
                     let conn = await getConnection()
                     try await conn.delete(path: fileId)
-
-                    await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                    
+                    await viewContext.perform {
+                        if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                            SftpStorage.cascadeDelete(item: existing, in: viewContext)
+                        }
+                        try? viewContext.save()
+                    }
                     return true
                 } catch {
                     print("deleteItem error: \(error)")
@@ -1291,6 +1299,17 @@ public class SftpStorage: NetworkStorage {
     }
     
     override func renameItem(fileId: String, newname: String) async -> String? {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "renameItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId) \(newname)")
@@ -1302,8 +1321,57 @@ public class SftpStorage: NetworkStorage {
                     
                     let conn = await getConnection()
                     try await conn.rename(oldPath: fileId, newPath: newPath)
-
-                    await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                    
+                    await viewContext.perform {
+                        if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                            SftpStorage.cascadeDelete(item: existing, in: viewContext)
+                        }
+                        try? viewContext.save()
+                    }
+                    return newPath
+                } catch {
+                    print("moveItem error: \(error)")
+                    return nil
+                }
+            })
+        }
+        catch {
+            return nil
+        }
+    }
+    
+    override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
+        if toParentId == fromParentId {
+            return nil
+        }
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
+        do {
+            return try await callWithRetry(action: { [self] in
+                os_log("%{public}@", log: log, type: .debug, "moveItem(\(String(describing: type(of: self))):\(storageName ?? "") \(fileId) \(fromParentId) \(toParentId)")
+                do {
+                    let fileName = fileId.components(separatedBy: "/").last ?? fileId
+                    let newPath = toParentId.isEmpty ? fileName : "\(toParentId)/\(fileName)"
+                    
+                    let conn = await getConnection()
+                    try await conn.rename(oldPath: fileId, newPath: newPath)
+                    
+                    await viewContext.perform {
+                        if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                            SftpStorage.cascadeDelete(item: existing, in: viewContext)
+                        }
+                        try? viewContext.save()
+                    }
                     return newPath
                 } catch {
                     print("moveItem error: \(error)")
@@ -1323,7 +1391,7 @@ public class SftpStorage: NetworkStorage {
                 do {
                     let conn = await getConnection()
                     try await conn.setModificationTime(path: fileId, date: newdate)
-
+                    
                     return fileId
                 } catch {
                     print("changeTime error: \(error)")
@@ -1348,14 +1416,51 @@ public class SftpStorage: NetworkStorage {
         defer {
             try? FileManager.default.removeItem(at: target)
         }
-        os_log("%{public}@", log: log, type: .debug, "uploadFile(google:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
+        os_log("%{public}@", log: log, type: .debug, "uploadFile(Sftp:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
+        
         let targetPath = parentId.isEmpty ? uploadname : "\(parentId)/\(uploadname)"
-
+        
         do {
             let conn = await getConnection()
             try await conn.writeFile(path: targetPath, target: target, progress: progress)
+            
+            let viewContext = CloudFactory.shared.data.backgroundContext
+            let storage = storageName ?? ""
+            let attr = try? FileManager.default.attributesOfItem(atPath: target.path)
+            let fileSize = attr?[.size] as? Int64 ?? 0
+            
+            await viewContext.perform {
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", targetPath, storage)
+                fetchRequest.fetchLimit = 1
+                let existing = (try? viewContext.fetch(fetchRequest))?.first
+                
+                let targetItem = existing ?? RemoteData(context: viewContext)
+                targetItem.hashstr = nil
+                targetItem.subinfo = nil
+                targetItem.subid = nil
+                targetItem.substart = 0
+                targetItem.subend = 0
+                targetItem.baseId = nil
+                targetItem.baseStorage = nil
 
+                targetItem.storage = storage
+                targetItem.id = targetPath
+                targetItem.name = uploadname
+                
+                let comp = uploadname.components(separatedBy: ".")
+                targetItem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+                
+                targetItem.cdate = Date()
+                targetItem.mdate = Date()
+                targetItem.folder = false
+                targetItem.size = fileSize
+                targetItem.parent = parentId
+                targetItem.path = "\(storage):/\(targetPath)"
+                
+                try? viewContext.save()
+            }
+            
             return targetPath
         } catch {
             print("uploadFile error: \(error)")
@@ -1412,35 +1517,24 @@ public class RemoteSftpStream: SlotStream {
         return try await task.value
     }
     
-    override func setLive(_ live: Bool) {
-        if !live {
-            let taskToCancel = handleLock.withLock {
-                let task = openFileTask
-                openFileTask = nil
-                return task
-            }
-
-            if let task = taskToCancel {
-                Task { [dedicatedConnection] in
-                    if let handle = try? await task.value {
-                        await dedicatedConnection.closeFile(handle)
-                    }
-                }
-            }
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
+    override func cancelInternal() async {
+        let taskToCancel = handleLock.withLock {
+            let task = openFileTask
+            openFileTask = nil
+            return task
         }
+        
+        if let task = taskToCancel {
+            if let handle = try? await task.value {
+                await dedicatedConnection.closeFile(handle)
+            }
+        }
+        await remote.cancel()
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(60)) == .success else {
-            error = true
+            await setError()
             return
         }
         guard pos.lowerBound >= 0 && pos.upperBound < size else {
@@ -1476,7 +1570,7 @@ public class RemoteSftpStream: SlotStream {
                     await CloudFactory.shared.cache.saveCache(storage: remote.storage, id: remote.id, offset: start, data: data)
                 } catch {
                     print("Stream read error: \(error)")
-                    self.error = true
+                    await setError()
                     break
                 }
             }

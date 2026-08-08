@@ -153,7 +153,7 @@ public class RemoteItem {
         await self.init(storage: storage, id: id)
     }
     
-    public func list(force: Bool = false) async -> [RemoteData] {
+    public func list(force: Bool = false) async -> [RemoteDataDTO] {
         if force {
             await service.list(fileId: id)
         }
@@ -204,16 +204,26 @@ public class RemoteItem {
 }
 
 public class RemoteStream {
-    public internal(set) var size:Int64
-    public var isLive = true {
-        didSet {
-            setLive(isLive)
+    public internal(set) var size: Int64
+    public var isLive = true
+    
+    public func closeSync() {
+        guard isLive else { return }
+        isLive = false
+        Task(priority: .userInitiated) {
+            await cancelInternal()
         }
     }
-
-    func setLive(_ live: Bool) {
+    
+    public func close() async {
+        guard isLive else { return }
+        isLive = false
+        await cancelInternal()
     }
-
+    
+    func cancelInternal() async {
+    }
+    
     init(size: Int64) async {
         self.size = size
     }
@@ -222,7 +232,7 @@ public class RemoteStream {
         return nil
     }
     
-    public func preload(position: Int64, length: Int) async {        
+    public func preload(position: Int64, length: Int) async {
     }
 }
 
@@ -230,7 +240,7 @@ public class CloudFactory {
     private static let _shared = CloudFactory()
     public static var shared: CloudFactory { return _shared }
     let log = OSLog(subsystem: Bundle.main.bundleIdentifier!, category: "application")
-
+    
     public let subject = PassthroughSubject<Int, Never>()
     public let initiaize = PassthroughSubject<Bool, Never>()
     public private(set) var initialized = false
@@ -251,11 +261,11 @@ public class CloudFactory {
         public func add(_ key: String, _ value: RemoteStorage?) {
             list[key] = value
         }
-
+        
         public func get() -> [String: RemoteStorage] {
             list
         }
-
+        
         public func get(_ key: String) -> RemoteStorage? {
             list[key]
         }
@@ -274,12 +284,12 @@ public class CloudFactory {
             initialized = true
         }
     }
-
+    
     public func initializeDatabase() async {
         os_log("%{public}@", log: log, type: .info, "CloudFactory(init)")
         await storageList.clear()
-
-        if let sList = getKeyChain(key: "remoteStorageList") {
+        
+        if let sList = await getKeyChain(key: "remoteStorageList") {
             let classmap = Dictionary(uniqueKeysWithValues: CloudStorages.allCases.map() { (CloudFactory.getServiceName(service: $0), $0) })
             do {
                 if let d = try NSKeyedUnarchiver.unarchivedDictionary(ofKeyClass: NSString.self, objectClass: NSString.self, from: sList) as? [String: String] {
@@ -316,7 +326,7 @@ public class CloudFactory {
                 }
             }
             catch {
-                let _ = delKeyChain(key: "remoteStorageList")
+                let _ = await delKeyChain(key: "remoteStorageList")
                 await saveConfig()
             }
         }
@@ -328,15 +338,15 @@ public class CloudFactory {
     public let cache = FileCache()
     
     public func getShowList() async -> [String] {
-        if let data = getKeyChain(key: "showList"), let a = try? NSKeyedUnarchiver.unarchivedArrayOfObjects(ofClasses: [NSString.self], from: data) as? [String] {
+        if let data = await getKeyChain(key: "showList"), let a = try? NSKeyedUnarchiver.unarchivedArrayOfObjects(ofClasses: [NSString.self], from: data) as? [String] {
             return a
         }
         return await storages()
     }
     
-    public func setShowList(_ list: [String]) {
+    public func setShowList(_ list: [String]) async {
         if list.isEmpty {
-            let _ = delKeyChain(key: "showList")
+            let _ = await delKeyChain(key: "showList")
         }
         else {
             var newList: [String] = []
@@ -346,7 +356,7 @@ public class CloudFactory {
                 }
             }
             if let rData = try? NSKeyedArchiver.archivedData(withRootObject: newList, requiringSecureCoding: true) {
-                let _ = setKeyChain(key: "showList", data: rData)
+                let _ = await setKeyChain(key: "showList", data: rData)
             }
         }
         subject.send(0)
@@ -386,7 +396,7 @@ public class CloudFactory {
             return UIImage(named: "sftp", in: Bundle(for: type(of: self)), compatibleWith: nil)
         }
     }
-
+    
     public class func getServiceName(service: CloudStorages) -> String {
         switch service {
         case .GoogleDrive:
@@ -456,17 +466,17 @@ public class CloudFactory {
             return SftpStorage(name: tagname)
         }
     }
-
+    
     func saveConfig() async {
         do {
             let seq = await storageList.get().filter({ $0.key != "Local" }).map(){ key, value in (key, value.config()) }
             let d = Dictionary(uniqueKeysWithValues: seq)
             let rData = try NSKeyedArchiver.archivedData(withRootObject: d, requiringSecureCoding: true)
-            let _ = setKeyChain(key: "remoteStorageList", data: rData)
+            let _ = await setKeyChain(key: "remoteStorageList", data: rData)
             os_log("%{public}@", log: log, type: .info, "saveConfig success")
         }
         catch {
-            let _ = delKeyChain(key: "remoteStorageList")
+            let _ = await delKeyChain(key: "remoteStorageList")
         }
         await subject.send(storageList.count)
     }
@@ -482,7 +492,7 @@ public class CloudFactory {
         }
         return await storageList.get()[tagname]
     }
-
+    
     public func storages() async -> [String] {
         return await [String](storageList.get().keys).sorted()
     }
@@ -491,11 +501,11 @@ public class CloudFactory {
         await storageList.delete(tagname) { p in
             if let p {
                 await p.logout()
-                let depended = getKeyChain(cond: "^\(tagname)_depended")
+                let depended = await getKeyChain(cond: "^\(tagname)_depended")
                 for (key, dep) in depended {
                     if let s = String(data: dep, encoding: .utf8) {
                         await delStorage(tagname: s)
-                        let _ = delKeyChain(key: key)
+                        let _ = await delKeyChain(key: key)
                     }
                 }
             }
@@ -503,7 +513,7 @@ public class CloudFactory {
         await saveConfig()
         await setShowList(getShowList().filter({ $0 != tagname }))
     }
-
+    
     public func delAllStorage() async {
         for storage in await storageList.keys {
             await delStorage(tagname: storage)
@@ -511,133 +521,145 @@ public class CloudFactory {
     }
     
     public func removeAllAuth() async {
-        if delAllKeyChain() {
+        if await delAllKeyChain() {
             await storageList.clear()
             await storageList.add("Local", await newStorage(service: .Local, tagname: "Local"))
         }
     }
-
-    func getKeyChain(key: String) -> Data? {
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key,
-                                  kSecReturnData as String: kCFBooleanTrue as Any]
-        
-        var data: AnyObject?
-        let matchingStatus = withUnsafeMutablePointer(to: &data){
-            SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
-        }
-        
-        if matchingStatus == errSecSuccess {
-            if let getData = data as? Data {
-                return getData
+    
+    func getKeyChain(key: String) async -> Data? {
+        return await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrAccount as String: key,
+                                      kSecReturnData as String: kCFBooleanTrue as Any]
+            
+            var data: AnyObject?
+            let matchingStatus = withUnsafeMutablePointer(to: &data){
+                SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
             }
-            return nil
-        } else {
-            return nil
-        }
+            
+            if matchingStatus == errSecSuccess {
+                if let getData = data as? Data {
+                    return getData
+                }
+                return nil
+            } else {
+                return nil
+            }
+        }.value
     }
     
-    func getKeyChain(cond: String) -> [String: Data] {
-        guard let regex = try? NSRegularExpression(pattern: cond, options: []) else {
-            return [:]
-        }
-
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecReturnAttributes as String: kCFBooleanTrue as Any,
-                                  kSecReturnData as String: kCFBooleanTrue as Any,
-                                  kSecMatchLimit as String: kSecMatchLimitAll]
-        
-        var data: AnyObject?
-        let matchingStatus = withUnsafeMutablePointer(to: &data){
-            SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
-        }
-        
-        if matchingStatus == errSecSuccess {
-            var ret: [String: Data] = [:]
-            if let result = data as? [[String: Any]] {
-                for item in result {
-                    if let account = item[kSecAttrAccount as String] as? String {
-                        if regex.numberOfMatches(in: account, options: [], range: NSRange(location: 0, length: account.count)) != 0 {
-                            if let d = item[kSecValueData as String] as? Data {
-                                ret[account] = d
-                            }
-                            else {
-                                print("取得失敗: Dataが不正")
+    func getKeyChain(cond: String) async -> [String: Data] {
+        return await Task.detached {
+            guard let regex = try? NSRegularExpression(pattern: cond, options: []) else {
+                return [:]
+            }
+            
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecReturnAttributes as String: kCFBooleanTrue as Any,
+                                      kSecReturnData as String: kCFBooleanTrue as Any,
+                                      kSecMatchLimit as String: kSecMatchLimitAll]
+            
+            var data: AnyObject?
+            let matchingStatus = withUnsafeMutablePointer(to: &data){
+                SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
+            }
+            
+            if matchingStatus == errSecSuccess {
+                var ret: [String: Data] = [:]
+                if let result = data as? [[String: Any]] {
+                    for item in result {
+                        if let account = item[kSecAttrAccount as String] as? String {
+                            if regex.numberOfMatches(in: account, options: [], range: NSRange(location: 0, length: account.count)) != 0 {
+                                if let d = item[kSecValueData as String] as? Data {
+                                    ret[account] = d
+                                }
+                                else {
+                                    print("取得失敗: Dataが不正")
+                                }
                             }
                         }
                     }
                 }
+                return ret
+            } else {
+                print("取得失敗")
+                return [:]
             }
-            return ret
-        } else {
-            print("取得失敗")
-            return [:]
-        }
+        }.value
     }
     
-    func delAllKeyChain() -> Bool {
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrSynchronizable as String: kCFBooleanTrue as Any]
-        let dic2: [String: Any] = [kSecClass as String: kSecClassGenericPassword]
-        let dic3: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrSynchronizable as String: kCFBooleanTrue as Any,
-                                  kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
-
-        if SecItemDelete(dic as CFDictionary) == errSecSuccess {
-            print("削除成功")
-        } else {
-            print("削除失敗")
-        }
-        if SecItemDelete(dic2 as CFDictionary) == errSecSuccess {
-            print("削除成功")
-        } else {
-            print("削除失敗")
-        }
-        if SecItemDelete(dic3 as CFDictionary) == errSecSuccess {
-            print("削除成功")
-        } else {
-            print("削除失敗")
-        }
-        return true
-    }
-
-    func delKeyChain(key: String) -> Bool {
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key]
-        
-        if SecItemDelete(dic as CFDictionary) == errSecSuccess {
-            print("削除成功")
+    func delAllKeyChain() async -> Bool {
+        return await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrSynchronizable as String: kCFBooleanTrue as Any]
+            let dic2: [String: Any] = [kSecClass as String: kSecClassGenericPassword]
+            let dic3: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                       kSecAttrSynchronizable as String: kCFBooleanTrue as Any,
+                                       kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+            
+            if SecItemDelete(dic as CFDictionary) == errSecSuccess {
+                print("削除成功")
+            } else {
+                print("削除失敗")
+            }
+            if SecItemDelete(dic2 as CFDictionary) == errSecSuccess {
+                print("削除成功")
+            } else {
+                print("削除失敗")
+            }
+            if SecItemDelete(dic3 as CFDictionary) == errSecSuccess {
+                print("削除成功")
+            } else {
+                print("削除失敗")
+            }
             return true
-        } else {
-            print("削除失敗")
-            return false
-        }
+        }.value
     }
     
-    func setKeyChain(key: String, data: Data) -> Bool{
-         let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key,
-                                  kSecValueData as String: data]
-        
-        var itemAddStatus: OSStatus?
-        let matchingStatus = SecItemCopyMatching(dic as CFDictionary, nil)
-        
-        if matchingStatus == errSecItemNotFound {
-            // 保存
-            itemAddStatus = SecItemAdd(dic as CFDictionary, nil)
-        } else if matchingStatus == errSecSuccess {
-            // 更新
-            itemAddStatus = SecItemUpdate(dic as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        } else {
-            print("保存失敗")
-        }
-        
-        if itemAddStatus == errSecSuccess {
-            return true
-        } else {
-            print("保存失敗")
-            return false
-        }
+    func delKeyChain(key: String) async -> Bool {
+        return await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrAccount as String: key]
+            
+            if SecItemDelete(dic as CFDictionary) == errSecSuccess {
+                print("削除成功")
+                return true
+            } else {
+                print("削除失敗")
+                return false
+            }
+        }.value
+    }
+    
+    func setKeyChain(key: String, data: Data) async -> Bool {
+        return await Task.detached {
+            let dic: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecValueData as String: data
+            ]
+            
+            var itemAddStatus: OSStatus?
+            let matchingStatus = SecItemCopyMatching(dic as CFDictionary, nil)
+            
+            if matchingStatus == errSecItemNotFound {
+                // 保存
+                itemAddStatus = SecItemAdd(dic as CFDictionary, nil)
+            } else if matchingStatus == errSecSuccess {
+                // 更新
+                itemAddStatus = SecItemUpdate(dic as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            } else {
+                print("保存失敗")
+            }
+            
+            if itemAddStatus == errSecSuccess {
+                return true
+            } else {
+                print("保存失敗")
+                return false
+            }
+        }.value
     }
 }
 
@@ -750,72 +772,63 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         }
     }
 
-    func listChildren(fileId: String = "", path: String = "") async {
-    }
- 
-    func deleteChild(parent: String, context: NSManagedObjectContext) async {
-        let storage = storageName ?? ""
-        await context.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, storage)
-            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    context.delete(item)
+    class func cascadeDelete(item: RemoteData, in context: NSManagedObjectContext) {
+        guard let itemId = item.id, let storage = item.storage else {
+            context.delete(item)
+            return
+        }
+        
+        if item.folder {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", itemId, storage)
+            
+            if let children = try? context.fetch(fetchRequest) {
+                for child in children {
+                    cascadeDelete(item: child, in: context)
                 }
             }
         }
-    }
+        
+        let baseFetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+        baseFetchRequest.predicate = NSPredicate(format: "baseId == %@ && baseStorage == %@", itemId, storage)
+        
+        if let dependents = try? context.fetch(baseFetchRequest) {
+            for dependentItem in dependents {
+                cascadeDelete(item: dependentItem, in: context)
+            }
+        }
 
-    func deleteChildRecursive(parent: String, context: NSManagedObjectContext) {
-        context.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parent, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    if let p = item.id {
-                        self.deleteChildRecursive(parent: p, context: context)
-                    }
-                    context.delete(item)
-                }
-            }
+        Task {
+            await CloudFactory.shared.cache.remove(storage: storage, id: itemId)
         }
+        context.delete(item)
     }
     
-
+    func listChildren(fileId: String = "", path: String = "") async {
+    }
+    
     public func list(fileId: String) async {
         if fileId == "" {
-            let context = CloudFactory.shared.data.viewContext
-            await deleteChild(parent: fileId, context: context)
-            await context.perform {
-                try? context.save()
-            }
             await listChildren()
         }
         else {
             var path = ""
             var isFoler = false
             let storage = storageName ?? ""
-            let context = CloudFactory.shared.data.viewContext
+            let context = CloudFactory.shared.data.backgroundContext
             await context.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? context.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        path = items.first?.path ?? ""
-                        isFoler = items.first?.folder ?? false
+                fetchRequest.fetchLimit = 1
+                if let results = try? context.fetch(fetchRequest) {
+                    if let item = results.first {
+                        path = item.path ?? ""
+                        isFoler = item.folder
                     }
                 }
             }
             if !isFoler {
                 return
-            }
-            if path != "" {
-                await deleteChild(parent: fileId, context: context)
-            }
-            await context.perform {
-                if path != "" {
-                    try? context.save()
-                }
             }
             await listChildren(fileId: fileId, path: path)
         }
@@ -830,19 +843,13 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             await list(path: parentPath)
             
             var ids: [String] = []
-            let context = CloudFactory.shared.data.viewContext
+            let context = CloudFactory.shared.data.backgroundContext
             await context.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "path == %@", path)
-                if let result = try? context.fetch(fetchRequest), let items = result as? [RemoteData] {
-                    ids = items.filter { $0.id != nil && $0.folder }.map { $0.id! }
+                if let results = try? context.fetch(fetchRequest) {
+                    ids = results.filter { $0.id != nil && $0.folder }.map { $0.id! }
                 }
-            }
-            for id in ids {
-                await deleteChild(parent: id, context: context)
-            }
-            await context.perform {
-                try? context.save()
             }
 
             for id in ids {
@@ -858,14 +865,15 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
         else{
             var path = ""
             let storage = storageName ?? ""
-            let viewContext = CloudFactory.shared.data.viewContext
+            let viewContext = CloudFactory.shared.data.backgroundContext
             
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        path = items.first?.path ?? ""
+                fetchRequest.fetchLimit = 1
+                if let results = try? viewContext.fetch(fetchRequest) {
+                    if let items = results.first {
+                        path = items.path ?? ""
                     }
                 }
             }
@@ -904,15 +912,16 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     }
 
     func getParentPath(parentId: String) async -> String? {
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
 
         return await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                if let items = result as? [RemoteData] {
-                    return items.first?.path ?? ""
+            fetchRequest.fetchLimit = 1
+            if let results = try? viewContext.fetch(fetchRequest) {
+                if let item = results.first {
+                    return item.path ?? ""
                 }
             }
             return nil
@@ -920,43 +929,40 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
     }
 
     func getKeyChain(key: String) async -> String? {
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key,
-                                  kSecReturnData as String: kCFBooleanTrue as Any]
-        
         await RemoteStorageBase.semaphore_key.wait()
-        defer {
-            Task { await RemoteStorageBase.semaphore_key.signal() }
-        }
-        var data: AnyObject?
-        let matchingStatus = withUnsafeMutablePointer(to: &data){
-            SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
-        }
-        
-        if matchingStatus == errSecSuccess {
-            if let getData = data as? Data,
-                let getStr = String(data: getData, encoding: .utf8) {
-                return getStr
+        let result = await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrAccount as String: key,
+                                      kSecReturnData as String: kCFBooleanTrue as Any]
+            
+            var data: AnyObject?
+            let matchingStatus = withUnsafeMutablePointer(to: &data){
+                SecItemCopyMatching(dic as CFDictionary, UnsafeMutablePointer($0))
             }
-            return nil
-        } else {
-            return nil
-        }
+            
+            if matchingStatus == errSecSuccess, let getData = data as? Data {
+                return String(data: getData, encoding: .utf8)
+            } else {
+                return nil
+            }
+        }.value
+        await RemoteStorageBase.semaphore_key.signal()
+        return result
     }
 
     func delKeyChain(key: String) async -> Bool {
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key]
-        
         await RemoteStorageBase.semaphore_key.wait()
-        defer {
-            Task { await RemoteStorageBase.semaphore_key.signal() }
-        }
-        if SecItemDelete(dic as CFDictionary) == errSecSuccess {
-            return true
-        } else {
-            return false
-        }
+        let result = await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrAccount as String: key]
+            if SecItemDelete(dic as CFDictionary) == errSecSuccess {
+                return true
+            } else {
+                return false
+            }
+        }.value
+        await RemoteStorageBase.semaphore_key.signal()
+        return result
     }
 
     func setKeyChain(key: String, value: String) async -> Bool{
@@ -966,33 +972,34 @@ public class RemoteStorageBase: NSObject, RemoteStorage {
             return false
         }
         
-        let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                  kSecAttrAccount as String: key,
-                                  kSecValueData as String: _data]
-        
         await RemoteStorageBase.semaphore_key.wait()
-        defer {
-            Task { await RemoteStorageBase.semaphore_key.signal() }
-        }
-        var itemAddStatus: OSStatus?
-        let matchingStatus = SecItemCopyMatching(dic as CFDictionary, nil)
-        
-        if matchingStatus == errSecItemNotFound {
-            // 保存
-            itemAddStatus = SecItemAdd(dic as CFDictionary, nil)
-        } else if matchingStatus == errSecSuccess {
-            // 更新
-            itemAddStatus = SecItemUpdate(dic as CFDictionary, [kSecValueData as String: _data] as CFDictionary)
-        } else {
-            print("保存失敗")
-        }
-        
-        if itemAddStatus == errSecSuccess {
-            return true
-        } else {
-            print("保存失敗")
-            return false
-        }
+        let result = await Task.detached {
+            let dic: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrAccount as String: key,
+                                      kSecValueData as String: _data]
+
+            var itemAddStatus: OSStatus?
+            let matchingStatus = SecItemCopyMatching(dic as CFDictionary, nil)
+            
+            if matchingStatus == errSecItemNotFound {
+                // 保存
+                itemAddStatus = SecItemAdd(dic as CFDictionary, nil)
+            } else if matchingStatus == errSecSuccess {
+                // 更新
+                itemAddStatus = SecItemUpdate(dic as CFDictionary, [kSecValueData as String: _data] as CFDictionary)
+            } else {
+                print("保存失敗")
+            }
+            
+            if itemAddStatus == errSecSuccess {
+                return true
+            } else {
+                print("保存失敗")
+                return false
+            }
+        }.value
+        await RemoteStorageBase.semaphore_key.signal()
+        return result
     }
     
     public func targetIsMovable(srcFileId: String, dstFileId: String) async -> Bool {

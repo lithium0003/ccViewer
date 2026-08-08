@@ -28,28 +28,37 @@ extension RemoteItem {
     }
     
     class public func removeSubitem(storage: String, id: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
-        var children: [String] = []
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", id, storage)
-            if let result = try? viewContext.fetch(fetchRequest), let items = result as? [RemoteData] {
-                for item in items {
-                    viewContext.delete(item)
-                    children.append(item.id!)
+        let context = CloudFactory.shared.data.backgroundContext
+        
+        let deletedIds = await context.perform {
+            var ids: [String] = []
+            
+            func deleteRecursively(parentId: String) {
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentId, storage)
+                if let results = try? context.fetch(fetchRequest) {
+                    for item in results {
+                        if let childId = item.id {
+                            ids.append(childId)
+                            deleteRecursively(parentId: childId)
+                        }
+                        context.delete(item)
+                    }
                 }
             }
+            
+            deleteRecursively(parentId: id)
+            try? context.save()
+            return ids
         }
-        for child in children {
-            await removeSubitem(storage: storage, id: child)
-        }
-        await viewContext.perform {
-            try? viewContext.save()
+        
+        for childId in deletedIds {
+            await CloudFactory.shared.cache.remove(storage: storage, id: childId)
         }
     }
 }
 
-extension RemoteData {
+extension RemoteDataDTO {
     public var hasSubitems: Bool {
         if let name {
             if name == "VIDEO_TS.IFO" {
@@ -164,7 +173,7 @@ extension RemoteData {
 }
 
 public class RemoteSubItem: RemoteItem {
-    override public func list(force: Bool = false) async -> [RemoteData] {
+    override public func list(force: Bool = false) async -> [RemoteDataDTO] {
         return await CloudFactory.shared.data.listData(storage: storage, parentID: id)
     }
 }

@@ -83,7 +83,7 @@ public class FileCache {
             persistentContainer.newBackgroundContext()
         }()
 
-        func getPartialFile(orgItem: RemoteData, offset: Int64, size: Int64) async -> Data? {
+        func getPartialFile(orgItem: RemoteDataDTO, offset: Int64, size: Int64) async -> Data? {
             let context = context
             let storage = orgItem.storage ?? ""
             let id = orgItem.id ?? ""
@@ -156,7 +156,7 @@ public class FileCache {
             return nil
         }
 
-        func getCache(orgItem: RemoteData, offset: Int64, size: Int64) async -> URL? {
+        func getCache(orgItem: RemoteDataDTO, offset: Int64, size: Int64) async -> URL? {
             let context = context
             let storage = orgItem.storage ?? ""
             let id = orgItem.id ?? ""
@@ -208,7 +208,7 @@ public class FileCache {
             return nil
         }
         
-        func remove(orgItem: RemoteData) async {
+        func remove(orgItem: RemoteDataDTO) async {
             let context = context
             let storage = orgItem.storage ?? ""
             let id = orgItem.id ?? ""
@@ -238,7 +238,7 @@ public class FileCache {
             }
         }
         
-        func saveFile(orgItem: RemoteData, data: Data) async {
+        func saveFile(orgItem: RemoteDataDTO, data: Data) async {
             let context = context
             let storage = orgItem.storage ?? ""
             let id = orgItem.id ?? ""
@@ -279,7 +279,7 @@ public class FileCache {
             }
         }
         
-        func saveCache(orgItem: RemoteData, offset: Int64, data: Data) async {
+        func saveCache(orgItem: RemoteDataDTO, offset: Int64, data: Data) async {
             let context = context
             let storage = orgItem.storage ?? ""
             let id = orgItem.id ?? ""

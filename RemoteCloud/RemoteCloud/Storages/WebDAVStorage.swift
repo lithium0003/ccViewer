@@ -240,84 +240,69 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         return true
     }
 
-    func storeItem(item: [String: Any], parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) async {
-        guard let id = item["href"] as? String else {
-            return
-        }
-        if id.removingPercentEncoding == parentFileId?.removingPercentEncoding {
-            return
-        }
-        if let idURL = URL(string: id), let aurl = await URL(string: accessURI()), idURL.path == aurl.path {
-            return
-        }
-        guard let propstat = item["propstat"] as? [String: Any] else {
-            return
-        }
-        guard let prop = propstat["prop"] as? [String: String] else {
-            return
-        }
+    func storeItem(item: [String: Any], existingItem: RemoteData? = nil, parentFileId: String? = nil, parentPath: String? = nil, accessUriPath: String?, context: NSManagedObjectContext) {
+        guard let id = item["href"] as? String else { return }
+        
+        if id.removingPercentEncoding == parentFileId?.removingPercentEncoding { return }
+        if let idURL = URL(string: id), let apath = accessUriPath, idURL.path == apath { return }
+        
+        guard let propstat = item["propstat"] as? [String: Any], let prop = propstat["prop"] as? [String: String] else { return }
+        
         let name: String
         if let dispname = prop["displayname"] {
             name = dispname
-        }
-        else {
-            guard let idURL = URL(string: id) else {
-                return
-            }
-            guard let orgname = idURL.lastPathComponent.removingPercentEncoding else {
-                return
-            }
+        } else {
+            guard let idURL = URL(string: id), let orgname = idURL.lastPathComponent.removingPercentEncoding else { return }
             name = orgname
         }
+        
         let ctime = prop["creationdate"] ?? prop["Win32CreationTime"]
         let mtime = prop["lastmodified"] ?? prop["getlastmodified"] ?? prop["Win32LastModifiedTime"]
         let size = Int64(prop["getcontentlength"] ?? "0")
         let folder = prop["resourcetype"] == "collection"
         
-        context.performAndWait {
-            var prevParent: String?
-            var prevPath: String?
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    if let item = object as? RemoteData {
-                        prevPath = item.path
-                        let component = prevPath?.components(separatedBy: "/")
-                        prevPath = component?.dropLast().joined(separator: "/")
-                        prevParent = item.parent
-                    }
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-            let formatter2 = ISO8601DateFormatter()
-
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = name
-            let comp = name.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = formatter.date(from: ctime ?? "") ?? formatter2.date(from: ctime ?? "")
-            newitem.mdate = formatter.date(from: mtime ?? "") ?? formatter2.date(from: mtime ?? "")
-            newitem.folder = folder
-            newitem.size = size ?? 0
-            newitem.hashstr = ""
-            newitem.parent = (parentFileId == nil) ? prevParent : parentFileId
-            if parentFileId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
-            }
-            else {
-                if let path = (parentPath == nil) ? prevPath : parentPath {
-                    newitem.path = "\(path)/\(name)"
-                }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        let formatter2 = ISO8601DateFormatter()
+        
+        let targetItem: RemoteData
+        if let existing = existingItem {
+            targetItem = existing
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+        } else {
+            targetItem = RemoteData(context: context)
+        }
+        
+        targetItem.storage = self.storageName
+        targetItem.id = id
+        targetItem.name = name
+        
+        let comp = name.components(separatedBy: ".")
+        if comp.count >= 1 {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        
+        targetItem.cdate = formatter.date(from: ctime ?? "") ?? formatter2.date(from: ctime ?? "")
+        targetItem.mdate = formatter.date(from: mtime ?? "") ?? formatter2.date(from: mtime ?? "")
+        targetItem.folder = folder
+        targetItem.size = size ?? 0
+        
+        targetItem.parent = (parentFileId == nil) ? targetItem.parent : parentFileId
+        if parentFileId == "" {
+            targetItem.path = "\(self.storageName ?? ""):/\(name)"
+        } else {
+            let pPath = (parentPath == nil) ? targetItem.path?.components(separatedBy: "/").dropLast().joined(separator: "/") : parentPath
+            if let pPath = pPath {
+                targetItem.path = "\(pPath)/\(name)"
             }
         }
     }
@@ -471,97 +456,83 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
 
     override func listChildren(fileId: String, path: String) async {
-        let viewContext = CloudFactory.shared.data.viewContext
+        guard let items = await listFolder(path: fileId) else { return }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
+        let accessUriStr = await accessURI()
+        let accessUriPath = URL(string: accessUriStr)?.path
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = [String: RemoteData]()
+            for item in existingItems {
+                if let id = item.id { existingDict[id] = item }
+            }
+            
+            for item in items {
+                if let id = item["href"] as? String {
+                    let existing = existingDict.removeValue(forKey: id)
+                    self.storeItem(item: item, existingItem: existing, parentFileId: fileId, parentPath: path, accessUriPath: accessUriPath, context: viewContext)
                 }
             }
-        }
-        if let items = await listFolder(path: fileId) {
-            for item in items {
-                await storeItem(item: item, parentFileId: fileId, parentPath: path, context: viewContext)
+            
+            for (_, orphan) in existingDict {
+                WebDAVStorage.cascadeDelete(item: orphan, in: viewContext)
             }
-            await viewContext.perform {
-                try? viewContext.save()
-            }
+            try? viewContext.save()
         }
     }
-
+    
     func checkAcceptRange(fileId: String) async {
-        if acceptRange != nil {
-            return
-        }
-
+        if acceptRange != nil { return }
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "checkAcceptRange(WebDAV:\(storageName ?? "") \(fileId)")
-
+                
                 var request: URLRequest
-                guard var url = await URL(string: accessURI()) else {
-                    return
-                }
+                guard var url = await URL(string: accessURI()) else { return }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return
-                    }
+                    guard let pathURL = URL(string: fileId) else { return }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return }
                         url = u
                     }
                 }
-                //print(url)
+                
                 request = URLRequest(url: url)
                 request.httpMethod = "HEAD"
                 
-                guard let (_, response) = try? await URLSession.shared.data(for: request, delegate: self) else {
+                guard let (_, response) = try? await URLSession.shared.data(for: request, delegate: self),
+                      let httpResponse = response as? HTTPURLResponse else {
                     throw RetryError.Retry
                 }
-                guard let response = response as? HTTPURLResponse else {
+                guard httpResponse.statusCode == 200 else {
                     throw RetryError.Retry
                 }
-                guard response.statusCode == 200 else {
-                    print(response)
-                    throw RetryError.Retry
-                }
-                guard let accept = response.allHeaderFields["Accept-Ranges"] as? String ?? response.allHeaderFields["accept-ranges"] as? String else {
+                guard let accept = httpResponse.allHeaderFields["Accept-Ranges"] as? String ?? httpResponse.allHeaderFields["accept-ranges"] as? String else {
                     acceptRange = false
                     return
                 }
-                if accept.lowercased().contains("bytes") {
-                    acceptRange = true
-                }
-                else {
-                    acceptRange = false
-                }
+                acceptRange = accept.lowercased().contains("bytes")
             }, semaphore: checkSemaphore, maxCall: 1)
         }
         catch {
+            acceptRange = false
             return
         }
     }
     
     func readRangeRead(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
-
         if let cache = await CloudFactory.shared.cache.getCache(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
             if let data = try? Data(contentsOf: cache) {
                 os_log("%{public}@", log: log, type: .debug, "hit cache(WebDAV:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
@@ -571,45 +542,31 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "readFile(WebDAV:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
-
+                
                 var request: URLRequest
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                guard var url = await URL(string: accessURI()) else { return nil }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: fileId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
-                //print(url)
+                
                 request = URLRequest(url: url)
                 let s = start ?? 0
                 if length == nil {
                     request.setValue("bytes=\(s)-", forHTTPHeaderField: "Range")
-                }
-                else {
+                } else {
                     request.setValue("bytes=\(s)-\(s+length!-1)", forHTTPHeaderField: "Range")
                 }
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request, delegate: self) else {
                     throw RetryError.Retry
                 }
@@ -624,9 +581,8 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             return nil
         }
     }
-
+    
     func readWholeRead(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
-
         if let data = await CloudFactory.shared.cache.getPartialFile(storage: storageName!, id: fileId, offset: start ?? 0, size: length ?? -1) {
             os_log("%{public}@", log: log, type: .debug, "hit cache(WebDAV:\(storageName ?? "") \(fileId) \(start ?? -1) \(length ?? -1) \((start ?? 0) + (length ?? 0))")
             return data
@@ -634,43 +590,28 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "readFile(WebDAV:\(storageName ?? "") \(fileId) whole read \(start ?? 0) \(length ?? -1)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return nil }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: fileId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
-
-                var request: URLRequest
-                request = URLRequest(url: url)
-
+                
+                let request = URLRequest(url: url)
                 if await wholeReading.isReading(url: url) {
                     try await Task.sleep(for: .seconds(1))
                     throw RetryError.Retry
                 }
-
+                
                 do {
                     return try await withThrowingTaskGroup(of: Data?.self) { group in
                         group.addTask { [self] in
@@ -681,8 +622,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                             let s = Int(start ?? 0)
                             if let len = length, s+Int(len) < data.count {
                                 return data.subdata(in: s..<(s+Int(len)))
-                            }
-                            else {
+                            } else {
                                 return data.subdata(in: s..<data.count)
                             }
                         }
@@ -706,16 +646,13 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
 
     override func readFile(fileId: String, start: Int64? = nil, length: Int64? = nil) async throws -> Data? {
-
         if let acceptRange = acceptRange {
             if acceptRange {
                 return try await readRangeRead(fileId: fileId, start: start, length: length)
-            }
-            else {
+            } else {
                 return try await readWholeRead(fileId: fileId, start: start, length: length)
             }
-        }
-        else {
+        } else {
             await checkAcceptRange(fileId: fileId)
             return try await readFile(fileId: fileId, start: start, length: length)
         }
@@ -733,37 +670,23 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "makeFolder(WebDAV:\(storageName ?? "") \(parentId) \(newname)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return nil }
                 if parentId != "" {
-                    guard let pathURL = URL(string: parentId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: parentId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
                 url.appendPathComponent(newname, isDirectory: true)
-                //print(url)
-
+                
                 var request = URLRequest(url: url)
                 request.httpMethod = "MKCOL"
                 
@@ -779,17 +702,16 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     "</D:propfind>",
                 ].joined(separator: "\r\n")+"\r\n"
                 request2.httpBody = reqStr.data(using: .utf8)
-
-                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self) else {
+                
+                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self),
+                      let httpResponse1 = response1 as? HTTPURLResponse else {
                     throw RetryError.Retry
                 }
-                guard let response1 = response1 as? HTTPURLResponse else {
+                guard httpResponse1.statusCode == 201 else {
+                    print(httpResponse1)
                     throw RetryError.Retry
                 }
-                guard response1.statusCode == 201 else {
-                    print(response1)
-                    throw RetryError.Retry
-                }
+                
                 let (data, _) = try await URLSession.shared.data(for: request2, delegate: self)
                 let result = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data)
@@ -798,86 +720,77 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result = result else {
-                    return nil
-                }
-                if let item = result.first, let id = item["href"] as? String {
-                    let viewContext = CloudFactory.shared.data.viewContext
-                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                
+                if let item = result?.first, let id = item["href"] as? String {
+                    let viewContext = CloudFactory.shared.data.backgroundContext
+                    let accessUriStr = await accessURI()
+                    let accessUriPath = URL(string: accessUriStr)?.path
+                    
                     await viewContext.perform {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+                        fetchRequest.fetchLimit = 1
+                        let existing = (try? viewContext.fetch(fetchRequest))?.first
+                        
+                        self.storeItem(item: item, existingItem: existing, parentFileId: parentId, parentPath: parentPath, accessUriPath: accessUriPath, context: viewContext)
                         try? viewContext.save()
                     }
                     return id
                 }
-                else {
-                    return nil
-                }
+                return nil
             })
         }
         catch {
             return nil
         }
     }
-
+    
     override func deleteItem(fileId: String) async -> Bool {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteItem(WebDAV:\(storageName ?? "") \(fileId)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return false
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return false }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return false
-                    }
+                    guard let pathURL = URL(string: fileId) else { return false }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return false
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return false }
                         url = u
                     }
                 }
-                //print(url)
                 
                 var request = URLRequest(url: url)
                 request.httpMethod = "DELETE"
                 
-                guard let (_, response) = try? await URLSession.shared.data(for: request, delegate: self) else {
+                guard let (_, response) = try? await URLSession.shared.data(for: request, delegate: self),
+                      let httpResponse = response as? HTTPURLResponse else {
                     throw RetryError.Retry
                 }
-                guard let response = response as? HTTPURLResponse else {
+                guard httpResponse.statusCode == 204 || httpResponse.statusCode == 404 else {
                     throw RetryError.Retry
                 }
-                guard response.statusCode == 204 || response.statusCode == 404 else {
-                    print(response)
-                    throw RetryError.Retry
-                }
-                let viewContext = CloudFactory.shared.data.viewContext
+                
                 await viewContext.perform {
-                    let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                    if let result = try? viewContext.fetch(fetchRequest) {
-                        for object in result {
-                            viewContext.delete(object as! NSManagedObject)
-                        }
+                    if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                        WebDAVStorage.cascadeDelete(item: existing, in: viewContext)
                     }
-                }
-                deleteChildRecursive(parent: fileId, context: viewContext)
-                await viewContext.perform {
                     try? viewContext.save()
                 }
                 await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
@@ -890,47 +803,50 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
     
     override func renameItem(fileId: String, newname: String) async -> String? {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        var prevParent: String? = nil
+        var prevPath: String? = nil
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                targetObjectID = item.objectID
+                prevParent = item.parent
+                let pathComp = item.path?.components(separatedBy: "/")
+                prevPath = pathComp?.dropLast().joined(separator: "/")
+            }
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "renameItem(WebDAV:\(storageName ?? "") \(fileId) \(newname)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return nil }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: fileId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
                 var destURL = url
                 destURL.deleteLastPathComponent()
                 destURL.appendPathComponent(newname)
-                //print(url)
-                //print(destURL)
-
+                
                 var request = URLRequest(url: url)
                 request.httpMethod = "MOVE"
                 request.setValue(destURL.absoluteString, forHTTPHeaderField: "Destination")
-
+                
                 var request2 = URLRequest(url: destURL)
                 request2.httpMethod = "PROPFIND"
                 request2.setValue("0", forHTTPHeaderField: "Depth")
@@ -943,17 +859,15 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     "</D:propfind>",
                 ].joined(separator: "\r\n")+"\r\n"
                 request2.httpBody = reqStr.data(using: .utf8)
-
-                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self) else {
+                
+                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self),
+                      let httpResponse1 = response1 as? HTTPURLResponse else {
                     throw RetryError.Retry
                 }
-                guard let response1 = response1 as? HTTPURLResponse else {
+                guard httpResponse1.statusCode == 201 else {
                     throw RetryError.Retry
                 }
-                guard response1.statusCode == 201 else {
-                    print(response1)
-                    throw RetryError.Retry
-                }
+                
                 let (data, _) = try await URLSession.shared.data(for: request2, delegate: self)
                 let result = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data)
@@ -962,122 +876,87 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result = result else {
-                    return nil
-                }
-                if let item = result.first, let id = item["href"] as? String {
-                    var prevParent: String?
-                    var prevPath: String?
-
-                    let viewContext = CloudFactory.shared.data.viewContext
+                
+                if let item = result?.first, let id = item["href"] as? String {
+                    let accessUriStr = await accessURI()
+                    let accessUriPath = URL(string: accessUriStr)?.path
+                    
                     await viewContext.perform {
-                        let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, self.storageName ?? "")
-                        if let result = try? viewContext.fetch(fetchRequest) {
-                            for object in result {
-                                if let item = object as? RemoteData {
-                                    prevPath = item.path
-                                    let component = prevPath?.components(separatedBy: "/")
-                                    prevPath = component?.dropLast().joined(separator: "/")
-                                    prevParent = item.parent
-                                }
-                                viewContext.delete(object as! NSManagedObject)
-                            }
+                        if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                            WebDAVStorage.cascadeDelete(item: existing, in: viewContext)
                         }
-                    }
-                    deleteChildRecursive(parent: fileId, context: viewContext)
-                    await storeItem(item: item, parentFileId: prevParent, parentPath: prevPath, context: viewContext)
-                    await viewContext.perform {
+                        self.storeItem(item: item, existingItem: nil, parentFileId: prevParent, parentPath: prevPath, accessUriPath: accessUriPath, context: viewContext)
                         try? viewContext.save()
                     }
                     await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                     return id
                 }
-                else {
-                    return nil
-                }
+                return nil
             })
         }
         catch {
             return nil
         }
     }
-
+    
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
-        if toParentId == fromParentId {
-            return nil
-        }
-
+        if toParentId == fromParentId { return nil }
+        
         var toParentPath: String?
         if toParentId != "" {
             toParentPath = await getParentPath(parentId: toParentId) ?? ""
         }
-
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: self.log, type: .debug, "moveItem(WebDAV:\(storageName ?? "") \(fromParentId)->\(toParentId)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return nil }
                 var destURL = url
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: fileId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
                 if toParentId != "" {
-                    guard let pathURL = URL(string: toParentId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: toParentId) else { return nil }
                     if pathURL.host != nil {
                         destURL = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: destURL) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: destURL) else { return nil }
                         destURL = u
                     }
                 }
                 let name = url.lastPathComponent
                 destURL.appendPathComponent(name)
-                //print(url)
-                //print(destURL)
                 
                 var request = URLRequest(url: url)
                 request.httpMethod = "MOVE"
                 request.setValue(destURL.absoluteString, forHTTPHeaderField: "Destination")
-
+                
                 var request2 = URLRequest(url: destURL)
                 request2.httpMethod = "PROPFIND"
                 request2.setValue("0", forHTTPHeaderField: "Depth")
@@ -1090,17 +969,15 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     "</D:propfind>",
                 ].joined(separator: "\r\n")+"\r\n"
                 request2.httpBody = reqStr.data(using: .utf8)
-
-                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self) else {
+                
+                guard let (_, response1) = try? await URLSession.shared.data(for: request, delegate: self),
+                      let httpResponse1 = response1 as? HTTPURLResponse else {
                     throw RetryError.Retry
                 }
-                guard let response1 = response1 as? HTTPURLResponse else {
+                guard httpResponse1.statusCode == 201 else {
                     throw RetryError.Retry
                 }
-                guard response1.statusCode == 201 else {
-                    print(response1)
-                    throw RetryError.Retry
-                }
+                
                 let (data, _) = try await URLSession.shared.data(for: request2, delegate: self)
                 let result = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data)
@@ -1109,22 +986,22 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result = result else {
-                    return nil
-                }
-                if let item = result.first, let id = item["href"] as? String {
-                    let viewContext = CloudFactory.shared.data.viewContext
-                    deleteChildRecursive(parent: fileId, context: viewContext)
-                    await storeItem(item: item, parentFileId: toParentId, parentPath: toParentPath, context: viewContext)
+                
+                if let item = result?.first, let id = item["href"] as? String {
+                    let accessUriStr = await accessURI()
+                    let accessUriPath = URL(string: accessUriStr)?.path
+                    
                     await viewContext.perform {
+                        if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                            WebDAVStorage.cascadeDelete(item: existing, in: viewContext)
+                        }
+                        self.storeItem(item: item, existingItem: nil, parentFileId: toParentId, parentPath: toParentPath, accessUriPath: accessUriPath, context: viewContext)
                         try? viewContext.save()
                     }
                     await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
                     return id
                 }
-                else {
-                    return nil
-                }
+                return nil
             })
         }
         catch {
@@ -1133,38 +1010,35 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
     }
     
     override func changeTime(fileId: String, newdate: Date) async -> String? {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: self.log, type: .debug, "changeTime(WebDAV:\(self.storageName ?? "") \(fileId) \(newdate)")
-
-                guard var url = await URL(string: accessURI()) else {
-                    return nil
-                }
+                
+                guard var url = await URL(string: accessURI()) else { return nil }
                 if fileId != "" {
-                    guard let pathURL = URL(string: fileId) else {
-                        return nil
-                    }
+                    guard let pathURL = URL(string: fileId) else { return nil }
                     if pathURL.host != nil {
                         url = pathURL
-                    }
-                    else {
+                    } else {
                         var allowedCharacterSet = CharacterSet.alphanumerics
                         allowedCharacterSet.insert(charactersIn: "-._~")
                         let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                        let p2: String
-                        if p.first == "/" {
-                            p2 = String(p.joined(separator: "/").dropFirst())
-                        }
-                        else {
-                            p2 = p.joined(separator: "/")
-                        }
-                        guard let u = URL(string: p2, relativeTo: url) else {
-                            return nil
-                        }
+                        let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                        guard let u = URL(string: p2, relativeTo: url) else { return nil }
                         url = u
                     }
                 }
-                //print(url)
                 
                 var request = URLRequest(url: url)
                 request.httpMethod = "PROPFIND"
@@ -1178,34 +1052,11 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     "</D:propfind>",
                 ].joined(separator: "\r\n")+"\r\n"
                 request.httpBody = reqStr.data(using: .utf8)
-
+                
                 guard let (data, _) = try? await URLSession.shared.data(for: request, delegate: self) else {
                     throw RetryError.Retry
                 }
-                let lastmodified: (String)->String = { date in
-                    [
-                        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>",
-                        "<D:propertyupdate xmlns:D=\"DAV:\">",
-                        "<D:set>",
-                        "<D:prop>",
-                        "<D:lastmodified>\(date)</D:lastmodified>",
-                        "</D:prop>",
-                        "</D:set>",
-                        "</D:propertyupdate>",
-                    ].joined(separator: "\r\n")+"\r\n"
-                }
-                let win32lastmodified: (String)->String = { date in
-                    [
-                        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>",
-                        "<D:propertyupdate xmlns:D=\"DAV:\" xmlns:Z=\"urn:schemas-microsoft-com:\">",
-                        "<D:set>",
-                        "<D:prop>",
-                        "<Z:Win32LastModifiedTime>\(date)</Z:Win32LastModifiedTime>",
-                        "</D:prop>",
-                        "</D:set>",
-                        "</D:propertyupdate>",
-                    ].joined(separator: "\r\n")+"\r\n"
-                }
+                
                 let result = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data)
                     let dav = DAVcollectionParser()
@@ -1213,51 +1064,61 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result = result else {
-                    throw RetryError.Retry
-                }
+                guard let result = result else { throw RetryError.Retry }
+                
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
                 formatter.timeZone = TimeZone(identifier: "GMT")
                 let formatter2 = ISO8601DateFormatter()
+                
                 var reqStr2: String?
                 if let item = result.first, let propstat = item["propstat"] as? [String: Any], let prop = propstat["prop"] as? [String: String] {
+                    
+                    let lastmodified: (String)->String = { date in
+                        [
+                            "<?xml version=\"1.0\" encoding=\"utf-8\" ?>",
+                            "<D:propertyupdate xmlns:D=\"DAV:\">",
+                            "<D:set><D:prop><D:lastmodified>\(date)</D:lastmodified></D:prop></D:set>",
+                            "</D:propertyupdate>",
+                        ].joined(separator: "\r\n")+"\r\n"
+                    }
+                    let win32lastmodified: (String)->String = { date in
+                        [
+                            "<?xml version=\"1.0\" encoding=\"utf-8\" ?>",
+                            "<D:propertyupdate xmlns:D=\"DAV:\" xmlns:Z=\"urn:schemas-microsoft-com:\">",
+                            "<D:set><D:prop><Z:Win32LastModifiedTime>\(date)</Z:Win32LastModifiedTime></D:prop></D:set>",
+                            "</D:propertyupdate>",
+                        ].joined(separator: "\r\n")+"\r\n"
+                    }
+                    
                     if let mtime = prop["getlastmodified"] {
                         if formatter.date(from: mtime) != nil {
                             reqStr2 = lastmodified(formatter.string(from: newdate))
-                        }
-                        else if formatter2.date(from: mtime) != nil {
+                        } else if formatter2.date(from: mtime) != nil {
                             reqStr2 = lastmodified(formatter2.string(from: newdate))
-                        }
-                        else {
+                        } else {
                             reqStr2 = lastmodified(formatter.string(from: newdate))
                         }
-                    }
-                    else if let mtime = prop["Win32LastModifiedTime"] {
+                    } else if let mtime = prop["Win32LastModifiedTime"] {
                         if formatter.date(from: mtime) != nil {
                             reqStr2 = win32lastmodified(formatter.string(from: newdate))
-                        }
-                        else if formatter2.date(from: mtime) != nil {
+                        } else if formatter2.date(from: mtime) != nil {
                             reqStr2 = win32lastmodified(formatter2.string(from: newdate))
-                        }
-                        else {
+                        } else {
                             reqStr2 = win32lastmodified(formatter.string(from: newdate))
                         }
-                    }
-                    else {
+                    } else {
                         reqStr2 = lastmodified(formatter.string(from: newdate))
                     }
                 }
-                guard let reqStr3 = reqStr2 else {
-                    throw RetryError.Retry
-                }
-
+                guard let reqStr3 = reqStr2 else { throw RetryError.Retry }
+                
                 var request2 = URLRequest(url: url)
                 request2.httpMethod = "PROPPATCH"
                 request2.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-                
                 request2.httpBody = reqStr3.data(using: .utf8)
+                
                 guard let (data2, _) = try? await URLSession.shared.data(for: request2, delegate: self) else {
                     throw RetryError.Retry
                 }
@@ -1268,22 +1129,13 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result2 = result2 else {
+                
+                guard let result2 = result2, let item2 = result2.first,
+                      let propstat2 = item2["propstat"] as? [String: Any],
+                      let status = propstat2["status"] as? String, status.contains("200") else {
                     throw RetryError.Retry
                 }
-                guard let item = result2.first else {
-                    throw RetryError.Retry
-                }
-                guard let propstat = item["propstat"] as? [String: Any] else {
-                    throw RetryError.Retry
-                }
-                guard let status = propstat["status"] as? String else {
-                    throw RetryError.Retry
-                }
-                guard status.contains("200") else {
-                    throw RetryError.Retry
-                }
-
+                
                 let (data3, _) = try await URLSession.shared.data(for: request, delegate: self)
                 let result3 = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data3)
@@ -1292,13 +1144,19 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result3 = result3 else {
-                    return nil
-                }
+                guard let result3 = result3 else { return nil }
+                
                 if let item = result3.first, let id = item["href"] as? String {
-                    let viewContext = CloudFactory.shared.data.viewContext
-                    await storeItem(item: item, parentFileId: nil, parentPath: nil, context: viewContext)
+                    let accessUriStr = await accessURI()
+                    let accessUriPath = URL(string: accessUriStr)?.path
+                    
                     await viewContext.perform {
+                        var existing: RemoteData? = nil
+                        if let objID = targetObjectID {
+                            existing = try? viewContext.existingObject(with: objID) as? RemoteData
+                        }
+                        // 親IDやパスは既存のものを引き継ぐため、変更なしの場合はnilを渡して既存を利用させます
+                        self.storeItem(item: item, existingItem: existing, parentFileId: nil, parentPath: nil, accessUriPath: accessUriPath, context: viewContext)
                         try? viewContext.save()
                     }
                     return id
@@ -1310,40 +1168,27 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
             return nil
         }
     }
-        
+    
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
         }
-
+        
         let attr = try FileManager.default.attributesOfItem(atPath: target.path(percentEncoded: false))
         let fileSize = attr[.size] as! UInt64
         try await progress?(0, Int64(fileSize))
-
-        guard var url = await URL(string: accessURI()) else {
-            return nil
-        }
+        
+        guard var url = await URL(string: accessURI()) else { return nil }
         if parentId != "" {
-            guard let pathURL = URL(string: parentId) else {
-                return nil
-            }
+            guard let pathURL = URL(string: parentId) else { return nil }
             if pathURL.host != nil {
                 url = pathURL
-            }
-            else {
+            } else {
                 var allowedCharacterSet = CharacterSet.alphanumerics
                 allowedCharacterSet.insert(charactersIn: "-._~")
                 let p = pathURL.pathComponents.map({ $0 == "/" ? "/" :  $0.addingPercentEncoding(withAllowedCharacters: allowedCharacterSet)! })
-                let p2: String
-                if p.first == "/" {
-                    p2 = String(p.joined(separator: "/").dropFirst())
-                }
-                else {
-                    p2 = p.joined(separator: "/")
-                }
-                guard let u = URL(string: p2, relativeTo: url) else {
-                    return nil
-                }
+                let p2: String = p.first == "/" ? String(p.joined(separator: "/").dropFirst()) : p.joined(separator: "/")
+                guard let u = URL(string: p2, relativeTo: url) else { return nil }
                 url = u
             }
         }
@@ -1352,15 +1197,15 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "uploadFile(WebDAV:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
+                
                 var parentPath = "\(storageName ?? ""):/"
                 if parentId != "" {
                     parentPath = await getParentPath(parentId: parentId) ?? parentPath
                 }
-
+                
                 var request: URLRequest = URLRequest(url: url)
                 request.httpMethod = "PUT"
-
+                
                 var request2 = URLRequest(url: url)
                 request2.httpMethod = "PROPFIND"
                 request2.setValue("0", forHTTPHeaderField: "Depth")
@@ -1373,7 +1218,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     "</D:propfind>",
                 ].joined(separator: "\r\n")+"\r\n"
                 request2.httpBody = reqStr.data(using: .utf8)
-
+                
                 await uploadProgressManeger.setCallback(url: url, total: Int64(fileSize), callback: progress)
                 defer {
                     Task { await uploadProgressManeger.removeCallback(url: url) }
@@ -1382,6 +1227,7 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                 guard (try? await URLSession.shared.upload(for: request, fromFile: target, delegate: self)) != nil else {
                     throw RetryError.Retry
                 }
+                
                 let (data2, _) = try await URLSession.shared.data(for: request2, delegate: self)
                 let result = await withCheckedContinuation { continuation in
                     let parser: XMLParser? = XMLParser(data: data2)
@@ -1390,13 +1236,19 @@ public class WebDAVStorage: NetworkStorage, URLSessionTaskDelegate, URLSessionDa
                     parser?.delegate = dav
                     parser?.parse()
                 }
-                guard let result = result else {
-                    return nil
-                }
-                if let item = result.first, let id = item["href"] as? String {
-                    let viewContext = CloudFactory.shared.data.viewContext
-                    await storeItem(item: item, parentFileId: parentId, parentPath: parentPath, context: viewContext)
+                
+                if let item = result?.first, let id = item["href"] as? String {
+                    let viewContext = CloudFactory.shared.data.backgroundContext
+                    let accessUriStr = await accessURI()
+                    let accessUriPath = URL(string: accessUriStr)?.path
+                    
                     await viewContext.perform {
+                        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
+                        fetchRequest.fetchLimit = 1
+                        let existing = (try? viewContext.fetch(fetchRequest))?.first
+                        
+                        self.storeItem(item: item, existingItem: existing, parentFileId: parentId, parentPath: parentPath, accessUriPath: accessUriPath, context: viewContext)
                         try? viewContext.save()
                     }
                     try await progress?(Int64(fileSize), Int64(fileSize))

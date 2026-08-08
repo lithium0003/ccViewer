@@ -12,292 +12,6 @@ import CloudKit
 import CommonCrypto
 
 public class PlayMark {
-    public func getMark(storage: String, targetIDs: [String], parentID: String) async -> [String: Double] {
-        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
-            return [:]
-        }
-        
-        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
-            await getCloudMark(storage: storage, parentID: parentID)
-        }
-        
-        var targets: [String: String] = [:]
-        for targetId in targetIDs {
-            var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-            guard let data = "storage=\(storage),target=\(targetId)".cString(using: .utf8) else {
-                continue
-            }
-            CC_SHA512(data, CC_LONG(data.count-1), &result)
-            let target = result.map({ String(format: "%02hhx", $0) }).joined()
-            targets[target] = targetId
-        }
-        
-        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            return [:]
-        }
-        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
-        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
-        
-        let viewContext = viewContext
-        return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-            fetchrequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", target2, storage)
-            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
-
-            var results: [String: Double] = [:]
-            do {
-                for item in try viewContext.fetch(fetchrequest) as! [Mark] {
-                    if let hashedId = item.id, let orgId = targets[hashedId] {
-                        if results[orgId] == nil {
-                            results[orgId] = item.position
-                        }
-                    }
-                }
-            }
-            catch {
-                print(error)
-            }
-            return results
-        }
-    }
-    
-    public func getMark(storage: String, targetID: String) async -> Double? {
-        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
-            return nil
-        }
-        
-        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
-            await getCloudMark(storage: storage, targetID: targetID)
-        }
-        
-        var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
-            return nil
-        }
-        CC_SHA512(data, CC_LONG(data.count-1), &result)
-        let target = result.map({ String(format: "%02hhx", $0) }).joined()
-
-        let viewContext = viewContext
-        return await viewContext.perform {
-            let fetchrequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-            fetchrequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-            fetchrequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
-
-            return try? (viewContext.fetch(fetchrequest) as! [Mark]).first?.position
-        }
-    }
-    
-    func getCloudMark(storage: String, targetID: String) async {
-        var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data, CC_LONG(data.count-1), &result)
-        let target = result.map({ String(format: "%02hhx", $0) }).joined()
-        
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        
-        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [target]))
-        do {
-            let result = try await ckDatabase.records(matching: ckQuery)
-            let viewContext = viewContext
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", targetID, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
-                }
-                
-                for (_, ckRecord) in result.matchResults {
-                    switch ckRecord {
-                    case .success(let record):
-                        let pos = record["lastPosition"] as Double?
-                        let id = record["targetId"] as String?
-                        let parent = record["parentId"] as String?
-                        
-                        if let pos = pos {
-                            let newitem = Mark(context: viewContext)
-                            newitem.id = id
-                            newitem.parent = parent
-                            newitem.storage = storage
-                            newitem.position = pos
-                            newitem.mdate = Date()
-                        }
-                    case .failure(let error):
-                        print(error)
-                    }
-                }
-            }
-            try await viewContext.perform {
-                try viewContext.save()
-            }
-        }
-        catch {
-            print(error)
-        }
-    }
-    
-    func getCloudMark(storage: String, parentID: String) async {
-        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
-        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
-        
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        
-        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "parentId == %@", argumentArray: [target2]))
-        do {
-            let result = try await ckDatabase.records(matching: ckQuery)
-            let viewContext = viewContext
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-                fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", parentID, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
-                    }
-                }
-                
-                for (_, ckRecord) in result.matchResults {
-                    switch ckRecord {
-                    case .success(let record):
-                        let pos = record["lastPosition"] as Double?
-                        let id = record["targetId"] as String?
-                        let parent = record["parentId"] as String?
-                        
-                        if let pos = pos {
-                            let newitem = Mark(context: viewContext)
-                            newitem.id = id
-                            newitem.parent = parent
-                            newitem.storage = storage
-                            newitem.position = pos
-                            newitem.mdate = Date()
-                        }
-                        
-                    case .failure(let error):
-                        print(error)
-                    }
-                }
-            }
-            try await viewContext.perform {
-                try viewContext.save()
-            }
-        }
-        catch {
-            print(error)
-        }
-    }
-    
-    public func setMark(storage: String, targetID: String, parentID: String, position: Double?) async {
-        if !UserDefaults.standard.bool(forKey: "savePlaypos") {
-            return
-        }
-        
-        var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data, CC_LONG(data.count-1), &result)
-        let target = result.map({ String(format: "%02hhx", $0) }).joined()
-        
-        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
-        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
-        
-        let viewContext = viewContext
-        await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Mark")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", target, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
-            
-            if let position = position {
-                let newitem = Mark(context: viewContext)
-                newitem.id = target
-                newitem.parent = target2
-                newitem.storage = storage
-                newitem.position = position
-                newitem.mdate = Date()
-
-                try? viewContext.save()
-            }
-            else {
-                try? viewContext.save()
-            }
-        }
-        
-        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
-            await setCloudMark(storage: storage, targetID: targetID, parentID: parentID, position: position)
-        }
-        try? await Task.sleep(for: .milliseconds(500))
-    }
-    
-    func setCloudMark(storage: String, targetID: String, parentID: String, position: Double?) async {
-        var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data = "storage=\(storage),target=\(targetID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data, CC_LONG(data.count-1), &result)
-        let target = result.map({ String(format: "%02hhx", $0) }).joined()
-        
-        var result2 = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
-        guard let data2 = "storage=\(storage),target=\(parentID)".cString(using: .utf8) else {
-            return
-        }
-        CC_SHA512(data2, CC_LONG(data2.count-1), &result2)
-        let target2 = result2.map({ String(format: "%02hhx", $0) }).joined()
-        
-        let ckDatabase = CKContainer.default().privateCloudDatabase
-        
-        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [target]))
-        
-        do {
-            let result = try await ckDatabase.records(matching: ckQuery)
-            
-            if result.matchResults.isEmpty {
-                if let position = position {
-                    let ckRecord = CKRecord(recordType: "PlayTime")
-                    ckRecord["lastPosition"] = position
-                    ckRecord["targetId"] = target
-                    ckRecord["parentId"] = target2
-                    
-                    try await ckDatabase.save(ckRecord)
-                }
-            }
-            for (_, record) in result.matchResults {
-                switch record {
-                case .success(let ckRecord):
-                    if let position = position {
-                        ckRecord["lastPosition"] = position
-                        ckRecord["targetId"] = target
-                        ckRecord["parentId"] = target2
-                        
-                        try await ckDatabase.save(ckRecord)
-                    }
-                    else {
-                        try await ckDatabase.deleteRecord(withID: ckRecord.recordID)
-                    }
-                case .failure(let error):
-                    print(error)
-                }
-            }
-        }
-        catch {
-            print(error)
-        }
-    }
-    
     // MARK: - Core Data stack
     public lazy var persistentContainer: NSPersistentContainer = {
         /*
@@ -339,8 +53,242 @@ public class PlayMark {
         semaphore.wait()
         return container
     }()
-
-    public lazy var viewContext = {
-        persistentContainer.newBackgroundContext()
+    
+    public lazy var backgroundContext: NSManagedObjectContext = {
+        let context = persistentContainer.newBackgroundContext()
+        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        return context
     }()
+    
+    // MARK: - Helpers
+    private func hashString(_ input: String) -> String {
+        guard let data = input.cString(using: .utf8) else { return "" }
+        var result = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
+        CC_SHA512(data, CC_LONG(data.count - 1), &result)
+        return result.map { String(format: "%02hhx", $0) }.joined()
+    }
+    
+    // MARK: - Public Methods
+    public func getMark(storage: String, targetIDs: [String], parentID: String) async -> [String: Double] {
+        guard UserDefaults.standard.bool(forKey: "savePlaypos") else { return [:] }
+        
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await getCloudMark(storage: storage, parentID: parentID)
+        }
+        
+        var targets: [String: String] = [:]
+        for targetId in targetIDs {
+            let hashedTarget = hashString("storage=\(storage),target=\(targetId)")
+            if !hashedTarget.isEmpty {
+                targets[hashedTarget] = targetId
+            }
+        }
+        
+        let hashedParent = hashString("storage=\(storage),target=\(parentID)")
+        guard !hashedParent.isEmpty else { return [:] }
+        
+        let context = backgroundContext
+        return await context.perform {
+            let fetchRequest = NSFetchRequest<Mark>(entityName: "Mark")
+            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", hashedParent, storage)
+            fetchRequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
+            
+            var results: [String: Double] = [:]
+            if let marks = try? context.fetch(fetchRequest) {
+                for item in marks {
+                    if let hashedId = item.id, let orgId = targets[hashedId] {
+                        if results[orgId] == nil {
+                            results[orgId] = item.position
+                        }
+                    }
+                }
+            }
+            return results
+        }
+    }
+    
+    public func getMark(storage: String, targetID: String) async -> Double? {
+        guard UserDefaults.standard.bool(forKey: "savePlaypos") else { return nil }
+        
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await getCloudMark(storage: storage, targetID: targetID)
+        }
+        
+        let hashedTarget = hashString("storage=\(storage),target=\(targetID)")
+        guard !hashedTarget.isEmpty else { return nil }
+        
+        let context = backgroundContext
+        return await context.perform {
+            let fetchRequest = NSFetchRequest<Mark>(entityName: "Mark")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", hashedTarget, storage)
+            fetchRequest.sortDescriptors = [NSSortDescriptor(key: "mdate", ascending: false)]
+            fetchRequest.fetchLimit = 1
+            
+            return (try? context.fetch(fetchRequest))?.first?.position
+        }
+    }
+    
+    public func setMark(storage: String, targetID: String, parentID: String, position: Double?) async {
+        guard UserDefaults.standard.bool(forKey: "savePlaypos") else { return }
+        
+        let hashedTarget = hashString("storage=\(storage),target=\(targetID)")
+        let hashedParent = hashString("storage=\(storage),target=\(parentID)")
+        guard !hashedTarget.isEmpty, !hashedParent.isEmpty else { return }
+        
+        let context = backgroundContext
+        await context.perform {
+            let fetchRequest = NSFetchRequest<Mark>(entityName: "Mark")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", hashedTarget, storage)
+            fetchRequest.fetchLimit = 1
+            
+            let existingMark = (try? context.fetch(fetchRequest))?.first
+            
+            if let pos = position {
+                let markToSave = existingMark ?? Mark(context: context)
+                markToSave.id = hashedTarget
+                markToSave.parent = hashedParent
+                markToSave.storage = storage
+                markToSave.position = pos
+                markToSave.mdate = Date()
+            } else {
+                if let existing = existingMark {
+                    context.delete(existing)
+                }
+            }
+            try? context.save()
+        }
+        
+        if UserDefaults.standard.bool(forKey: "cloudPlaypos") {
+            await setCloudMark(storage: storage, targetID: targetID, parentID: parentID, position: position)
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+    }
+    
+    // MARK: - CloudKit Sync Methods
+    func getCloudMark(storage: String, targetID: String) async {
+        let hashedTarget = hashString("storage=\(storage),target=\(targetID)")
+        guard !hashedTarget.isEmpty else { return }
+        
+        let ckDatabase = CKContainer.default().privateCloudDatabase
+        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [hashedTarget]))
+        
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
+            let context = backgroundContext
+            
+            await context.perform {
+                for (_, ckRecord) in result.matchResults {
+                    switch ckRecord {
+                    case .success(let record):
+                        guard let pos = record["lastPosition"] as? Double,
+                              let id = record["targetId"] as? String,
+                              let parent = record["parentId"] as? String else { continue }
+                        
+                        let fetchRequest = NSFetchRequest<Mark>(entityName: "Mark")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
+                        fetchRequest.fetchLimit = 1
+                        
+                        let existingMark = (try? context.fetch(fetchRequest))?.first
+                        let markToSave = existingMark ?? Mark(context: context)
+                        
+                        markToSave.id = id
+                        markToSave.parent = parent
+                        markToSave.storage = storage
+                        markToSave.position = pos
+                        markToSave.mdate = Date()
+                        
+                    case .failure(let error):
+                        print("CloudKit fetch error: \(error)")
+                    }
+                }
+                try? context.save()
+            }
+        } catch {
+            print("CloudKit query error: \(error)")
+        }
+    }
+    
+    func getCloudMark(storage: String, parentID: String) async {
+        let hashedParent = hashString("storage=\(storage),target=\(parentID)")
+        guard !hashedParent.isEmpty else { return }
+        
+        let ckDatabase = CKContainer.default().privateCloudDatabase
+        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "parentId == %@", argumentArray: [hashedParent]))
+        
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
+            let context = backgroundContext
+            
+            await context.perform {
+                for (_, ckRecord) in result.matchResults {
+                    switch ckRecord {
+                    case .success(let record):
+                        guard let pos = record["lastPosition"] as? Double,
+                              let id = record["targetId"] as? String,
+                              let parent = record["parentId"] as? String else { continue }
+                        
+                        let fetchRequest = NSFetchRequest<Mark>(entityName: "Mark")
+                        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storage)
+                        fetchRequest.fetchLimit = 1
+                        
+                        let existingMark = (try? context.fetch(fetchRequest))?.first
+                        let markToSave = existingMark ?? Mark(context: context)
+                        
+                        markToSave.id = id
+                        markToSave.parent = parent
+                        markToSave.storage = storage
+                        markToSave.position = pos
+                        markToSave.mdate = Date()
+                        
+                    case .failure(let error):
+                        print("CloudKit fetch error: \(error)")
+                    }
+                }
+                try? context.save()
+            }
+        } catch {
+            print("CloudKit query error: \(error)")
+        }
+    }
+    
+    func setCloudMark(storage: String, targetID: String, parentID: String, position: Double?) async {
+        let hashedTarget = hashString("storage=\(storage),target=\(targetID)")
+        let hashedParent = hashString("storage=\(storage),target=\(parentID)")
+        guard !hashedTarget.isEmpty, !hashedParent.isEmpty else { return }
+        
+        let ckDatabase = CKContainer.default().privateCloudDatabase
+        let ckQuery = CKQuery(recordType: "PlayTime", predicate: NSPredicate(format: "targetId == %@", argumentArray: [hashedTarget]))
+        
+        do {
+            let result = try await ckDatabase.records(matching: ckQuery)
+            
+            if result.matchResults.isEmpty {
+                if let position = position {
+                    let ckRecord = CKRecord(recordType: "PlayTime")
+                    ckRecord["lastPosition"] = position
+                    ckRecord["targetId"] = hashedTarget
+                    ckRecord["parentId"] = hashedParent
+                    try await ckDatabase.save(ckRecord)
+                }
+            } else {
+                for (_, record) in result.matchResults {
+                    switch record {
+                    case .success(let ckRecord):
+                        if let position = position {
+                            ckRecord["lastPosition"] = position
+                            ckRecord["targetId"] = hashedTarget
+                            ckRecord["parentId"] = hashedParent
+                            try await ckDatabase.save(ckRecord)
+                        } else {
+                            try await ckDatabase.deleteRecord(withID: ckRecord.recordID)
+                        }
+                    case .failure(let error):
+                        print("CloudKit match result error: \(error)")
+                    }
+                }
+            }
+        } catch {
+            print("CloudKit query error: \(error)")
+        }
+    }
 }

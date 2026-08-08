@@ -213,12 +213,12 @@ struct ImageShowUIView: View {
                 remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem()
                 guard let remoteItem else { return }
                 let total = remoteItem.size
-                let remoteData = await remoteItem.open()
+                let remoteStream = await remoteItem.open()
                 defer {
-                    remoteData.isLive = false
+                    remoteStream.isLive = false
                 }
                 do {
-                    let data = try await remoteData.read(onProgress: { p in
+                    let data = try await remoteStream.read(onProgress: { p in
                         if total > 0 {
                             progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
                         }
@@ -272,12 +272,12 @@ struct ImageShowUIView: View {
                                         return try? await withThrowingTaskGroup { group in
                                             group.addTask { ()->(Int, UIImage)? in
                                                 try Task.checkCancellation()
-                                                if let remoteData = await item?.open() {
+                                                if let remoteStream = await item?.open() {
                                                     defer {
-                                                        remoteData.isLive = false
+                                                        remoteStream.isLive = false
                                                     }
                                                     do {
-                                                        let data = try await remoteData.read()
+                                                        let data = try await remoteStream.read()
                                                         if let data, let im = UIImage(data: data) {
                                                             return (curIdx + k, im)
                                                         }
@@ -312,12 +312,12 @@ struct ImageShowUIView: View {
                                         return try? await withThrowingTaskGroup { group in
                                             group.addTask { ()->(Int, UIImage)? in
                                                 try Task.checkCancellation()
-                                                if let remoteData = await item?.open() {
+                                                if let remoteStream = await item?.open() {
                                                     defer {
-                                                        remoteData.isLive = false
+                                                        remoteStream.isLive = false
                                                     }
                                                     do {
-                                                        let data = try await remoteData.read()
+                                                        let data = try await remoteStream.read()
                                                         if let data, let im = UIImage(data: data) {
                                                             return (curIdx - k, im)
                                                         }

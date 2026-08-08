@@ -17,6 +17,73 @@ import Combine
 import AVKit
 import Accelerate
 
+public class AudioSessionManager {
+    public static let shared = AudioSessionManager()
+    private var isObserving = false
+    
+    private init() {}
+    
+    public func activateSession() {
+        updateCategoryForCurrentRoute()
+        
+        if !isObserving {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleRouteChange(_:)),
+                name: AVAudioSession.routeChangeNotification,
+                object: nil
+            )
+            isObserving = true
+        }
+        
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("audio session on")
+        } catch {
+            print("failed to set audio session on: \(error)")
+        }
+    }
+    
+    public func deactivateSession() {
+        if isObserving {
+            NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+            isObserving = false
+        }
+        
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            print("audio session off")
+        } catch {
+            print("failed to set audio session off: \(error)")
+        }
+    }
+    
+    @objc private func handleRouteChange(_ notification: Notification) {
+        updateCategoryForCurrentRoute()
+    }
+    
+    private func updateCategoryForCurrentRoute() {
+        let session = AVAudioSession.sharedInstance()
+        let currentOutputs = session.currentRoute.outputs
+        
+        let headphonePorts: [AVAudioSession.Port] = [
+            .headphones, .bluetoothA2DP, .bluetoothLE, .bluetoothHFP, .usbAudio
+        ]
+        
+        let isHeadphoneConnected = currentOutputs.contains { headphonePorts.contains($0.portType) }
+        
+        do {
+            if isHeadphoneConnected {
+                try session.setCategory(.playback, mode: .default)
+            } else {
+                try session.setCategory(.soloAmbient, mode: .default)
+            }
+        } catch {
+            print("failed to set category: \(error)")
+        }
+    }
+}
+
 public class Player {
     public class func prepare(storages: [String], fileids: [String], playlist: Bool) async -> StreamBridge {
         PiPManager.shared.stopCallback?()
@@ -108,12 +175,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
     
     init(storages: [String], fileids: [String], playlist: Bool) async {
         await UIApplication.shared.beginReceivingRemoteControlEvents()
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print(error)
-        }
+        AudioSessionManager.shared.activateSession()
 
         self.playlist = playlist
         remotes = zip(storages, fileids).map({ ($0, $1) })
@@ -847,11 +909,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
                         free(cNamePtr)
                         free(cPalettePtr)
                     }
-                    do {
-                        try AVAudioSession.sharedInstance().setActive(true)
-                    } catch {
-                        print(error)
-                    }
+                    AudioSessionManager.shared.activateSession()
 
                     initDoneSender.send(true)
                     run_play(param!)
@@ -906,11 +964,7 @@ public class StreamBridge: NSObject, AVPictureInPictureSampleBufferPlaybackDeleg
             pipController?.stopPictureInPicture()
             pipController = nil
 
-            do {
-                try AVAudioSession.sharedInstance().setActive(false)
-            } catch {
-                print(error)
-            }
+            AudioSessionManager.shared.deactivateSession()
             UIApplication.shared.endReceivingRemoteControlEvents()
 
             delObserver()

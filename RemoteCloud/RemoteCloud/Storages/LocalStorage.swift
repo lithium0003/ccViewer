@@ -22,12 +22,11 @@ public class LocalStorage: RemoteStorageBase {
     public override func getStorageType() -> CloudStorages {
         return .Local
     }
-
+    
     override func listChildren(fileId: String = "", path: String = "") async {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var targetURL = documentsURL
-        print(documentsURL)
-
+        
         if fileId != "" {
             targetURL = targetURL.appendingPathComponent(fileId, conformingTo: .data)
         }
@@ -35,79 +34,126 @@ public class LocalStorage: RemoteStorageBase {
         guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: targetURL, includingPropertiesForKeys: nil) else {
             return
         }
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = self.storageName ?? ""
+        
         await viewContext.perform {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
+            let existingResults = (try? viewContext.fetch(fetchRequest)) ?? []
+            
+            var existingDict = existingResults.reduce(into: [String: RemoteData]()) { dict, item in
+                if let id = item.id { dict[id] = item }
+            }
+            
+            for fileURL in fileURLs {
+                guard let attr = try? FileManager.default.attributesOfItem(atPath: fileURL.path(percentEncoded: false)),
+                      let t = attr[.type] as? FileAttributeType, (t == .typeRegular || t == .typeDirectory) else {
+                    continue
+                }
+                
+                let id = LocalStorage.getIdFromURL(url: fileURL)
+                let name = fileURL.lastPathComponent.precomposedStringWithCanonicalMapping
+                let targetItem: RemoteData
+                
+                if let existing = existingDict.removeValue(forKey: id) {
+                    targetItem = existing
+                    targetItem.baseId = nil
+                    targetItem.baseStorage = nil
+                    targetItem.hashstr = nil
+                    targetItem.subinfo = nil
+                    targetItem.subid = nil
+                    targetItem.substart = 0
+                    targetItem.subend = 0
+                } else {
+                    targetItem = RemoteData(context: viewContext)
+                }
+                
+                targetItem.storage = storage
+                targetItem.id = id
+                targetItem.name = name
+                let comp = name.components(separatedBy: ".")
+                if comp.count > 1 && t != .typeDirectory {
+                    targetItem.ext = comp.last!.lowercased()
+                } else {
+                    targetItem.ext = ""
+                }
+                targetItem.cdate = attr[.creationDate] as? Date
+                targetItem.mdate = attr[.modificationDate] as? Date
+                targetItem.folder = (t == .typeDirectory)
+                targetItem.size = attr[.size] as? NSNumber as? Int64 ?? 0
+                targetItem.parent = fileId
+                
+                if fileId == "" {
+                    targetItem.path = "\(storage):/\(name)"
+                } else {
+                    targetItem.path = "\(path)/\(name)"
                 }
             }
-        }
-        
-        for fileURL in fileURLs {
-            storeItem(item: fileURL, parentFileId: fileId, parentPath: path, context: viewContext)
-        }
-        await viewContext.perform {
+            
+            for staleItem in existingDict.values {
+                LocalStorage.cascadeDelete(item: staleItem, in: viewContext)
+            }
+            
+            // 6. 最後に1回だけセーブ
             try? viewContext.save()
         }
     }
     
-    func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, context: NSManagedObjectContext) {
+    private class func storeItem(item: URL, parentFileId: String? = nil, parentPath: String? = nil, storageName: String, context: NSManagedObjectContext) {
         guard let attr = try? FileManager.default.attributesOfItem(atPath: item.path(percentEncoded: false)) else {
             return
         }
-        let id = getIdFromURL(url: item)
+        guard let t = attr[.type] as? FileAttributeType, (t == .typeRegular || t == .typeDirectory) else {
+            return
+        }
+        
+        // getIdFromURL もすでに class func なので LocalStorage. で呼ぶ
+        let id = LocalStorage.getIdFromURL(url: item)
         let name = item.lastPathComponent.precomposedStringWithCanonicalMapping
-        context.performAndWait {
-            var prevParent: String?
-            var prevPath: String?
-            
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    if let item = object as? RemoteData {
-                        prevPath = item.path
-                        let component = parentPath?.components(separatedBy: "/")
-                        prevPath = component?.dropLast().joined(separator: "/")
-                        prevParent = item.parent
-                    }
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-            
-            guard let t = attr[.type] as? FileAttributeType else {
-                return
-            }
-            guard t == .typeRegular || t == .typeDirectory else {
-                return
-            }
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = name
-            let comp = name.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = attr[.creationDate] as? Date
-            newitem.mdate = attr[.modificationDate] as? Date
-            newitem.folder = (attr[.type] as? FileAttributeType) == .typeDirectory
-            newitem.size = attr[.size] as? NSNumber as? Int64 ?? 0
-            newitem.hashstr = ""
-            newitem.parent = (parentFileId == nil) ? prevParent : parentFileId
-            if parentFileId == "" {
-                newitem.path = "\(self.storageName ?? ""):/\(name)"
-            }
-            else {
-                if let path = (parentPath == nil) ? prevPath : parentPath {
-                    newitem.path = "\(path)/\(name)"
-                }
-            }
+        
+        let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+        fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, storageName)
+        fetchRequest.fetchLimit = 1
+        
+        let existingItem = try? context.fetch(fetchRequest).first
+        let targetItem = existingItem ?? RemoteData(context: context)
+        
+        let prevParent = targetItem.parent
+        let prevPath = targetItem.path
+        
+        if existingItem != nil {
+            targetItem.baseId = nil
+            targetItem.baseStorage = nil
+            targetItem.hashstr = nil
+            targetItem.subinfo = nil
+            targetItem.subid = nil
+            targetItem.substart = 0
+            targetItem.subend = 0
+        }
+        
+        targetItem.storage = storageName
+        targetItem.id = id
+        targetItem.name = name
+        
+        let comp = name.components(separatedBy: ".")
+        if comp.count > 1 && t != .typeDirectory {
+            targetItem.ext = comp.last!.lowercased()
+        } else {
+            targetItem.ext = ""
+        }
+        
+        targetItem.cdate = attr[.creationDate] as? Date
+        targetItem.mdate = attr[.modificationDate] as? Date
+        targetItem.folder = (t == .typeDirectory)
+        targetItem.size = attr[.size] as? NSNumber as? Int64 ?? 0
+        
+        targetItem.parent = (parentFileId == nil) ? prevParent : parentFileId
+        if parentFileId == "" {
+            targetItem.path = "\(storageName):/\(name)"
+        } else if let path = (parentPath == nil) ? prevPath : parentPath {
+            targetItem.path = "\(path)/\(name)"
         }
     }
     
@@ -142,7 +188,7 @@ public class LocalStorage: RemoteStorageBase {
         return ret
     }
     
-    func getIdFromURL(url: URL) -> String {
+    class func getIdFromURL(url: URL) -> String {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let docComponent = documentsURL.pathComponents
         guard docComponent.last == "Documents" else {
@@ -166,15 +212,16 @@ public class LocalStorage: RemoteStorageBase {
             targetURL = documentsURL.appendingPathComponent(parentId, conformingTo: .folder)
         }
         targetURL = targetURL.appendingPathComponent(newname, conformingTo: .folder)
+        let storage = storageName ?? ""
         
         do {
             try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false)
-            let viewContext = CloudFactory.shared.data.viewContext
-            storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
-            let id = getIdFromURL(url: targetURL)
+            let viewContext = CloudFactory.shared.data.backgroundContext
             await viewContext.perform {
+                LocalStorage.storeItem(item: targetURL, parentFileId: parentId, parentPath: parentPath, storageName: storage, context: viewContext)
                 try? viewContext.save()
             }
+            let id = LocalStorage.getIdFromURL(url: targetURL)
             return id
         }
         catch {
@@ -184,47 +231,55 @@ public class LocalStorage: RemoteStorageBase {
     
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-
-        if fromParentId == toParentId {
-            return nil
-        }
-
-        let viewContext = CloudFactory.shared.data.viewContext
+        if fromParentId == toParentId { return nil }
+        
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         let fromURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         let name = fromURL.lastPathComponent
+        
         var targetURL = documentsURL
-        var parentPath = ""
         if toParentId != "" {
             targetURL = documentsURL.appendingPathComponent(toParentId, conformingTo: .folder)
-            await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
-                    }
-                }
-            }
-        }
-        await viewContext.perform {
-            let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-            if let result = try? viewContext.fetch(fetchRequest2) {
-                for object in result {
-                    viewContext.delete(object as! NSManagedObject)
-                }
-            }
         }
         targetURL = targetURL.appendingPathComponent(name, conformingTo: .data)
+        
         do {
             try FileManager.default.moveItem(at: fromURL, to: targetURL)
-            self.storeItem(item: targetURL, parentFileId: toParentId, parentPath: parentPath, context: viewContext)
-            let id = self.getIdFromURL(url: targetURL)
+            
             await viewContext.perform {
+                var parentPath = ""
+                
+                if toParentId != "" {
+                    let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                    fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", toParentId, storage)
+                    fetchRequest.fetchLimit = 1
+                    if let item = try? viewContext.fetch(fetchRequest).first {
+                        parentPath = item.path ?? ""
+                    }
+                }
+                
+                let fetchRequest2 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+                if let results = try? viewContext.fetch(fetchRequest2) {
+                    for object in results {
+                        LocalStorage.cascadeDelete(item: object, in: viewContext)
+                    }
+                }
+                
+                LocalStorage.storeItem(
+                    item: targetURL,
+                    parentFileId: toParentId,
+                    parentPath: parentPath,
+                    storageName: storage,
+                    context: viewContext
+                )
+                
                 try? viewContext.save()
             }
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            
+            let id = LocalStorage.getIdFromURL(url: targetURL)
+            await CloudFactory.shared.cache.remove(storage: storage, id: fileId)
             return id
         }
         catch {
@@ -235,25 +290,23 @@ public class LocalStorage: RemoteStorageBase {
     override func deleteItem(fileId: String) async -> Bool {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let targetURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
-
+        
         do {
             try FileManager.default.removeItem(at: targetURL)
-            let viewContext = CloudFactory.shared.data.viewContext
+            let viewContext = CloudFactory.shared.data.backgroundContext
             let storage = self.storageName ?? ""
+            
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    for object in result {
-                        viewContext.delete(object as! NSManagedObject)
+                if let results = try? viewContext.fetch(fetchRequest) {
+                    for object in results {
+                        LocalStorage.cascadeDelete(item: object, in: viewContext)
                     }
                 }
-            }
-            deleteChildRecursive(parent: fileId, context: viewContext)
-            await viewContext.perform {
                 try? viewContext.save()
             }
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            await CloudFactory.shared.cache.remove(storage: storage, id: fileId)
             return true
         }
         catch {
@@ -268,29 +321,32 @@ public class LocalStorage: RemoteStorageBase {
         
         do {
             try FileManager.default.moveItem(at: fromURL, to: newURL)
-            var parentPath: String?
-            var parentId: String?
-            let viewContext = CloudFactory.shared.data.viewContext
+            let viewContext = CloudFactory.shared.data.backgroundContext
             let storage = self.storageName ?? ""
+            
             await viewContext.perform {
-                let fetchRequest2 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                var parentPath: String?
+                var parentId: String?
+                
+                let fetchRequest2 = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest2.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
-                if let result = try? viewContext.fetch(fetchRequest2) as? [RemoteData] {
-                    for object in result {
+                if let results = try? viewContext.fetch(fetchRequest2) {
+                    for object in results {
                         parentPath = object.path
                         let component = parentPath?.components(separatedBy: "/")
                         parentPath = component?.dropLast().joined(separator: "/")
                         parentId = object.parent
-                        viewContext.delete(object)
+                        LocalStorage.cascadeDelete(item: object, in: viewContext)
                     }
                 }
-            }
-            self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
-            await viewContext.perform {
+                
+                LocalStorage.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, storageName: storage, context: viewContext)
+                
                 try? viewContext.save()
             }
-            let newid = getIdFromURL(url: newURL)
-            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+            
+            let newid = LocalStorage.getIdFromURL(url: newURL)
+            await CloudFactory.shared.cache.remove(storage: storage, id: fileId)
             return newid
         }
         catch {
@@ -302,14 +358,15 @@ public class LocalStorage: RemoteStorageBase {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let targetURL = documentsURL.appendingPathComponent(fileId, conformingTo: .data)
         
+        let storage = storageName ?? ""
         do {
             try FileManager.default.setAttributes([FileAttributeKey.modificationDate: newdate], ofItemAtPath: targetURL.path(percentEncoded: false))
-            let viewContext = CloudFactory.shared.data.viewContext
-            self.storeItem(item: targetURL, context: viewContext)
-            let id = getIdFromURL(url: targetURL)
+            let viewContext = CloudFactory.shared.data.backgroundContext
             await viewContext.perform {
+                LocalStorage.storeItem(item: targetURL, storageName: storage, context: viewContext)
                 try? viewContext.save()
             }
+            let id = LocalStorage.getIdFromURL(url: targetURL)
             return id
         }
         catch {
@@ -333,16 +390,17 @@ public class LocalStorage: RemoteStorageBase {
         }
         newURL = newURL.appendingPathComponent(uploadname, conformingTo: .data)
         
-        let viewContext = CloudFactory.shared.data.viewContext
+        let viewContext = CloudFactory.shared.data.backgroundContext
         let storage = storageName ?? ""
         var parentPath = ""
         if parentId != "" {
             await viewContext.perform {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
                 fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", parentId, storage)
-                if let result = try? viewContext.fetch(fetchRequest) {
-                    if let items = result as? [RemoteData] {
-                        parentPath = items.first?.path ?? ""
+                fetchRequest.fetchLimit = 1
+                if let results = try? viewContext.fetch(fetchRequest) {
+                    if let item = results.first {
+                        parentPath = item.path ?? ""
                     }
                 }
             }
@@ -353,13 +411,13 @@ public class LocalStorage: RemoteStorageBase {
         try await progress?(0, Int64(fileSize))
         
         try FileManager.default.moveItem(at: target, to: newURL)
-        
-        self.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, context: viewContext)
-        let id = self.getIdFromURL(url: newURL)
+        try await progress?(Int64(fileSize), Int64(fileSize))
+
         await viewContext.perform {
+            LocalStorage.storeItem(item: newURL, parentFileId: parentId, parentPath: parentPath, storageName: storage, context: viewContext)
             try? viewContext.save()
         }
-        try await progress?(Int64(fileSize), Int64(fileSize))
+        let id = LocalStorage.getIdFromURL(url: newURL)
         return id
     }
 }

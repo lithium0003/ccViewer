@@ -52,7 +52,7 @@ struct PdfShowUIView: View {
     @State var title = ""
     @State var progStr = ""
     @State var remoteItem: RemoteItem?
-    @State var remoteData: RemoteStream?
+    @State var remoteStream: RemoteStream?
     @State var document: PDFDocument?
     @State var isLoading = false
     @State var model = PDFViewModel()
@@ -229,9 +229,9 @@ struct PdfShowUIView: View {
             guard let remoteItem else { return }
             title = remoteItem.name
             let total = remoteItem.size
-            remoteData = await remoteItem.open()
-            if let remoteData {
-                guard let docData = try? await remoteData.read(onProgress: { p in
+            remoteStream = await remoteItem.open()
+            if let remoteStream {
+                guard let docData = try? await remoteStream.read(onProgress: { p in
                     if total > 0 {
                         progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
                     }
@@ -241,7 +241,7 @@ struct PdfShowUIView: View {
                 }) else {
                     return
                 }
-                if docData.count != remoteData.size {
+                if docData.count != remoteStream.size {
                     return
                 }
                 Task { @MainActor in
@@ -250,12 +250,12 @@ struct PdfShowUIView: View {
                     }
                 }
             }
-            remoteData?.isLive = false
-            remoteData = nil
+            remoteStream?.isLive = false
+            remoteStream = nil
         }
         .onDisappear {
             Task {
-                remoteData?.isLive = false
+                remoteStream?.isLive = false
                 await remoteItem?.cancel()
             }
         }

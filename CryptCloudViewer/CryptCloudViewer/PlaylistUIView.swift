@@ -20,7 +20,7 @@ struct PlayItem: Codable, Identifiable, Transferable {
     var fileid: String
     var path: String
 
-    init(_ item: RemoteData) {
+    init(_ item: RemoteDataDTO) {
         self.storage = item.storage ?? ""
         self.fileid = item.id ?? ""
         self.path = item.path ?? ""
@@ -35,7 +35,7 @@ struct PlaylistUIView: View {
     let playlistName: String
     @Binding var env: UserEnvObject
     @State private var ids: [String] = []
-    @State private var items: [String: RemoteData] = [:]
+    @State private var items: [String: RemoteDataDTO] = [:]
     private var searchedItems: [String] {
         searchText.isEmpty ? ids : ids.filter { items[$0]?.name?.localizedStandardContains(searchText) ?? false }
     }
@@ -82,7 +82,7 @@ struct PlaylistUIView: View {
 
     func reload() async {
         let playitems = await CloudFactory.shared.data.getPlaylist(playlistName: playlistName)
-        var newItems: [String: RemoteData] = [:]
+        var newItems: [String: RemoteDataDTO] = [:]
         var newIds: [String] = []
         for (storage, fileid, _, uuid) in playitems {
             if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {

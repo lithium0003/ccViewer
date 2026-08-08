@@ -76,22 +76,42 @@ public class NetworkStorage: RemoteStorageBase {
     }
     let uploadProgressManeger = URLProgressManeger()
     
-    var cacheTokenDate: Date = Date(timeIntervalSince1970: 0)
-    var tokenLife: TimeInterval = 0
+    actor TokenCache {
+        var access = ""
+        var refresh = ""
+        var date: Date = Date(timeIntervalSince1970: 0)
+        var life: TimeInterval = 0
+        
+        func setAccess(_ t: String) { access = t }
+        func setRefresh(_ t: String) { refresh = t }
+        func setToken(access: String, refresh: String) {
+            self.access = access
+            self.refresh = refresh
+            self.date = Date()
+        }
+        func setLife(_ l: TimeInterval) { life = l }
+        func clear() {
+            access = ""
+            refresh = ""
+            date = Date(timeIntervalSince1970: 0)
+            life = 0
+        }
+    }
+    let tokenCache = TokenCache()
+    
     let callSemaphore = Semaphore(value: 5)
     let callWait = 0.2
-    var cache_accessToken = ""
-    var cache_refreshToken = ""
-
+    
     func accessToken() async -> String {
-        if cache_accessToken != "" {
-            return cache_accessToken
+        let cached = await tokenCache.access
+        if cached != "" {
+            return cached
         }
         if let name = storageName {
             if let token = await getKeyChain(key: "\(name)_accessToken") {
-                cache_accessToken = token
+                await tokenCache.setAccess(token)
             }
-            return cache_accessToken
+            return await tokenCache.access
         }
         else {
             return ""
@@ -99,14 +119,15 @@ public class NetworkStorage: RemoteStorageBase {
     }
     
     func getRefreshToken() async -> String {
-        if cache_refreshToken != "" {
-            return cache_refreshToken
+        let cached = await tokenCache.refresh
+        if cached != "" {
+            return cached
         }
         if let name = storageName {
             if let token = await getKeyChain(key: "\(name)_refreshToken") {
-                cache_refreshToken = token
+                await tokenCache.setRefresh(token)
             }
-            return cache_refreshToken
+            return await tokenCache.refresh
         }
         else {
             return ""
@@ -198,18 +219,19 @@ public class NetworkStorage: RemoteStorageBase {
             }
             let _ = await delKeyChain(key: "\(name)_accessToken")
             let _ = await delKeyChain(key: "\(name)_refreshToken")
-            cache_accessToken = ""
-            cache_refreshToken = ""
-            cacheTokenDate = Date(timeIntervalSince1970: 0)
-            tokenLife = 0
+            await tokenCache.clear()
         }
         await super.logout()
     }
 
     func checkToken() async -> Bool {
         let d = Date()
-        os_log("%{public}@", log: log, type: .debug, "\(d) \(cacheTokenDate),\(tokenLife)")
-        if cacheTokenDate < d, d < cacheTokenDate + tokenLife / 2 {
+        let cDate = await tokenCache.date
+        let cLife = await tokenCache.life
+        
+        os_log("%{public}@", log: log, type: .debug, "\(d) \(cDate),\(cLife)")
+        
+        if cDate < d, cLife > 0, d < cDate + cLife / 2 {
             return true
         }
         else if await getRefreshToken() == "" {
@@ -220,15 +242,16 @@ public class NetworkStorage: RemoteStorageBase {
         }
     }
     
-    func saveToken(accessToken: String, refreshToken: String) async -> Void {
+    func saveToken(accessToken: String, refreshToken: String, tokenLife: TimeInterval = 0) async -> Void {
         if let name = storageName {
             guard accessToken != "" && refreshToken != "" else {
                 return
             }
             os_log("%{public}@", log: log, type: .info, "saveToken")
-            cacheTokenDate = Date()
-            cache_refreshToken = refreshToken
-            cache_accessToken = accessToken
+            await tokenCache.setToken(access: accessToken, refresh: refreshToken)
+            if tokenLife > 0 {
+                await tokenCache.setLife(tokenLife)
+            }
             _ = await setKeyChain(key: "\(name)_accessToken", value: accessToken)
             _ = await setKeyChain(key: "\(name)_refreshToken", value: refreshToken)
         }
@@ -273,15 +296,20 @@ public class SlotStream: RemoteStream {
     static let slotcount = 20
     static let slotadvance: Int64 = 5
     static let bufSize:Int64 = 1*1024*1024
-    var error = false {
-        didSet {
-            setError(error)
-        }
+    public private(set) var error = false
+
+    public func setErrorSync() {
+        guard !error else { return }
+        self.error = true
+        closeSync()
     }
 
-    func setError(_ isError: Bool) {
+    public func setError() async {
+        guard !error else { return }
+        self.error = true
+        await close()
     }
-
+    
     let waitlist = WaitListManager()
     let initialized = InitialManager()
     let buffer: BufferManager
@@ -472,7 +500,7 @@ public class SlotStream: RemoteStream {
 
     func subFillBuffer(pos: ClosedRange<Int64>) async {
         print("error on implimant")
-        error = true
+        await setError()
     }
     
     func fillBuffer(slot: Int64) async {
@@ -528,7 +556,7 @@ public class SlotStream: RemoteStream {
             }
             catch {
                 print(error)
-                self.error = true
+                await setError()
                 return nil
             }
         }
@@ -573,23 +601,8 @@ public class RemoteNetworkStream: SlotStream {
         await super.init(size: remote.size)
     }
 
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
-    }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
@@ -602,7 +615,7 @@ public class RemoteNetworkStream: SlotStream {
             }
             else {
                 print("error on readFile")
-                error = true
+                await setError()
             }
         }
     }

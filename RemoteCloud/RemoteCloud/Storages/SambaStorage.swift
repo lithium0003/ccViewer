@@ -518,81 +518,49 @@ public class SambaStorage: NetworkStorage {
     func disconnect() async {
         await sessionManager?.disconnect()
     }
-
-    func storeRootItems(shareNames: [String], context: NSManagedObjectContext) {
-        context.perform {
-            let fetchRequest1 = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest1.predicate = NSPredicate(format: "parent == %@ && storage == %@", "", self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest1) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-
-            for id in shareNames {
-                let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-                if let result = try? context.fetch(fetchRequest) {
-                    if result.count > 0 {
-                        continue
-                    }
-                }
-
-                let newitem = RemoteData(context: context)
-                newitem.storage = self.storageName
-                newitem.id = id
-                newitem.name = id
-                newitem.ext = ""
-                newitem.cdate = nil
-                newitem.mdate = nil
-                newitem.folder = true
-                newitem.size = 0
-                newitem.hashstr = ""
-                newitem.parent = ""
-                newitem.path = "\(self.storageName ?? ""):/\(id)"
-            }
-        }
-    }
-
-    func storeItem(item: FileDirectoryInformation, path: String, context: NSManagedObjectContext) {
-        print(path, item.fileName)
-        let id = "\(path)/\(item.fileName)"
-        context.performAndWait {
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
-            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", id, self.storageName ?? "")
-            if let result = try? context.fetch(fetchRequest) {
-                for object in result {
-                    context.delete(object as! NSManagedObject)
-                }
-            }
-
-            let newitem = RemoteData(context: context)
-            newitem.storage = self.storageName
-            newitem.id = id
-            newitem.name = item.fileName
-            let comp = item.fileName.components(separatedBy: ".")
-            if comp.count >= 1 {
-                newitem.ext = comp.last!.lowercased()
-            }
-            newitem.cdate = Date(timeInterval: TimeInterval(item.creationTime) / 10000000, since: self.time1601)
-            newitem.mdate = Date(timeInterval: TimeInterval(item.changeTime) / 10000000, since: self.time1601)
-            newitem.folder = item.fileAttributes.contains(.directory)
-            newitem.size = Int64(item.endOfFile)
-            newitem.hashstr = ""
-            newitem.parent = path
-            newitem.path = "\(self.storageName ?? ""):/\(id)"
-        }
-    }
-
+        
     override func listChildren(fileId: String, path: String) async {
         do {
             return try await callWithRetry(action: { [self] in
+                let viewContext = CloudFactory.shared.data.backgroundContext
+                let storage = self.storageName ?? ""
+                let t1601 = self.time1601
+                
                 if fileId == "" {
                     do {
-                        let viewContext = CloudFactory.shared.data.viewContext
                         let shares = try await sessionManager.enumShareAll()
-                        storeRootItems(shareNames: shares.filter({ $0.name != "IPC$" }).map({ $0.name }), context: viewContext)
+                        let shareNames = shares.filter({ $0.name != "IPC$" }).map({ $0.name })
+                        
                         await viewContext.perform {
+                            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", "", storage)
+                            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+                            
+                            var existingDict = [String: RemoteData]()
+                            for item in existingItems {
+                                if let id = item.id { existingDict[id] = item }
+                            }
+                            
+                            for id in shareNames {
+                                let existing = existingDict.removeValue(forKey: id)
+                                let targetItem = existing ?? RemoteData(context: viewContext)
+                                
+                                targetItem.storage = storage
+                                targetItem.id = id
+                                targetItem.name = id
+                                targetItem.ext = ""
+                                targetItem.cdate = nil
+                                targetItem.mdate = nil
+                                targetItem.folder = true
+                                targetItem.size = 0
+                                targetItem.hashstr = nil
+                                targetItem.parent = ""
+                                targetItem.path = "\(storage):/\(id)"
+                            }
+                            
+                            for (_, orphan) in existingDict {
+                                SambaStorage.cascadeDelete(item: orphan, in: viewContext)
+                            }
                             try? viewContext.save()
                         }
                     }
@@ -602,14 +570,61 @@ public class SambaStorage: NetworkStorage {
                     }
                 }
                 else if let share = fileId.components(separatedBy: "/").first {
-                    let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
+                    let dirPath = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        let viewContext = CloudFactory.shared.data.viewContext
-                        let files = try await sessionManager.queryDirectory(share: share, path: path)
-                        for item in files.filter({ $0.fileName != "." && $0.fileName != ".." && !$0.fileName.hasPrefix("._") }) {
-                            storeItem(item: item, path: fileId, context: viewContext)
-                        }
+                        let files = try await sessionManager.queryDirectory(share: share, path: dirPath)
+                        
+                        let validFiles = files
+                            .filter { $0.fileName != "." && $0.fileName != ".." && !$0.fileName.hasPrefix("._") }
+                            .map { (
+                                name: $0.fileName,
+                                ctime: Double($0.creationTime),
+                                mtime: Double($0.changeTime),
+                                isFolder: $0.fileAttributes.contains(.directory),
+                                size: Int64($0.endOfFile)
+                            )}
+                        
                         await viewContext.perform {
+                            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                            fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@", fileId, storage)
+                            let existingItems = (try? viewContext.fetch(fetchRequest)) ?? []
+                            
+                            var existingDict = [String: RemoteData]()
+                            for item in existingItems {
+                                if let id = item.id { existingDict[id] = item }
+                            }
+                            
+                            for item in validFiles {
+                                let id = "\(fileId)/\(item.name)"
+                                let existing = existingDict.removeValue(forKey: id)
+                                let targetItem = existing ?? RemoteData(context: viewContext)
+                                
+                                targetItem.hashstr = nil
+                                targetItem.subinfo = nil
+                                targetItem.subid = nil
+                                targetItem.substart = 0
+                                targetItem.subend = 0
+                                targetItem.baseId = nil
+                                targetItem.baseStorage = nil
+                                
+                                targetItem.storage = storage
+                                targetItem.id = id
+                                targetItem.name = item.name
+                                
+                                let comp = item.name.components(separatedBy: ".")
+                                targetItem.ext = comp.count > 1 ? comp.last!.lowercased() : ""
+                                
+                                targetItem.cdate = Date(timeInterval: item.ctime / 10000000, since: t1601)
+                                targetItem.mdate = Date(timeInterval: item.mtime / 10000000, since: t1601)
+                                targetItem.folder = item.isFolder
+                                targetItem.size = item.size
+                                targetItem.parent = fileId
+                                targetItem.path = "\(storage):/\(id)"
+                            }
+                            
+                            for (_, orphan) in existingDict {
+                                SambaStorage.cascadeDelete(item: orphan, in: viewContext)
+                            }
                             try? viewContext.save()
                         }
                     }
@@ -676,7 +691,33 @@ public class SambaStorage: NetworkStorage {
                 if let share = parentId.components(separatedBy: "/").first {
                     let path = parentId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        return try await sessionManager.createDirectory(share: share, path: path, newname: newname)
+                        if let newid = try await sessionManager.createDirectory(share: share, path: path, newname: newname) {
+                            let viewContext = CloudFactory.shared.data.backgroundContext
+                            let storage = storageName ?? ""
+                            
+                            await viewContext.perform {
+                                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                                fetchRequest.fetchLimit = 1
+                                let existing = (try? viewContext.fetch(fetchRequest))?.first
+                                
+                                let targetItem = existing ?? RemoteData(context: viewContext)
+                                targetItem.storage = storage
+                                targetItem.id = newid
+                                targetItem.name = newname
+                                targetItem.ext = ""
+                                targetItem.cdate = Date()
+                                targetItem.mdate = Date()
+                                targetItem.folder = true
+                                targetItem.size = 0
+                                targetItem.hashstr = nil
+                                targetItem.parent = parentId
+                                targetItem.path = "\(storage):/\(newid)"
+                                
+                                try? viewContext.save()
+                            }
+                            return newid
+                        }
                     }
                     catch {
                         print(error)
@@ -692,20 +733,37 @@ public class SambaStorage: NetworkStorage {
             return nil
         }
     }
-
+    
     override func deleteItem(fileId: String) async -> Bool {
+        var isFolder = false
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            if let item = (try? viewContext.fetch(fetchRequest))?.first {
+                isFolder = item.folder
+                targetObjectID = item.objectID
+            }
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "deleteItem(Samba:\(storageName ?? "") \(fileId)")
                 if let share = fileId.components(separatedBy: "/").first {
                     let path = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
-                        if await getRaw(fileId: fileId)?.isFolder ?? false {
-                            return try await sessionManager.delete(share: share, path: path, directory: true)
-                        }
-                        let ret = try await sessionManager.delete(share: share, path: path)
+                        let ret = try await sessionManager.delete(share: share, path: path, directory: isFolder)
                         if ret {
-                            await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                            await viewContext.perform {
+                                if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                                    SambaStorage.cascadeDelete(item: existing, in: viewContext)
+                                }
+                                try? viewContext.save()
+                            }
                         }
                         return ret
                     }
@@ -723,12 +781,23 @@ public class SambaStorage: NetworkStorage {
             return false
         }
     }
-
+    
     override func renameItem(fileId: String, newname: String) async -> String? {
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "renameItem(Samba:\(storageName ?? "") \(fileId) \(newname)")
-
+                
                 if let share = fileId.components(separatedBy: "/").first {
                     var pathComponents = fileId.components(separatedBy: "/")
                     let path = pathComponents.dropFirst().joined(separator: "/")
@@ -737,7 +806,13 @@ public class SambaStorage: NetworkStorage {
                     let newPath = pathComponents.dropFirst().joined(separator: "/")
                     do {
                         let newid = try await sessionManager.move(share: share, fromPath: path, toPath: newPath)
-                        await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                        
+                        await viewContext.perform {
+                            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                                SambaStorage.cascadeDelete(item: existing, in: viewContext)
+                            }
+                            try? viewContext.save()
+                        }
                         return newid
                     }
                     catch {
@@ -754,21 +829,39 @@ public class SambaStorage: NetworkStorage {
             return nil
         }
     }
-
+    
     override func moveItem(fileId: String, fromParentId: String, toParentId: String) async -> String? {
         guard let share = fileId.components(separatedBy: "/").first, let share2 = fromParentId.components(separatedBy: "/").first, let share3 = toParentId.components(separatedBy: "/").first, share == share2, share == share3 else {
             return nil
         }
+        
+        var targetObjectID: NSManagedObjectID? = nil
+        let viewContext = CloudFactory.shared.data.backgroundContext
+        let storage = storageName ?? ""
+        
+        await viewContext.perform {
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+            fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", fileId, storage)
+            fetchRequest.fetchLimit = 1
+            targetObjectID = (try? viewContext.fetch(fetchRequest))?.first?.objectID
+        }
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "moveItem(Samba:\(storageName ?? "") \(fileId) \(fromParentId)->\(toParentId)")
-
+                
                 if let name = fileId.components(separatedBy: "/").dropFirst().last {
                     do {
                         let fromPath = fileId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                         let toPath = toParentId.components(separatedBy: "/").dropFirst().joined(separator: "/") + "/\(name)"
                         let newid = try await sessionManager.move(share: share, fromPath: fromPath, toPath: toPath)
-                        await CloudFactory.shared.cache.remove(storage: storageName!, id: fileId)
+                        
+                        await viewContext.perform {
+                            if let objID = targetObjectID, let existing = try? viewContext.existingObject(with: objID) as? RemoteData {
+                                SambaStorage.cascadeDelete(item: existing, in: viewContext)
+                            }
+                            try? viewContext.save()
+                        }
                         return newid
                     }
                     catch {
@@ -809,21 +902,56 @@ public class SambaStorage: NetworkStorage {
             return nil
         }
     }
-
+    
     override func uploadFile(parentId: String, uploadname: String, target: URL, progress: ((Int64, Int64) async throws -> Void)? = nil) async throws -> String? {
         defer {
             try? FileManager.default.removeItem(at: target)
         }
-
+        
         do {
             return try await callWithRetry(action: { [self] in
                 os_log("%{public}@", log: log, type: .debug, "uploadFile(Samba:\(storageName ?? "") \(uploadname)->\(parentId) \(target)")
-
+                
                 if let share = parentId.components(separatedBy: "/").first {
                     let path = parentId.components(separatedBy: "/").dropFirst().joined(separator: "/")
                     do {
                         if try await sessionManager.write(share: share, path: "\(path)/\(uploadname)", url: target, progress: progress) {
-                            return "\(parentId)/\(uploadname)"
+                            let newid = "\(parentId)/\(uploadname)"
+                            
+                            let viewContext = CloudFactory.shared.data.backgroundContext
+                            let storage = storageName ?? ""
+                            let attr = try? FileManager.default.attributesOfItem(atPath: target.path)
+                            let fileSize = attr?[.size] as? Int64 ?? 0
+                            
+                            await viewContext.perform {
+                                let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
+                                fetchRequest.predicate = NSPredicate(format: "id == %@ && storage == %@", newid, storage)
+                                fetchRequest.fetchLimit = 1
+                                let existing = (try? viewContext.fetch(fetchRequest))?.first
+                                
+                                let targetItem = existing ?? RemoteData(context: viewContext)
+                                targetItem.storage = storage
+                                targetItem.id = newid
+                                targetItem.name = uploadname
+                                
+                                let comp = uploadname.components(separatedBy: ".")
+                                if comp.count > 1 {
+                                    targetItem.ext = comp.last!.lowercased()
+                                } else {
+                                    targetItem.ext = ""
+                                }
+                                
+                                targetItem.cdate = Date()
+                                targetItem.mdate = Date()
+                                targetItem.folder = false
+                                targetItem.size = fileSize
+                                targetItem.hashstr = nil
+                                targetItem.parent = parentId
+                                targetItem.path = "\(storage):/\(newid)"
+                                
+                                try? viewContext.save()
+                            }
+                            return newid
                         }
                     }
                     catch {

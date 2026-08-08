@@ -137,7 +137,9 @@ struct MainUIView: View {
 
     func rowReplace(_ from: IndexSet, _ to: Int) {
         storagasList.move(fromOffsets: from, toOffset: to)
-        CloudFactory.shared.setShowList(storagasList)
+        Task {
+            await CloudFactory.shared.setShowList(storagasList)
+        }
     }
     
     func rowRemove(from source: IndexSet) {
@@ -210,7 +212,9 @@ struct MainUIView: View {
             }
             .alert("Restore", isPresented: $showingRestoreAlert) {
                 Button(role: .confirm) {
-                    CloudFactory.shared.setShowList([])
+                    Task {
+                        await CloudFactory.shared.setShowList([])
+                    }
                 } label: {
                     Text("Show all")
                 }
@@ -234,7 +238,9 @@ struct MainUIView: View {
                 Button(role: .confirm) {
                     if let delIdx = toBeDeleted {
                         storagasList.remove(atOffsets: delIdx)
-                        CloudFactory.shared.setShowList(storagasList)
+                        Task {
+                            await CloudFactory.shared.setShowList(storagasList)
+                        }
                     }
                 } label: {
                     Text("Hide")

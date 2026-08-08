@@ -332,12 +332,7 @@ class PlayerManager: NSObject, AVPlayerViewControllerDelegate {
             let commandCenter = MPRemoteCommandCenter.shared()
             if player != nil {
                 UIApplication.shared.beginReceivingRemoteControlEvents()
-                do {
-                    try AVAudioSession.sharedInstance().setCategory(.playback)
-                    try AVAudioSession.sharedInstance().setActive(true)
-                } catch {
-                    print(error)
-                }
+                AudioSessionManager.shared.activateSession()
 
                 commandCenter.nextTrackCommand.addTarget { [weak self] event in
                     self?.player?.player.advanceToNextItem()
@@ -355,7 +350,7 @@ class PlayerManager: NSObject, AVPlayerViewControllerDelegate {
                 commandCenter.nextTrackCommand.removeTarget(nil)
                 commandCenter.previousTrackCommand.removeTarget(nil)
 
-                try? AVAudioSession.sharedInstance().setActive(false)
+                AudioSessionManager.shared.deactivateSession()
                 UIApplication.shared.endReceivingRemoteControlEvents()
             }
             playerViewController?.allowsPictureInPicturePlayback = false

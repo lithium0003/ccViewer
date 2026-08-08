@@ -160,20 +160,20 @@
 			isa = PBXGroup;
 			children = (
 				3C0654A022384BED003BD932 /* CryptCarotDAV.swift */,
+				BE2E4C4530095461005E17A2 /* CryptGocryptfs.swift */,
 				3F987DEB2277608A0020A796 /* Cryptomator.swift */,
 				3CF14613223B29360025081A /* CryptRclone.swift */,
-				BE2E4C4530095461005E17A2 /* CryptGocryptfs.swift */,
+				BEEE31332EDB5A1F00760308 /* FilenStorage.swift */,
+				3C14C453225DBB1A0044E4A7 /* LocalStorage.swift */,
+				3FE215872394F39300CD2A19 /* FilesStorage.swift */,
 				3C40091D22413C340028A45A /* DropBoxStorage.swift */,
 				3CA2C950223495E600481DB5 /* GoogleDriveStorage.swift */,
-				3C14C453225DBB1A0044E4A7 /* LocalStorage.swift */,
-				BE189B3A3021C2F400CA48CD /* SftpStorage.swift */,
 				3C400921224190920028A45A /* OneDriveStorage.swift */,
 				3F3ABABC2273119D002A8D16 /* pCloudStorage.swift */,
-				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
-				BEEE31332EDB5A1F00760308 /* FilenStorage.swift */,
 				BE2E4D91300F4D0F005E17A2 /* S3Storage.swift */,
 				BE186E502E99FAF5002F6CC8 /* SambaStorage.swift */,
-				3FE215872394F39300CD2A19 /* FilesStorage.swift */,
+				BE189B3A3021C2F400CA48CD /* SftpStorage.swift */,
+				3FAF14D22387131F0052AFAB /* WebDAVStorage.swift */,
 			);
 			path = Storages;
 			sourceTree = "<group>";

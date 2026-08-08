@@ -55,8 +55,8 @@ struct EditItemsUIView: View {
     let fileid: String
     @Binding var env: UserEnvObject
     @State var title = ""
-    @State var items: [RemoteData] = []
-    private var searchedItems: [RemoteData] {
+    @State var items: [RemoteDataDTO] = []
+    private var searchedItems: [RemoteDataDTO] {
         searchText.isEmpty ? items : items.filter { $0.name?.localizedStandardContains(searchText) ?? false }
     }
     @State private var searchText: String = ""

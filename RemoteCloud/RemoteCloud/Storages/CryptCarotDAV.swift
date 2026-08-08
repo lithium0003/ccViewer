@@ -466,35 +466,20 @@ public class RemoteCryptCarotDAVStream: SlotStream {
         await super.init(size: OrignalLength)
     }
 
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
-    }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
     
     override func fillHeader() async {
         if let data = try? await remote.read(start: 0, length: Int64(remote.remoteStorage.CryptHeaderByte)) {
-            if !salt.elementsEqual(data.subdata(in: 0..<salt.count)) {
+            if !salt.elementsEqual(data.prefix(salt.count)) {
                 print("error on header check")
-                error = true
+                await setError()
             }
         }
         else {
             print("error on header null")
-            error = true
+            await setError()
         }
         await super.fillHeader()
     }
@@ -526,19 +511,17 @@ public class RemoteCryptCarotDAVStream: SlotStream {
 
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
         let blocksize = remote.remoteStorage.BlockSizeByte
         let headersize = Int64(remote.remoteStorage.CryptHeaderByte)
         let pos2 = pos.lowerBound + headersize
         if await !buffer.dataAvailable(pos: pos) {
-            //print("crypt \(pos1) -> \(pos2)")
             guard pos.lowerBound >= 0 && pos.upperBound < size else {
                 return
             }
             var len = min(size-1, pos.upperBound) - pos.lowerBound + 1
-            //print("pos1 \(pos1) size\(size) len \(len)")
             if len % Int64(blocksize) > 0 {
                 len += Int64(blocksize)
                 len -= len % Int64(blocksize)
@@ -546,36 +529,34 @@ public class RemoteCryptCarotDAVStream: SlotStream {
             let plen = len + Int64(blocksize)
             let ppos2 = pos2 - Int64(blocksize)
             if pos.lowerBound == 0 {
-                //print("pos2 \(pos2) len \(len)")
                 if let data = try? await remote.read(start: pos2, length: len) {
                     if let plain = decode(input: data, IV: self.IV) {
                         await buffer.store(pos: pos.lowerBound, data: plain)
                     }
                     else {
                         print("error on decode1")
-                        self.error = true
+                        await setError()
                     }
                 }
                 else {
                     print("error on readFile")
-                    error = true
+                    await setError()
                 }
             }
             else {
-                //print("ppos2 \(ppos2) len\(plen)")
                 if let data = try? await remote.read(start: ppos2, length: plen), data.count == Int(plen) {
-                    if let plain = decode(input: data.subdata(in: blocksize..<data.count), IV: data.subdata(in: 0..<blocksize)) {
+                    if let plain = decode(input: data.dropFirst(blocksize), IV: data.prefix(blocksize)) {
                         await buffer.store(pos: pos.lowerBound, data: plain)
                     }
                     else {
                         print("ppos2 \(ppos2) len\(plen)")
                         print("error on decode2")
-                        error = true
+                        await setError()
                     }
                 }
                 else {
                     print("error on readFile")
-                    self.error = true
+                    await setError()
                 }
             }
         }

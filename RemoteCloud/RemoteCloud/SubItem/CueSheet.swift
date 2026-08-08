@@ -39,13 +39,14 @@ public class CueSheetRemoteItem: RemoteSubItem {
     }
     
     class func Create(from item: RemoteItem) async -> RemoteItem? {
-        let viewContext = CloudFactory.shared.data.viewContext
+        let context = CloudFactory.shared.data.backgroundContext
         let itemid = item.id
         let storage = item.storage
+        
         guard await CloudFactory.shared.data.listData(storage: storage, parentID: itemid).isEmpty else {
             return item
         }
-
+        
         let stream = await item.open()
         guard let data = try? await stream.read() else {
             return nil
@@ -56,31 +57,45 @@ public class CueSheetRemoteItem: RemoteSubItem {
         guard let wavname = cue.targetWave else {
             return nil
         }
+        
         let itemparent = item.parent
-        let wavId = await viewContext.perform { () -> String? in
-            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "RemoteData")
+        let wavId = await context.perform { () -> String? in
+            let fetchRequest = NSFetchRequest<RemoteData>(entityName: "RemoteData")
             fetchRequest.predicate = NSPredicate(format: "parent == %@ && storage == %@ && name == %@", itemparent, storage, wavname)
-            
-            guard let result = try? viewContext.fetch(fetchRequest) as? [RemoteData], let wavdata = result.first else {
+            fetchRequest.fetchLimit = 1
+            guard let results = try? context.fetch(fetchRequest), let wavdata = results.first else {
                 return nil
             }
             return wavdata.id
         }
+        
         guard let wavId, let wavitem = await CloudFactory.shared.data.getData(storage: storage, fileId: wavId)?.getItem() else {
             return nil
         }
         let wavstream = await wavitem.open()
         guard let wavFile = await RemoteWaveFile(stream: wavstream, size: wavitem.size) else {
-            wavstream.isLive = false
             await wavitem.cancel()
             return nil
         }
+        
         let bytesPerSec = wavFile.wavFormat.BitsPerSample/8 * wavFile.wavFormat.SampleRate * wavFile.wavFormat.NumChannels
         let bytesPerFrame = bytesPerSec / 75
         let endTime = wavFile.wavSize / bytesPerFrame
         
         var diskTitle: String?
         var diskPerformer: String?
+        
+        struct TrackData {
+            let index: Int
+            let id: String
+            let name: String
+            let size: Int64
+            let start: Int64
+            let end: Int64
+            let infoStr: String
+        }
+        var tracksToAdd: [TrackData] = []
+        
         for (index, track) in cue.tracks.enumerated() {
             if index == 0 {
                 diskTitle = track["title"] as? String
@@ -89,16 +104,12 @@ public class CueSheetRemoteItem: RemoteSubItem {
             }
             
             let id = "\(item.id)\t\(index)"
-            guard let title = track["title"] as? String ?? diskTitle else {
-                continue
-            }
-            guard let performer = track["performer"] as? String ?? diskPerformer else {
-                continue
-            }
+            guard let title = track["title"] as? String ?? diskTitle else { continue }
+            guard let performer = track["performer"] as? String ?? diskPerformer else { continue }
+            
             let name = String(format: "%02d : %@ - %@", index, performer, title)
-            guard let start = track["start"] as? Int64 else {
-                continue
-            }
+            guard let start = track["start"] as? Int64 else { continue }
+            
             let end = track["end"] as? Int64 ?? Int64(endTime)
             let size = 44 + (end - start) * Int64(bytesPerFrame)
             let timelen = Double(end - start) / 75.0
@@ -108,29 +119,39 @@ public class CueSheetRemoteItem: RemoteSubItem {
             sec -= min * 60
             let infostr = String(format: "%02d:%02d.%03d", min, sec, msec)
             
-            let newitem = RemoteData(context: viewContext)
-            newitem.storage = storage
-            newitem.id = id
-            newitem.name = name
-            newitem.ext = "wav"
-            newitem.cdate = item.cDate
-            newitem.mdate = item.mDate
-            newitem.folder = false
-            newitem.size = size
-            newitem.hashstr = ""
-            newitem.parent = item.id
-            newitem.path = item.path + "/\(index)"
-            newitem.substart = start
-            newitem.subend = end
-            newitem.subid = "WAV"+wavId
-            newitem.subinfo = infostr
+            tracksToAdd.append(TrackData(index: index, id: id, name: name, size: size, start: start, end: end, infoStr: infostr))
         }
-        await viewContext.perform {
-            try? viewContext.save()
+        
+        let cDate = item.cDate
+        let mDate = item.mDate
+        let path = item.path
+        
+        await context.perform {
+            for track in tracksToAdd {
+                let newitem = RemoteData(context: context)
+                newitem.storage = storage
+                newitem.id = track.id
+                newitem.name = track.name
+                newitem.ext = "wav"
+                newitem.cdate = cDate
+                newitem.mdate = mDate
+                newitem.folder = false
+                newitem.size = track.size
+                newitem.hashstr = ""
+                newitem.parent = itemid
+                newitem.path = path + "/\(track.index)"
+                newitem.substart = track.start
+                newitem.subend = track.end
+                newitem.subid = "WAV" + wavId
+                newitem.subinfo = track.infoStr
+                newitem.baseStorage = storage
+                newitem.baseId = wavId
+            }
+            try? context.save()
         }
         return item
     }
-
+    
     public override func open() async -> RemoteStream {
         return await CueSheetStream(remote: self)
     }
@@ -170,36 +191,21 @@ public class CueSheetStream: SlotStream {
         await super.init(size: remote.size)
     }
 
-    override func setLive(_ live: Bool) {
-        if !live {
-            let sem = DispatchSemaphore(value: 0)
-            Task(priority: .userInitiated) {
-                defer {
-                    sem.signal()
-                }
-                await remote.cancel()
-            }
-            sem.wait()
-        }
+    override func cancelInternal() async {
+        await remote.cancel()
     }
-
-    override func setError(_ isError: Bool) {
-        if isError {
-            isLive = false
-        }
-    }
-
+    
     override func fillHeader() async {
         let frames = remote.subend - remote.substart
         let stream = await remote.wavitem.open()
         guard let wavfile = await RemoteWaveFile(stream: stream, size: remote.wavitem.size) else {
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
         header = wavfile.getHeader(frames: frames)
         guard let header = header else {
-            error = true
+            await setError()
             await super.fillHeader()
             return
         }
@@ -214,13 +220,13 @@ public class CueSheetStream: SlotStream {
 
     override func subFillBuffer(pos: ClosedRange<Int64>) async {
         guard await initialized.wait(timeout: .seconds(10)) == .success else {
-            error = true
+            await setError()
             return
         }
         if await !buffer.dataAvailable(pos: pos), isLive {
             let len = min(size-1, pos.upperBound) - pos.lowerBound + 1
             guard let header = header else {
-                error = true
+                await setError()
                 return
             }
             if pos.lowerBound < header.count {
@@ -233,7 +239,7 @@ public class CueSheetStream: SlotStream {
                 }
                 else {
                     print("error on readFile")
-                    error = true
+                    await setError()
                 }
             }
             else {
@@ -243,7 +249,7 @@ public class CueSheetStream: SlotStream {
                 }
                 else {
                     print("error on readFile")
-                    error = true
+                    await setError()
                 }
             }
         }
@@ -330,12 +336,12 @@ class RemoteWaveFile {
         guard let data = try? await remoteStream.read(position: 0, length: 12), data.count == 12 else {
             return
         }
-        let ChunkID = data.subdata(in: 0..<4)
+        let ChunkID = data[data.startIndex..<data.startIndex+4]
         guard String(data: ChunkID, encoding: .ascii) == "RIFF" else {
             return
         }
         ChunkSize = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) }
-        let Format = data.subdata(in: 8..<12)
+        let Format = data[data.startIndex+8..<data.startIndex+12]
         guard String(data: Format, encoding: .ascii) == "WAVE" else {
             return
         }
@@ -347,7 +353,7 @@ class RemoteWaveFile {
         guard let data = try? await remoteStream.read(position: Int64(pos), length: 8), data.count == 8 else {
             return
         }
-        let ChunkID = data.subdata(in: 0..<4)
+        let ChunkID = data[data.startIndex..<data.startIndex+4]
         let ChunkSize = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) }
         if String(data: ChunkID, encoding: .ascii) == "fmt " {
             await loadFmtSubChunk(pos: pos+8, ChunkSize: ChunkSize)

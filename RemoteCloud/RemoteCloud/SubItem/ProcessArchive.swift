@@ -10,12 +10,13 @@ import Foundation
 internal import UniformTypeIdentifiers
 import CoreData
 
-public class ArchiveBridge {
+class ArchiveBridge: @unchecked Sendable {
     let item: RemoteItem
     var stream: RemoteStream?
     var offset: Int64 = 0
     var buffer: Data?
     var sendBuffer: UnsafeMutableRawBufferPointer?
+
     nonisolated var selfref: UnsafeMutableRawPointer! {
         Unmanaged<ArchiveBridge>.passUnretained(self).toOpaque()
     }
@@ -142,121 +143,160 @@ public class ArchiveBridge {
     }
 }
 
-@concurrent
-func processArchive(item: RemoteItem) async -> [String: (size: Int64, mdate: Date, cdata: Date)] {
-    let a = archive_read_new()
-    archive_read_support_format_all(a)
-    archive_read_support_filter_all(a)
-    let bridge = ArchiveBridge(item: item)
-    var filelist: [String: (size: Int64, mdate: Date, cdata: Date)] = [:]
-    archive_read_set_callback_data(a, bridge.selfref);
-    archive_read_set_open_callback(a, bridge.archive_open_callback);
-    archive_read_set_read_callback(a, bridge.archive_read_callback);
-    archive_read_set_skip_callback(a, bridge.archive_skip_callback);
-    archive_read_set_seek_callback(a, bridge.archive_seek_callback);
-    archive_read_set_close_callback(a, bridge.archive_close_callback);
-    if archive_read_open1(a) == ARCHIVE_OK {
-        defer {
-            if let s = archive_error_string(a) {
-                print(String(cString: s))
-            }
-            archive_read_free(a)
+final class CancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _isCancelled = false
+    
+    var isCancelled: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _isCancelled
         }
-        var entry: OpaquePointer?
-        while (ARCHIVE_WARN...ARCHIVE_OK ~= archive_read_next_header(a, &entry)) {
-            if Task.isCancelled {
-                return filelist
-            }
-            guard let name = archive_entry_pathname(entry) else {
-                continue
-            }
-            var pathname = ""
-            if let utf8name = String(cString: name, encoding: .utf8) {
-                pathname = utf8name
-            }
-            else if let sjisname = String(cString: name, encoding: .shiftJIS) {
-                pathname = sjisname
-            }
-            else if let eucname = String(cString: name, encoding: .japaneseEUC) {
-                pathname = eucname
-            }
-            if archive_entry_filetype(entry) & S_IFDIR > 0 {
-                let mdate_t = Double(archive_entry_mtime(entry)) + Double(archive_entry_mtime_nsec(entry)) / 1_000_000_000.0
-                let cdate_t = Double(archive_entry_birthtime(entry)) + Double(archive_entry_birthtime(entry)) / 1_000_000_000.0
-                filelist[pathname] = (0, Date(timeIntervalSince1970: mdate_t), Date(timeIntervalSince1970: cdate_t))
-            }
-            else if archive_entry_filetype(entry) & S_IFREG > 0 {
-                let size = archive_entry_size(entry)
-                let mdate_t = Double(archive_entry_mtime(entry)) + Double(archive_entry_mtime_nsec(entry)) / 1_000_000_000.0
-                let cdate_t = Double(archive_entry_birthtime(entry)) + Double(archive_entry_birthtime(entry)) / 1_000_000_000.0
-                filelist[pathname] = (size, Date(timeIntervalSince1970: mdate_t), Date(timeIntervalSince1970: cdate_t))
-            }
+        set {
+            lock.lock()
+            _isCancelled = newValue
+            lock.unlock()
         }
     }
-    for key in filelist.keys {
-        let comp = key.components(separatedBy: "/").filter({ !$0.isEmpty })
-        if comp.count > 1 {
-            for i in 1..<comp.count {
-                let parentDir = comp.dropLast(i).joined(separator: "/") + "/"
-                if filelist[parentDir] == nil {
-                    filelist[parentDir] = (0, Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 0))
-                }
-            }
-        }
-    }
-    return filelist
 }
 
-@concurrent
-func getDataFromArchive(item: RemoteItem, file: String) async -> Data? {
-    let a = archive_read_new()
-    archive_read_support_format_all(a)
-    archive_read_support_filter_all(a)
+func processArchive(item: RemoteItem) async -> [String: (size: Int64, mdate: Date, cdata: Date)] {
     let bridge = ArchiveBridge(item: item)
-    archive_read_set_callback_data(a, bridge.selfref);
-    archive_read_set_open_callback(a, bridge.archive_open_callback);
-    archive_read_set_read_callback(a, bridge.archive_read_callback);
-    archive_read_set_skip_callback(a, bridge.archive_skip_callback);
-    archive_read_set_seek_callback(a, bridge.archive_seek_callback);
-    archive_read_set_close_callback(a, bridge.archive_close_callback);
-    if archive_read_open1(a) == ARCHIVE_OK {
-        defer {
-            archive_read_free(a)
-        }
-        var entry: OpaquePointer?
-        while (ARCHIVE_WARN...ARCHIVE_OK ~= archive_read_next_header(a, &entry)) {
-            if Task.isCancelled {
-                return nil
-            }
-            guard let name = archive_entry_pathname(entry) else {
-                continue
-            }
-            var pathname = ""
-            if let utf8name = String(cString: name, encoding: .utf8) {
-                pathname = utf8name
-            }
-            else if let sjisname = String(cString: name, encoding: .shiftJIS) {
-                pathname = sjisname
-            }
-            else if let eucname = String(cString: name, encoding: .japaneseEUC) {
-                pathname = eucname
-            }
-            if file == pathname {
-                var data = Data()
-                var buf = [UInt8](repeating: 0, count: 16384)
-                while true {
-                    let readLength = archive_read_data(a, &buf, buf.count)
-                    if readLength < 0 { break }
-                    data.append(buf, count: readLength)
-                    if readLength < buf.count {
-                        break
+    let flag = CancellationFlag()
+    return await withTaskCancellationHandler {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let a = archive_read_new()
+                archive_read_support_format_all(a)
+                archive_read_support_filter_all(a)
+                var filelist: [String: (size: Int64, mdate: Date, cdata: Date)] = [:]
+                archive_read_set_callback_data(a, bridge.selfref);
+                archive_read_set_open_callback(a, bridge.archive_open_callback);
+                archive_read_set_read_callback(a, bridge.archive_read_callback);
+                archive_read_set_skip_callback(a, bridge.archive_skip_callback);
+                archive_read_set_seek_callback(a, bridge.archive_seek_callback);
+                archive_read_set_close_callback(a, bridge.archive_close_callback);
+                if archive_read_open1(a) == ARCHIVE_OK {
+                    defer {
+                        if let s = archive_error_string(a) {
+                            print(String(cString: s))
+                        }
+                        archive_read_free(a)
+                    }
+                    var entry: OpaquePointer?
+                    while (ARCHIVE_WARN...ARCHIVE_OK ~= archive_read_next_header(a, &entry)) {
+                        if flag.isCancelled {
+                            continuation.resume(returning: filelist)
+                            return
+                        }
+                        guard let name = archive_entry_pathname(entry) else {
+                            continue
+                        }
+                        var pathname = ""
+                        if let utf8name = String(cString: name, encoding: .utf8) {
+                            pathname = utf8name
+                        }
+                        else if let sjisname = String(cString: name, encoding: .shiftJIS) {
+                            pathname = sjisname
+                        }
+                        else if let eucname = String(cString: name, encoding: .japaneseEUC) {
+                            pathname = eucname
+                        }
+                        if archive_entry_filetype(entry) & S_IFDIR > 0 {
+                            let mdate_t = Double(archive_entry_mtime(entry)) + Double(archive_entry_mtime_nsec(entry)) / 1_000_000_000.0
+                            let cdate_t = Double(archive_entry_birthtime(entry)) + Double(archive_entry_birthtime_nsec(entry)) / 1_000_000_000.0
+                            filelist[pathname] = (0, Date(timeIntervalSince1970: mdate_t), Date(timeIntervalSince1970: cdate_t))
+                        }
+                        else if archive_entry_filetype(entry) & S_IFREG > 0 {
+                            let size = archive_entry_size(entry)
+                            let mdate_t = Double(archive_entry_mtime(entry)) + Double(archive_entry_mtime_nsec(entry)) / 1_000_000_000.0
+                            let cdate_t = Double(archive_entry_birthtime(entry)) + Double(archive_entry_birthtime_nsec(entry)) / 1_000_000_000.0
+                            filelist[pathname] = (size, Date(timeIntervalSince1970: mdate_t), Date(timeIntervalSince1970: cdate_t))
+                        }
                     }
                 }
-                return data
+                for key in filelist.keys {
+                    let comp = key.components(separatedBy: "/").filter({ !$0.isEmpty })
+                    if comp.count > 1 {
+                        for i in 1..<comp.count {
+                            let parentDir = comp.dropLast(i).joined(separator: "/") + "/"
+                            if filelist[parentDir] == nil {
+                                filelist[parentDir] = (0, Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 0))
+                            }
+                        }
+                    }
+                }
+                continuation.resume(returning: filelist)
+                return
             }
         }
+    } onCancel: {
+        flag.isCancelled = true
     }
-    return nil
+}
+
+func getDataFromArchive(item: RemoteItem, file: String) async -> Data? {
+    let bridge = ArchiveBridge(item: item)
+    let flag = CancellationFlag()
+    return await withTaskCancellationHandler {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let a = archive_read_new()
+                archive_read_support_format_all(a)
+                archive_read_support_filter_all(a)
+                archive_read_set_callback_data(a, bridge.selfref);
+                archive_read_set_open_callback(a, bridge.archive_open_callback);
+                archive_read_set_read_callback(a, bridge.archive_read_callback);
+                archive_read_set_skip_callback(a, bridge.archive_skip_callback);
+                archive_read_set_seek_callback(a, bridge.archive_seek_callback);
+                archive_read_set_close_callback(a, bridge.archive_close_callback);
+                if archive_read_open1(a) == ARCHIVE_OK {
+                    defer {
+                        archive_read_free(a)
+                    }
+                    var entry: OpaquePointer?
+                    while (ARCHIVE_WARN...ARCHIVE_OK ~= archive_read_next_header(a, &entry)) {
+                        if flag.isCancelled {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        guard let name = archive_entry_pathname(entry) else {
+                            continue
+                        }
+                        var pathname = ""
+                        if let utf8name = String(cString: name, encoding: .utf8) {
+                            pathname = utf8name
+                        }
+                        else if let sjisname = String(cString: name, encoding: .shiftJIS) {
+                            pathname = sjisname
+                        }
+                        else if let eucname = String(cString: name, encoding: .japaneseEUC) {
+                            pathname = eucname
+                        }
+                        if file == pathname {
+                            var data = Data()
+                            var buf = [UInt8](repeating: 0, count: 16384)
+                            while true {
+                                let readLength = archive_read_data(a, &buf, buf.count)
+                                if readLength < 0 { break }
+                                data.append(&buf, count: readLength)
+                                if readLength < buf.count {
+                                    break
+                                }
+                            }
+                            continuation.resume(returning: data)
+                            return
+                        }
+                    }
+                }
+                continuation.resume(returning: nil)
+                return
+            }
+        }
+    } onCancel: {
+        flag.isCancelled = true
+    }
 }
 
 public class ArchiveRemoteItem: RemoteSubItem {
@@ -279,42 +319,48 @@ public class ArchiveRemoteItem: RemoteSubItem {
     class func Create(from item: RemoteItem) async -> RemoteItem? {
         let itemid = item.id
         let storage = item.storage
-        let viewContext = CloudFactory.shared.data.viewContext
+        let mDate = item.mDate
+        let path = item.path
+        let context = CloudFactory.shared.data.backgroundContext
+        
         guard await CloudFactory.shared.data.listData(storage: storage, parentID: itemid).isEmpty else {
             return item
         }
-
+        
         let content = await processArchive(item: item)
-        for (subItem, subInfo) in content {
-            let id = "\(item.id)\t\(subItem)"
-            let comp = subItem.components(separatedBy: "/").filter({ !$0.isEmpty })
-            let name = comp.last ?? ""
-            let parent: String
-            if comp.count > 1 {
-                parent = "\(item.id)\t\(comp.dropLast().joined(separator: "/"))/"
+        
+        await context.perform {
+            for (subItem, subInfo) in content {
+                let id = "\(itemid)\t\(subItem)"
+                let comp = subItem.components(separatedBy: "/").filter({ !$0.isEmpty })
+                let name = comp.last ?? ""
+                let parent: String
+                if comp.count > 1 {
+                    parent = "\(itemid)\t\(comp.dropLast().joined(separator: "/"))/"
+                } else {
+                    parent = itemid
+                }
+                
+                let newitem = RemoteData(context: context)
+                newitem.storage = storage
+                newitem.id = id
+                newitem.name = name
+                newitem.ext = name.components(separatedBy: ".").last ?? ""
+                newitem.cdate = subInfo.cdata
+                newitem.mdate = subInfo.mdate
+                newitem.folder = subItem.hasSuffix("/")
+                newitem.size = subInfo.size
+                newitem.parent = parent
+                newitem.parentDate = mDate
+                newitem.path = path + "/\(subItem)"
+                newitem.subid = "CAB" + itemid
+                
+                newitem.baseStorage = storage
+                newitem.baseId = itemid
             }
-            else {
-                parent = item.id
-            }
-            
-            let newitem = RemoteData(context: viewContext)
-            newitem.storage = storage
-            newitem.id = id
-            newitem.name = name
-            newitem.ext = name.components(separatedBy: ".").last ?? ""
-            newitem.cdate = subInfo.cdata
-            newitem.mdate = subInfo.mdate
-            newitem.folder = subItem.hasSuffix("/")
-            newitem.size = subInfo.size
-            newitem.hashstr = ""
-            newitem.parent = parent
-            newitem.parentDate = item.mDate
-            newitem.path = item.path + "/\(subItem)"
-            newitem.subid = "CAB"+item.id
+            try? context.save()
         }
-        await viewContext.perform {
-            try? viewContext.save()
-        }
+        
         return item
     }
     
@@ -358,9 +404,12 @@ public class ArchiveStream: SlotStream {
     
     override func fillHeader() async {
         itemData = await getDataFromArchive(item: remote.baseItem, file: remote.filepath)
+        if itemData == nil {
+            await setError()
+        }
         await super.fillHeader()
     }
-
+    
     override func firstFill() async {
     }
     

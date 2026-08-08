@@ -31,8 +31,8 @@ struct ItemsUIView: View {
     let fileid: String
     @Binding var env: UserEnvObject
     @State private var title = ""
-    @State private var items: [RemoteData] = []
-    private var searchedItems: [RemoteData] {
+    @State private var items: [RemoteDataDTO] = []
+    private var searchedItems: [RemoteDataDTO] {
         searchText.isEmpty ? items : items.filter { $0.name?.localizedStandardContains(searchText) ?? false }
     }
     @State private var itemMark: [String: Double] = [:]
@@ -131,7 +131,7 @@ struct ItemsUIView: View {
     }
     
     @ViewBuilder
-    func backgroundColor(_ item: RemoteData) -> some View {
+    func backgroundColor(_ item: RemoteDataDTO) -> some View {
         if let id = item.id, let p = itemMark[id], p.isFinite, p >= 0 {
             GeometryReader { geometry in
                 Color("DidPlayColor")
@@ -165,7 +165,7 @@ struct ItemsUIView: View {
                                 .listRowBackground(Color("FolderColor"))
                             }
                             else if item.hasSubitems {
-                                NavigationLink(value: HomePath.items(storage: storage, fileid: item.id ?? "")) {
+                                HStack {
                                     VStack(alignment: .leading) {
                                         Text(verbatim: item.name ?? "")
                                             .font(.headline)
@@ -178,6 +178,14 @@ struct ItemsUIView: View {
                                                 .font(.footnote)
                                         }
                                     }
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    env.path.append(HomePath.items(storage: storage, fileid: item.id ?? ""))
+                                }
+                                .onLongPressGesture(minimumDuration: 1.0) {
+                                    env.path.append(HomePath.rawopen(storage: storage, fileid: item.id ?? ""))
                                 }
                                 .listRowBackground(Color("CueColor"))
                             }
