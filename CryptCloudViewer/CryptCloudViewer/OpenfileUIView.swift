@@ -35,11 +35,26 @@ struct OpenfileUIView: View {
     ]
     
     public static let codeExtensions: Set<String> = [
-        "c", "h", "cpp", "hpp", "cc", "cxx", "cs", "java", "swift", "m", "mm",
-        "js", "jsx", "mjs", "ts", "tsx", "py", "rb", "php", "pl", "pm",
-        "go", "rs", "kt", "kts", "dart", "scala",
-        "html", "htm", "xml", "xhtml", "svg", "css", "scss", "json", "yaml", "yml", "ini", "toml",
-        "sh", "bash", "zsh", "sql", "diff", "patch", "makefile", "mk", "dockerfile"
+        "js", "jsx", "mjs", "cjs", "ts", "tsx", "html", "htm", "xml", "svg",
+        "css", "scss", "sass", "less", "styl", "json", "json5", "yaml", "yml", "toml",
+        "php", "rb", "py", "pyw", "gql", "graphql", "proto",
+
+        "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "hxx", "cs", "java", "kt", "kts",
+        "swift", "go", "rs", "d", "nim", "zig", "m", "mm", "v", "sv", "vhd", "vhdl",
+
+        "sh", "bash", "zsh", "fish", "ps1", "psm1", "bat", "cmd", "dockerfile",
+        "nginx", "conf", "ini", "properties", "pf", "mk", "makefile", "cmake",
+
+        "hs", "lhs", "ml", "mli", "clj", "cljs", "cljc", "edn", "ex", "exs",
+        "erl", "hrl", "fs", "fsi", "fsscript", "lisp", "lsp", "scm", "ss", "rkt",
+
+        "f", "for", "f77", "f90", "f95", "f03", "f08", "m", "mat", "jl", "r",
+        "tex", "sty", "cls", "sql", "pls", "plsql", "gcode", "nc",
+
+        "pas", "pp", "inc", "dpr", "as", "ahk", "au3", "basic", "bas", "vb",
+        "vbs", "vbe", "lua", "tcl", "tk", "pl", "pm", "elm", "cr", "dart",
+        "gd", "gml", "groovy", "gradle", "haml", "hbs", "handlebars", "twig",
+        "blade", "sol", "wast", "wasm", "diff", "patch"
     ]
     
     enum DispType {

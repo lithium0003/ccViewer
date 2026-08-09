@@ -218,9 +218,123 @@ struct TextViewUIView: View {
         }
     }
     
-    private func decodeDataToString(_ data: Data, forcedEncoding: String.Encoding? = nil) -> String? {
+    private func decodeDataToString(_ data: Data, forcedEncoding: String.Encoding? = nil) async -> String? {
+        func decodeShiftJISLossy(_ data: Data) -> String {
+            if let str = String(data: data, encoding: .shiftJIS) {
+                return str
+            }
+            
+            var result = ""
+            var index = 0
+            let count = data.count
+            
+            data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                guard let ptr = bytes.bindMemory(to: UInt8.self).baseAddress else { return }
+                
+                while index < count {
+                    let byte1 = ptr[index]
+                    
+                    let isFirstByteOfSJIS = (byte1 >= 0x81 && byte1 <= 0x9F) || (byte1 >= 0xE0 && byte1 <= 0xFC)
+                    
+                    if isFirstByteOfSJIS && index + 1 < count {
+                        let byte2 = ptr[index + 1]
+                        let isSecondByteOfSJIS = (byte2 >= 0x40 && byte2 <= 0x7E) || (byte2 >= 0x80 && byte2 <= 0xFC)
+                        
+                        if isSecondByteOfSJIS {
+                            let subData = Data([byte1, byte2])
+                            if let str = String(data: subData, encoding: .shiftJIS) {
+                                result.append(str)
+                                index += 2
+                                continue
+                            }
+                        }
+                    }
+                    
+                    let subData = Data([byte1])
+                    if let str = String(data: subData, encoding: .shiftJIS) {
+                        result.append(str)
+                    } else {
+                        result.append("?")
+                    }
+                    index += 1
+                }
+            }
+            
+            return result
+        }
+
+        func decodeEUCJPLossy(_ data: Data) -> String {
+            if let str = String(data: data, encoding: .japaneseEUC) {
+                return str
+            }
+            
+            var result = ""
+            var index = 0
+            let count = data.count
+            
+            data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                guard let ptr = bytes.bindMemory(to: UInt8.self).baseAddress else { return }
+                
+                while index < count {
+                    let b1 = ptr[index]
+                    
+                    if b1 == 0x8F && index + 2 < count {
+                        let b2 = ptr[index + 1]
+                        let b3 = ptr[index + 2]
+                        if (b2 >= 0xA1 && b2 <= 0xFE) && (b3 >= 0xA1 && b3 <= 0xFE) {
+                            let subData = Data([b1, b2, b3])
+                            if let str = String(data: subData, encoding: .japaneseEUC) {
+                                result.append(str)
+                                index += 3
+                                continue
+                            }
+                        }
+                    }
+                    
+                    if index + 1 < count {
+                        let b2 = ptr[index + 1]
+                        
+                        let isHalfKana = (b1 == 0x8E) && (b2 >= 0xA1 && b2 <= 0xDF)
+                        let isKanji = (b1 >= 0xA1 && b1 <= 0xFE) && (b2 >= 0xA1 && b2 <= 0xFE)
+                        
+                        if isHalfKana || isKanji {
+                            let subData = Data([b1, b2])
+                            if let str = String(data: subData, encoding: .japaneseEUC) {
+                                result.append(str)
+                                index += 2
+                                continue
+                            }
+                        }
+                    }
+                    
+                    let subData = Data([b1])
+                    if let str = String(data: subData, encoding: .japaneseEUC) {
+                        result.append(str)
+                    } else {
+                        result.append("?")
+                    }
+                    index += 1
+                }
+            }
+            
+            return result
+        }
+        
         if let encoding = forcedEncoding {
-            return String(data: data, encoding: encoding)
+            if let str = String(data: data, encoding: encoding) {
+                return str
+            }
+
+            switch encoding {
+            case .utf8:
+                return String(decoding: data, as: UTF8.self)
+            case .shiftJIS:
+                return decodeShiftJISLossy(data)
+            case .japaneseEUC:
+                return decodeEUCJPLossy(data)
+            default:
+                break
+            }
         }
         
         if let utf8String = String(data: data, encoding: .utf8) {
@@ -267,15 +381,70 @@ struct TextViewUIView: View {
         await Task.yield()
         remoteStream = await remoteItem.open()
     }
+
+    private func getHighlightLanguage(from extension: String) -> String {
+        let ext = `extension`.lowercased()
+        
+        let aliasMap: [String: String] = [
+            "f": "fortran", "for": "fortran", "f77": "fortran", "f90": "fortran", "f95": "fortran", "f03": "fortran", "f08": "fortran",
+            
+            "h": "c", "cc": "cpp", "cxx": "cpp", "hpp": "cpp", "hh": "cpp", "hxx": "cpp", "m": "objectivec", "mm": "objectivec",
+            
+            "js": "javascript", "mjs": "javascript", "cjs": "javascript", "jsx": "javascript",
+            "ts": "typescript", "tsx": "typescript",
+            "htm": "xml", "html": "xml", "svg": "xml",
+            "styl": "stylus", "gql": "graphql",
+            
+            "py": "python", "pyw": "python",
+            "rb": "ruby",
+            "sh": "bash", "zsh": "bash", "fish": "shell",
+            
+            "cs": "csharp",
+            "ps1": "powershell", "psm1": "powershell",
+            "bat": "dos", "cmd": "dos",
+            "vbs": "vbscript", "vbe": "vbscript", "vb": "vbnet",
+            
+            "kt": "kotlin", "kts": "kotlin",
+            "rs": "rust",
+            "hs": "haskell",
+            "ml": "ocaml", "mli": "ocaml",
+            "fs": "fsharp", "fsi": "fsharp", "fsscript": "fsharp",
+            "clj": "clojure", "cljs": "clojure", "cljc": "clojure", "edn": "clojure",
+            "ex": "elixir", "exs": "elixir",
+            "erl": "erlang", "hrl": "erlang",
+            "cr": "crystal",
+            "lsp": "lisp", "scm": "scheme", "ss": "scheme",
+            
+            "yml": "yaml",
+            "conf": "nginx",
+            "mk": "makefile",
+            "proto": "protobuf",
+            "pls": "pgsql", "plsql": "pgsql",
+            
+            "tex": "latex", "sty": "latex",
+            "jl": "julia",
+            "nc": "gcode",
+            "pas": "delphi", "pp": "delphi", "dpr": "delphi",
+            "as": "actionscript",
+            "ahk": "autohotkey",
+            "au3": "autoit", "bas": "basic",
+            "pl": "perl", "pm": "perl",
+            "hbs": "handlebars"
+        ]
+        
+        return aliasMap[ext] ?? ext
+    }
     
     private func loadTextData() async {
         attributedTextContent = nil
         htmlContent = ""
         internalHtmlContent = ""
         textContent = ""
+        await Task.yield()
         if let remoteStream, let data = try? await remoteStream.read(position: 0, length: maxLoadSize) {
             guard !data.isEmpty else { return }
-            if let txt = decodeDataToString(data, forcedEncoding: currentEncoding) {
+            await Task.yield()
+            if let txt = await decodeDataToString(data, forcedEncoding: currentEncoding) {
                 if let remoteItem, isRichAbalable, richPresentation {
                     let ext = remoteItem.ext.lowercased()
                     if let uti = UTType(filenameExtension: ext), uti.conforms(to: .html) {
@@ -296,10 +465,11 @@ struct TextViewUIView: View {
                         }
                     }
                     else if ext == "md" || ext == "markdown" {
+                        let currentLang = Locale.current.language.languageCode?.identifier ?? "en"
                         let base64Text = txt.data(using: .utf8)?.base64EncodedString() ?? ""
                         let htmlTemplate = """
                         <!DOCTYPE html>
-                        <html lang="ja">
+                        <html lang="\(currentLang)">
                         <head>
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -336,11 +506,13 @@ struct TextViewUIView: View {
                         return
                     }
                     else if OpenfileUIView.codeExtensions.contains(ext) {
+                        let currentLang = Locale.current.language.languageCode?.identifier ?? "en"
                         let base64Text = txt.data(using: .utf8)?.base64EncodedString() ?? ""
-                        let langClass = "language-\(ext)"
+                        let langName = getHighlightLanguage(from: remoteItem.ext)
+                        let langClass = "language-\(langName)"
                         let codeHtmlTemplate = """
                         <!DOCTYPE html>
-                        <html lang="ja">
+                        <html lang="\(currentLang)">
                         <head>
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">

@@ -114,6 +114,9 @@ struct ItemsUIView: View {
         else if let item = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid) {
             title = item.path ?? ""
         }
+        if title.isEmpty {
+            title = storage
+        }
     }
     
     func sortButton(key: LocalizedStringKey, idx: Int) -> some View {
