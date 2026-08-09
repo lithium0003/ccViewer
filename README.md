@@ -7,7 +7,7 @@ This app is iOS cloud viewer with keeping encrypted. App supports device folders
 
 In version 1.4.0, Chromecast support added. Please keep the app foreground and not lock the device while casting to Chromecast.
 
-In version 2.0.0, rewrite for iOS26 and broken features fix. Support OS is swiched to >=iOS26.
+In version 2.0.0, rewrite for iOS26 and broken features fix. Support OS is swiched to >=iOS26. Background upload, download and cast play is available in setting menu.
 
 ## video
 [![YouTube](https://img.youtube.com/vi/BelQr_-3t7c/maxresdefault.jpg)](https://www.youtube.com/watch?v=BelQr_-3t7c)
