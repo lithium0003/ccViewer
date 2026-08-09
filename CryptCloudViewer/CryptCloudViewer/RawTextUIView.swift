@@ -382,9 +382,16 @@ struct RawTextUIView: View {
                 await remoteItem?.cancel()
             }
         }
+        .toolbar {
+            ToolbarItem() {
+                NavigationLink(value: HomePath.txtopen(storage: storage, fileid: fileid)) {
+                    Image(systemName: "text.document")
+                }
+            }
+        }
     }
 }
 
 #Preview {
-    RawTextUIView(storage: "Local", fileid: "", remoteItem: nil)
+    RawTextUIView(storage: "Local", fileid: "")
 }

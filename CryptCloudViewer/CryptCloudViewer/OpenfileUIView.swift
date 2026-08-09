@@ -34,9 +34,18 @@ struct OpenfileUIView: View {
         "wav",
     ]
     
+    public static let codeExtensions: Set<String> = [
+        "c", "h", "cpp", "hpp", "cc", "cxx", "cs", "java", "swift", "m", "mm",
+        "js", "jsx", "mjs", "ts", "tsx", "py", "rb", "php", "pl", "pm",
+        "go", "rs", "kt", "kts", "dart", "scala",
+        "html", "htm", "xml", "xhtml", "svg", "css", "scss", "json", "yaml", "yml", "ini", "toml",
+        "sh", "bash", "zsh", "sql", "diff", "patch", "makefile", "mk", "dockerfile"
+    ]
+    
     enum DispType {
         case empty
         case txt
+        case binary
         case image
         case pdf
         case media
@@ -82,7 +91,13 @@ struct OpenfileUIView: View {
                     return
                 }
                 if let storage = storages.first, let fileid = fileids.first, let remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem() {
-                    if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
+                    if remoteItem.ext.isEmpty {
+                        dispType = .txt
+                    }
+                    else if OpenfileUIView.codeExtensions.contains(remoteItem.ext.lowercased()) {
+                        dispType = .txt
+                    }
+                    else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .text) {
                         dispType = .txt
                     }
                     else if let uti = UTType(filenameExtension: remoteItem.ext), uti.conforms(to: .image), UserDefaults.standard.bool(forKey: "ImageViewer") {
@@ -120,6 +135,10 @@ struct OpenfileUIView: View {
                 }
             }
         case .txt:
+            if let storage = storages.first, let fileid = fileids.first {
+                TextViewUIView(storage: storage, fileid: fileid)
+            }
+        case .binary:
             if let storage = storages.first, let fileid = fileids.first {
                 RawTextUIView(storage: storage, fileid: fileid)
             }

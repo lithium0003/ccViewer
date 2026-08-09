@@ -1737,6 +1737,42 @@ this exception statement from your version.
              END OF TERMS AND CONDITIONS
 """
 
+let markedjsLicense: String = """
+Copyright (c) 2018+, MarkedJS. (MIT License) Copyright (c) 2011-2018, Christopher Jeffrey. (MIT License)    
+"""
+
+let highlightjsLicense: String = """
+BSD 3-Clause License
+
+Copyright (c) 2006, Ivan Sagalaev.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"""
+
 struct License: Identifiable {
     var name: String
     var children: [License]? = nil
@@ -1763,6 +1799,8 @@ struct CreditUIView: View {
     let libebur128 = [License(name: "MIT License", children: [License(name: libebur128License)])]
     let openssl = [License(name: "Apache License 2.0", children: [License(name: opensslLicense)])]
     let libssh = [License(name: "LGPLv2.1", children: [License(name: libsshLicense)])]
+    let markedjs = [License(name: "MIT License", children: [License(name: markedjsLicense)])]
+    let highlightjs = [License(name: "BSD 3-Clause License", children: [License(name: highlightjsLicense)])]
 
     var body: some View {
         Section {
@@ -1868,6 +1906,22 @@ struct CreditUIView: View {
             }
         } header: {
             Text(verbatim: "libssh")
+        }
+
+        Section {
+            OutlineGroup(markedjs, children: \.children) { item in
+                item.view
+            }
+        } header: {
+            Text(verbatim: "marked.js")
+        }
+
+        Section {
+            OutlineGroup(highlightjs, children: \.children) { item in
+                item.view
+            }
+        } header: {
+            Text(verbatim: "highlight.js")
         }
     }
 }
