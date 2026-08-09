@@ -9,7 +9,7 @@ https://itunes.apple.com/jp/app/cryptcloudviewer/id1458528598
 
 Ver 1.4.0より、Chromecastをサポートしました。ただしキャスト中は、アプリを切り替えたり画面ロックを行うことができません。
 
-Ver 2.0.0より、サポートOSをiOS26以降にしました。
+Ver 2.0.0より、サポートOSをiOS26以降にしました。設定でONにすることにより、バックグラウンドでダウンロード、アップロード、キャストが可能になりました。
 
 ## video
 [![YouTube](https://img.youtube.com/vi/sCPPcoqAR3g/maxresdefault.jpg)](https://www.youtube.com/watch?v=sCPPcoqAR3g)
