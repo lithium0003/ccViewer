@@ -454,7 +454,7 @@ actor SftpConnection {
         }
         
         let chunkSize = Int(max_read_length)
-        var resultData = Data(count: length)
+        var resultData = Data(capacity: length)
         
         let totalRead = try resultData.withUnsafeMutableBytes { ptr -> Int in
             guard let baseAddress = ptr.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return 0 }
@@ -797,8 +797,14 @@ struct SftpLoginView: View {
                 handleFileImport(result: result)
             }
             .alert("Error", isPresented: $isErrorAlertPresent) {
-                Button(role: .cancel) {
-                    ok = false
+                if #available(iOS 26.0, *) {
+                    Button(role: .cancel) {
+                        ok = false
+                    }
+                } else {
+                    Button("Cancel", role: .cancel) {
+                        ok = false
+                    }
                 }
             } message: {
                 Text(errorMessage)

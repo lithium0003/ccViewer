@@ -418,40 +418,75 @@ struct MediaShowUIView: View {
                     }
                 HStack {
                     if isTouched {
-                        Button {
-                            if !PlayerManager.shared.isPip {
-                                Task {
-                                    await PlayerManager.shared.finish()
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                if !PlayerManager.shared.isPip {
+                                    Task {
+                                        await PlayerManager.shared.finish()
+                                    }
                                 }
+                                PlayerManager.shared.isGone = true
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.title)
+                                    .tint(.white)
                             }
-                            PlayerManager.shared.isGone = true
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.title)
-                                .tint(.white)
+                            .buttonStyle(.glass)
+                        } else {
+                            Button {
+                                if !PlayerManager.shared.isPip {
+                                    Task {
+                                        await PlayerManager.shared.finish()
+                                    }
+                                }
+                                PlayerManager.shared.isGone = true
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.title)
+                                    .tint(.white)
+                            }
                         }
-                        .buttonStyle(.glass)
                     }
                     Spacer()
                     if isTouched, UIDevice.current.userInterfaceIdiom == .phone {
-                        Button {
-                            rotateLock.toggle()
-                            if rotateLock {
-                                OrientationManager.lock()
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                rotateLock.toggle()
+                                if rotateLock {
+                                    OrientationManager.lock()
+                                }
+                                else {
+                                    OrientationManager.unlock()
+                                }
+                            } label: {
+                                if rotateLock {
+                                    Image(systemName: "rectangle.landscape.rotate")
+                                }
+                                else {
+                                    Image(systemName: "rectangle.landscape.rotate.slash")
+                                }
                             }
-                            else {
-                                OrientationManager.unlock()
-                            }
-                        } label: {
-                            if rotateLock {
-                                Image(systemName: "rectangle.landscape.rotate")
-                            }
-                            else {
-                                Image(systemName: "rectangle.landscape.rotate.slash")
+                            .buttonStyle(.glass)
+                        } else {
+                            Button {
+                                rotateLock.toggle()
+                                if rotateLock {
+                                    OrientationManager.lock()
+                                }
+                                else {
+                                    OrientationManager.unlock()
+                                }
+                            } label: {
+                                if rotateLock {
+                                    Image(systemName: "rectangle.landscape.rotate")
+                                }
+                                else {
+                                    Image(systemName: "rectangle.landscape.rotate.slash")
+                                }
                             }
                         }
-                        .buttonStyle(.glass)
                     }
                 }
                 Spacer()
@@ -469,7 +504,7 @@ struct MediaShowUIView: View {
                     .cornerRadius(10)
             }
         }
-        .toolbarVisibility(.hidden, for: .automatic)
+        .toolbar(.hidden, for: .automatic)
         .task {
             isLoading = true
             defer {

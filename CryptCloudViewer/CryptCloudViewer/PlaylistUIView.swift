@@ -140,48 +140,92 @@ struct PlaylistUIView: View {
                     FlowLayout(alignment: .leading) {
                         ForEach(playlistFolder, id: \.self) { item in
                             if item == playlistName {
-                                Button {
-                                } label: {
-                                    Text(verbatim: item)
-                                }
-                                .buttonStyle(.glassProminent)
-                                .dropDestination(for: PlayItem.self) { (dropItems, dropSession) in
-                                    Task {
-                                        var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
-                                        for drop in dropItems {
-                                            newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                if #available(iOS 26.0, *) {
+                                    Button {
+                                    } label: {
+                                        Text(verbatim: item)
+                                    }
+                                    .buttonStyle(.glassProminent)
+                                    .dropDestination(for: PlayItem.self) { (dropItems, dropSession) in
+                                        Task {
+                                            var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
+                                            for drop in dropItems {
+                                                newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                            }
+                                            await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
+                                            await reload()
                                         }
-                                        await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
-                                        await reload()
+                                    }
+                                } else {
+                                    Button {
+                                    } label: {
+                                        Text(verbatim: item)
+                                    }
+                                    .dropDestination(for: PlayItem.self) { dropItems, location in 
+                                        Task {
+                                            var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
+                                            for drop in dropItems {
+                                                newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                            }
+                                            await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
+                                            await reload()
+                                        }
+                                        return true
                                     }
                                 }
                             }
                             else {
-                                Button {
-                                    env.path.append(.playlist(name: item))
-                                } label: {
-                                    Text(verbatim: item)
-                                }
-                                .buttonStyle(.glass)
-                                .dropDestination(for: PlayItem.self) { (dropItems, dropSession) in
-                                    Task {
-                                        var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
-                                        for drop in dropItems {
-                                            newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                if #available(iOS 26.0, *) {
+                                    Button {
+                                        env.path.append(.playlist(name: item))
+                                    } label: {
+                                        Text(verbatim: item)
+                                    }
+                                    .buttonStyle(.glass)
+                                    .dropDestination(for: PlayItem.self) { (dropItems, dropSession) in
+                                        Task {
+                                            var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
+                                            for drop in dropItems {
+                                                newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                            }
+                                            await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
                                         }
-                                        await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
+                                    }
+                                } else {
+                                    Button {
+                                        env.path.append(.playlist(name: item))
+                                    } label: {
+                                        Text(verbatim: item)
+                                    }
+                                    .dropDestination(for: PlayItem.self) { dropItems, location in
+                                        Task {
+                                            var newItems = await CloudFactory.shared.data.getPlaylist(playlistName: item)
+                                            for drop in dropItems {
+                                                newItems.append((drop.storage, drop.fileid, drop.path, UUID().uuidString))
+                                            }
+                                            await CloudFactory.shared.data.setPlaylist(playlistName: item, items: newItems)
+                                        }
+                                        return true
                                     }
                                 }
                             }
                         }
                     }
                     Spacer()
-                    Button(role: .destructive) {
-                        isDelete.toggle()
-                    } label: {
-                        Image(systemName: "trash")
+                    if #available(iOS 26.0, *) {
+                        Button(role: .destructive) {
+                            isDelete.toggle()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.glassProminent)
+                    } else {
+                        Button(role: .destructive) {
+                            isDelete.toggle()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
                     }
-                    .buttonStyle(.glassProminent)
                 }
                 .padding()
                 List {
@@ -234,94 +278,186 @@ struct PlaylistUIView: View {
                 Spacer()
                 HStack {
                     if isLoopPlay {
-                        Button {
-                            isLoopPlay.toggle()
-                            UserDefaults.standard.set(isLoopPlay, forKey: "loop")
-                        } label: {
-                            Image("loop").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                            .buttonStyle(.glassProminent)
+                        } else {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
                         }
-                        .buttonStyle(.glassProminent)
                     }
                     else {
-                        Button {
-                            isLoopPlay.toggle()
-                            UserDefaults.standard.set(isLoopPlay, forKey: "loop")
-                        } label: {
-                            Image("loop").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
+                        } else {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
                         }
-                        .buttonStyle(.glass)
                     }
                     if isShufflePlay {
-                        Button {
-                            isShufflePlay.toggle()
-                            UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
-                        } label: {
-                            Image("shuffle").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                            .buttonStyle(.glassProminent)
+                        } else {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
                         }
-                        .buttonStyle(.glassProminent)
                     }
                     else {
-                        Button {
-                            isShufflePlay.toggle()
-                            UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
-                        } label: {
-                            Image("shuffle").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
+                        else {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                        }
                     }
                     Spacer()
                     if isCasting {
-                        CastButton()
-                            .frame(width: 20, height: 20)
-                            .buttonStyle(.glass)
+                        if #available(iOS 26.0, *) {
+                            CastButton()
+                                .frame(width: 20, height: 20)
+                                .buttonStyle(.glass)
+                        } else {
+                            CastButton()
+                                .frame(width: 20, height: 20)
+                        }
                         Spacer()
                             .frame(width: 20)
-                        Button {
-                            Task {
-                                await Converter.Stop()
-                                isCasting = Converter.IsCasting()
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                Task {
+                                    await Converter.Stop()
+                                    isCasting = Converter.IsCasting()
+                                }
+                            } label: {
+                                Image("cast_on").renderingMode(.template)
                             }
-                        } label: {
-                            Image("cast_on").renderingMode(.template)
+                            .buttonStyle(.glassProminent)
+                        } else {
+                            Button {
+                                Task {
+                                    await Converter.Stop()
+                                    isCasting = Converter.IsCasting()
+                                }
+                            } label: {
+                                Image("cast_on").renderingMode(.template)
+                            }
                         }
-                        .buttonStyle(.glassProminent)
                     }
                     else {
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                Converter.Start()
+                                isCasting = Converter.IsCasting()
+                            } label: {
+                                Image("cast").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
+                        } else {
+                            Button {
+                                Converter.Start()
+                                isCasting = Converter.IsCasting()
+                            } label: {
+                                Image("cast").renderingMode(.template)
+                            }
+                        }
+                    }
+                    if #available(iOS 26.0, *) {
                         Button {
-                            Converter.Start()
-                            isCasting = Converter.IsCasting()
+                            var storages: [String] = []
+                            var fileids: [String] = []
+                            for id in searchedItems {
+                                if !items[id]!.folder {
+                                    storages.append(items[id]?.storage ?? "")
+                                    fileids.append(items[id]?.id ?? "")
+                                }
+                            }
+                            if storages.isEmpty { return }
+                            if Converter.IsCasting() {
+                                if isLoading { return }
+                                isLoading = true
+                                Task {
+                                    defer {
+                                        isLoading = false
+                                    }
+                                    await playConverter(storages: storages, fileids: fileids, playlist: true)
+                                }
+                            }
+                            else {
+                                env.path.append(.open(storages: storages, fileids: fileids, playlist: true))
+                            }
                         } label: {
-                            Image("cast").renderingMode(.template)
+                            Image("playall").renderingMode(.template)
                         }
                         .buttonStyle(.glass)
                     }
-                    Button {
-                        var storages: [String] = []
-                        var fileids: [String] = []
-                        for id in searchedItems {
-                            if !items[id]!.folder {
-                                storages.append(items[id]?.storage ?? "")
-                                fileids.append(items[id]?.id ?? "")
-                            }
-                        }
-                        if storages.isEmpty { return }
-                        if Converter.IsCasting() {
-                            if isLoading { return }
-                            isLoading = true
-                            Task {
-                                defer {
-                                    isLoading = false
+                    else {
+                        Button {
+                            var storages: [String] = []
+                            var fileids: [String] = []
+                            for id in searchedItems {
+                                if !items[id]!.folder {
+                                    storages.append(items[id]?.storage ?? "")
+                                    fileids.append(items[id]?.id ?? "")
                                 }
-                                await playConverter(storages: storages, fileids: fileids, playlist: true)
                             }
+                            if storages.isEmpty { return }
+                            if Converter.IsCasting() {
+                                if isLoading { return }
+                                isLoading = true
+                                Task {
+                                    defer {
+                                        isLoading = false
+                                    }
+                                    await playConverter(storages: storages, fileids: fileids, playlist: true)
+                                }
+                            }
+                            else {
+                                env.path.append(.open(storages: storages, fileids: fileids, playlist: true))
+                            }
+                        } label: {
+                            Image("playall").renderingMode(.template)
                         }
-                        else {
-                            env.path.append(.open(storages: storages, fileids: fileids, playlist: true))
-                        }
-                    } label: {
-                        Image("playall").renderingMode(.template)
                     }
-                    .buttonStyle(.glass)
                 }
                 .padding()
             }
@@ -340,25 +476,50 @@ struct PlaylistUIView: View {
         .alert("New folder", isPresented: $isNewName) {
             TextField("", text: $newName)
             
-            Button(role: .confirm) {
-                if newName.isEmpty { return }
-                if playlistFolder.contains(newName) { return }
-                Task {
-                    await CloudFactory.shared.data.setPlaylist(playlistName: newName, items: [])
-                    await reload()
+            if #available(iOS 26.0, *) {
+                Button(role: .confirm) {
+                    if newName.isEmpty { return }
+                    if playlistFolder.contains(newName) { return }
+                    Task {
+                        await CloudFactory.shared.data.setPlaylist(playlistName: newName, items: [])
+                        await reload()
+                    }
+                }
+                Button(role: .cancel) {
                 }
             }
-            Button(role: .cancel) {
+            else {
+                Button("OK") {
+                    if newName.isEmpty { return }
+                    if playlistFolder.contains(newName) { return }
+                    Task {
+                        await CloudFactory.shared.data.setPlaylist(playlistName: newName, items: [])
+                        await reload()
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                }
             }
         }
         .alert("Delete playlist", isPresented: $isDelete) {
-            Button(role: .destructive) {
-                Task {
-                    await CloudFactory.shared.data.deletePlaylist(playlistName: playlistName)
-                    env.path.removeLast()
+            if #available(iOS 26.0, *) {
+                Button(role: .destructive) {
+                    Task {
+                        await CloudFactory.shared.data.deletePlaylist(playlistName: playlistName)
+                        env.path.removeLast()
+                    }
                 }
-            }
-            Button(role: .cancel) {
+                Button(role: .cancel) {
+                }
+            } else {
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await CloudFactory.shared.data.deletePlaylist(playlistName: playlistName)
+                        env.path.removeLast()
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                }
             }
         } message: {
             Text("Remove this playlist?")

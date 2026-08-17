@@ -369,36 +369,69 @@ struct PasswordRcloneView: View {
             Button("Cancel", role: .cancel) {
                 isAlertPresented = false
             }
-            Button("OK", role: .confirm) {
-                isAlertPresented = false
-                Task {
-                    await Task.yield()
-                    let data = Array("[\(confPassword)][rclone-config]".utf8)
-                    var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-                    CC_SHA256(data, CC_LONG(data.count), &configKey)
-
-                    let nonce = [UInt8](box.subdata(in: 0..<24))
-                    let key = Array(configKey[0..<32])
-                    guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
-                        return
+            if #available(iOS 26.0, *) {
+                Button("OK", role: .confirm) {
+                    isAlertPresented = false
+                    Task {
+                        await Task.yield()
+                        let data = Array("[\(confPassword)][rclone-config]".utf8)
+                        var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+                        CC_SHA256(data, CC_LONG(data.count), &configKey)
+                        
+                        let nonce = [UInt8](box.subdata(in: 0..<24))
+                        let key = Array(configKey[0..<32])
+                        guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
+                            return
+                        }
+                        guard let plain = String(bytes: out, encoding: .utf8) else {
+                            return
+                        }
+                        processConfigFile(conflines: plain.components(separatedBy: .newlines))
                     }
-                    guard let plain = String(bytes: out, encoding: .utf8) else {
-                        return
+                }
+            } else {
+                Button("OK") {
+                    isAlertPresented = false
+                    Task {
+                        await Task.yield()
+                        let data = Array("[\(confPassword)][rclone-config]".utf8)
+                        var configKey = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+                        CC_SHA256(data, CC_LONG(data.count), &configKey)
+                        
+                        let nonce = [UInt8](box.subdata(in: 0..<24))
+                        let key = Array(configKey[0..<32])
+                        guard let out = Secretbox.open(box: box.subdata(in: 24..<box.count), nonce: nonce, key: key) else {
+                            return
+                        }
+                        guard let plain = String(bytes: out, encoding: .utf8) else {
+                            return
+                        }
+                        processConfigFile(conflines: plain.components(separatedBy: .newlines))
                     }
-                    processConfigFile(conflines: plain.components(separatedBy: .newlines))
                 }
             }
         }
         .alert("Encrypt config file", isPresented: $isAlertPresented2) {
             ForEach(crypt_config.keys.sorted(), id: \.self) { name in
                 if let confItems = crypt_config[name] {
-                    Button(name, role: .confirm) {
-                        isAlertPresented2 = false
-                        password = reveal(ciphertext: confItems["password"] ?? "") ?? ""
-                        salt = reveal(ciphertext: confItems["password2"] ?? "") ?? ""
-                        filenameEncryption = confItems["filename_encryption"] ?? filenameModes[0]
-                        suffix = confItems["suffix"] ?? ".bin"
-                        filenameEncodingMode = confItems["filename_encoding"] ?? "base32"
+                    if #available(iOS 26.0, *) {
+                        Button(name, role: .confirm) {
+                            isAlertPresented2 = false
+                            password = reveal(ciphertext: confItems["password"] ?? "") ?? ""
+                            salt = reveal(ciphertext: confItems["password2"] ?? "") ?? ""
+                            filenameEncryption = confItems["filename_encryption"] ?? filenameModes[0]
+                            suffix = confItems["suffix"] ?? ".bin"
+                            filenameEncodingMode = confItems["filename_encoding"] ?? "base32"
+                        }
+                    } else {
+                        Button(name) {
+                            isAlertPresented2 = false
+                            password = reveal(ciphertext: confItems["password"] ?? "") ?? ""
+                            salt = reveal(ciphertext: confItems["password2"] ?? "") ?? ""
+                            filenameEncryption = confItems["filename_encryption"] ?? filenameModes[0]
+                            suffix = confItems["suffix"] ?? ".bin"
+                            filenameEncodingMode = confItems["filename_encoding"] ?? "base32"
+                        }
                     }
                 }
             }

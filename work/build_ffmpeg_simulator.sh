@@ -12,6 +12,6 @@ mkdir -p build/ffmpeg && cd build/ffmpeg
 	--prefix="$output" --target-os=darwin --arch=arm64 \
 	--sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path) \
 	--disable-audiotoolbox --enable-libaribcaption \
-	--extra-cflags="-miphonesimulator-version-min=26.0" \
-	--extra-ldflags="-miphonesimulator-version-min=26.0"
+	--extra-cflags="-miphonesimulator-version-min=17.0" \
+	--extra-ldflags="-miphonesimulator-version-min=17.0"
 make -j$(getconf _NPROCESSORS_ONLN) install

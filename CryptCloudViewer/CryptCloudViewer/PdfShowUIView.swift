@@ -183,14 +183,24 @@ struct PdfShowUIView: View {
                 .alert("Search text", isPresented: $isSearching) {
                     TextField("", text: $searchText)
                     
-                    Button(role: .confirm) {
-                        find(text: searchText)
-                    } label: {
-                        Text("Search")
-                    }
-                    
-                    Button(role: .cancel) {
-                        
+                    if #available(iOS 26.0, *) {
+                        Button(role: .confirm) {
+                            find(text: searchText)
+                        } label: {
+                            Text("Search")
+                        }
+
+                        Button(role: .cancel) {
+                        }
+                    } else {
+                        Button() {
+                            find(text: searchText)
+                        } label: {
+                            Text("Search")
+                        }
+
+                        Button("Cancel", role: .cancel) {
+                        }
                     }
                 }
         }

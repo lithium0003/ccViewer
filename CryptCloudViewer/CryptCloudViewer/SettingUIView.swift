@@ -281,36 +281,68 @@ struct SettingUIView: View {
                 HStack {
                     Text("Skip foward (sec)")
                     Spacer()
-                    Button {
-                        playSkipForwardSec -= 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.down")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            playSkipForwardSec -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            playSkipForwardSec -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
                     }
-                    .buttonStyle(.glass)
                     Text("\(playSkipForwardSec)")
-                    Button {
-                        playSkipForwardSec += 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.up")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            playSkipForwardSec += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            playSkipForwardSec += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
                     }
-                    .buttonStyle(.glass)
                 }
                 HStack {
                     Text("Skip backward (sec)")
                     Spacer()
-                    Button {
-                        playSkipBackwardSec -= 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.down")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            playSkipBackwardSec -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            playSkipBackwardSec -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
                     }
-                    .buttonStyle(.glass)
                     Text("\(playSkipBackwardSec)")
-                    Button {
-                        playSkipBackwardSec += 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.up")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            playSkipBackwardSec += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            playSkipBackwardSec += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
                     }
-                    .buttonStyle(.glass)
                 }
             } header: {
                 Text("Player control")
@@ -332,19 +364,35 @@ struct SettingUIView: View {
                 HStack {
                     Text("Image subtile selection")
                     Spacer()
-                    Button {
-                        castTextImageIdx -= 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.down")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            castTextImageIdx -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            castTextImageIdx -= 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.down")
+                        }
                     }
-                    .buttonStyle(.glass)
                     Text("\(castTextImageIdx)")
-                    Button {
-                        castTextImageIdx += 1
-                    } label: {
-                        Image(systemName: "arrowtriangle.up")
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            castTextImageIdx += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Button {
+                            castTextImageIdx += 1
+                        } label: {
+                            Image(systemName: "arrowtriangle.up")
+                        }
                     }
-                    .buttonStyle(.glass)
                 }
             } header: {
                 Text("Cast control")
@@ -546,17 +594,32 @@ struct SettingUIView: View {
                     }
                 }
                 .alert("Delete All Data", isPresented: $deleteConfirmation) {
-                    Button(role: .destructive) {
-                        Task {
-                            await SettingUIView.doAllDelete()
-                            while !env.path.isEmpty {
-                                env.path.removeLast()
-                                await Task.yield()
+                    if #available(iOS 26.0, *) {
+                        Button(role: .destructive) {
+                            Task {
+                                await SettingUIView.doAllDelete()
+                                while !env.path.isEmpty {
+                                    env.path.removeLast()
+                                    await Task.yield()
+                                }
                             }
                         }
-                    }
-                    Button("Cancel", role: .cancel) {
-                        deleteConfirmation = false
+                        Button(role: .cancel) {
+                            deleteConfirmation = false
+                        }
+                    } else {
+                        Button("Delete", role: .destructive) {
+                            Task {
+                                await SettingUIView.doAllDelete()
+                                while !env.path.isEmpty {
+                                    env.path.removeLast()
+                                    await Task.yield()
+                                }
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {
+                            deleteConfirmation = false
+                        }
                     }
                 } message: {
                     Text("Are you sure you want to remove all credentials and cached data from this app? You will need to sign in again.")

@@ -12,6 +12,22 @@ internal import UniformTypeIdentifiers
 struct ImageShowUIView: View {
     let storage: String
     let fileid: String
+    
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            // iOS 18以降なら元々のリッチなビューを表示
+            ImageShowUIView_iOS18(storage: storage, fileid: fileid)
+        } else {
+            // iOS 17以前なら先ほど作った代替ビューを表示
+            ImageShowUIView_iOS17(storage: storage, fileid: fileid)
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+struct ImageShowUIView_iOS18: View {
+    let storage: String
+    let fileid: String
     @State var progStr = ""
     @State var remoteItem: RemoteItem?
     @State var image: UIImage?
@@ -40,14 +56,14 @@ struct ImageShowUIView: View {
     @State private var currentOffset: CGPoint = .zero
     @State private var hideHeader = false
     @State private var loadingTask: Task<Void, Error>?
-
+    
     var formatter2: ByteCountFormatter {
         let formatter2 = ByteCountFormatter()
         formatter2.allowedUnits = [.useAll]
         formatter2.countStyle = .file
         return formatter2
     }
-
+    
     struct OffsetPreferenceKey: PreferenceKey {
         static var defaultValue = CGFloat.zero
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -158,7 +174,7 @@ struct ImageShowUIView: View {
             
             imageView
                 .ignoresSafeArea()
-
+            
             if isLoading {
                 VStack {
                     ProgressView()
@@ -381,6 +397,357 @@ struct ImageShowUIView: View {
     }
 }
 
+struct ImageShowUIView_iOS17: View {
+    let storage: String
+    let fileid: String
+    @State var progStr = ""
+    @State var remoteItem: RemoteItem?
+    @State var image: UIImage?
+    @State var isLoading = false
+    @State var images: [UIImage] = []
+    @State var imageIdx = -1
+    @State var totalImages = 0
+    var titleStr: String {
+        if totalImages > 1 {
+            if totalImages > images.count {
+                return "\(imageIdx + 1) / \(images.count) loading... \(totalImages - images.count)"
+            }
+            else {
+                return "\(imageIdx + 1) / \(images.count)"
+            }
+        }
+        return ""
+    }
+    
+    @State private var currentZoom = 1.0
+    @State private var totalZoom = 1.0
+    @State private var minZoom = 1.0
+    @State private var hideHeader = false
+    @State private var loadingTask: Task<Void, Error>?
+    
+    var formatter2: ByteCountFormatter {
+        let formatter2 = ByteCountFormatter()
+        formatter2.allowedUnits = [.useAll]
+        formatter2.countStyle = .file
+        return formatter2
+    }
+    
+    @ViewBuilder
+    var imageView: some View {
+        if let image {
+            GeometryReader { geo in
+                ScrollViewReader { proxy in
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(uiImage: image)
+                            .id(0)
+                            .scaleEffect(currentZoom * totalZoom)
+                            .frame(width: image.size.width * (currentZoom * totalZoom), height: image.size.height * (currentZoom * totalZoom))
+                            .gesture(
+                                MagnifyGesture()
+                                    .onChanged { value in
+                                        currentZoom = max(minZoom / totalZoom, value.magnification)
+                                    }
+                                    .onEnded { value in
+                                        totalZoom *= currentZoom
+                                        currentZoom = 1
+                                    }
+                            )
+                            .accessibilityZoomAction { action in
+                                if action.direction == .zoomIn {
+                                    totalZoom += 1
+                                } else {
+                                    totalZoom -= 1
+                                }
+                            }
+                            .onTapGesture(count: 2) { location in
+                                totalZoom *= 1.5
+                                if totalZoom > 5 {
+                                    totalZoom = minZoom
+                                }
+                                withAnimation {
+                                    proxy.scrollTo(0, anchor: .center)
+                                }
+                            }
+                            .onTapGesture(count: 1) {
+                                hideHeader.toggle()
+                            }
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .onTapGesture(count: 3) {
+                        totalZoom = minZoom
+                        withAnimation {
+                            proxy.scrollTo(0, anchor: .center)
+                        }
+                    }
+                    .onAppear {
+                        minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                        totalZoom = minZoom
+                    }
+                    .onChange(of: geo.size) {
+                        minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                    }
+                    .onChange(of: imageIdx) {
+                        minZoom = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                        totalZoom = minZoom
+                        proxy.scrollTo(0, anchor: .center)
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { value in
+                                if totalZoom == minZoom, abs(value.translation.height) > 10 {
+                                    if value.translation.height > 0 {
+                                        if imageIdx - 1 >= 0, imageIdx - 1 < images.count {
+                                            imageIdx -= 1
+                                            self.image = images[imageIdx]
+                                        }
+                                    }
+                                    else {
+                                        if imageIdx + 1 < images.count {
+                                            imageIdx += 1
+                                            self.image = images[imageIdx]
+                                        }
+                                    }
+                                }
+                            }
+                    )
+                }
+            }
+        }
+        else {
+            Color.clear
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+            
+            imageView
+                .ignoresSafeArea()
+            
+            if isLoading {
+                VStack {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(30)
+                        .scaleEffect(3)
+                    
+                    Text(verbatim: progStr)
+                }
+                .background {
+                    Color(uiColor: .black)
+                        .opacity(0.9)
+                }
+                .cornerRadius(10)
+            }
+        }
+        .toolbar {
+            if images.count > 1 {
+                ToolbarItem {
+                    Button {
+                        if imageIdx - 1 >= 0, imageIdx - 1 < images.count {
+                            imageIdx -= 1
+                            image = images[imageIdx]
+                        }
+                    } label: {
+                        Image(systemName: "arrowtriangle.backward")
+                    }
+                }
+                ToolbarItem {
+                    Button {
+                        if imageIdx + 1 < images.count {
+                            imageIdx += 1
+                            image = images[imageIdx]
+                        }
+                    } label: {
+                        Image(systemName: "arrowtriangle.forward")
+                    }
+                }
+            }
+        }
+        .navigationTitle(titleStr)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar(hideHeader ? .hidden : .automatic, for: .navigationBar, .tabBar)
+        .statusBarHidden(hideHeader)
+        .task {
+            isLoading = true
+            await Task.yield()
+            do {
+                defer {
+                    isLoading = false
+                }
+                remoteItem = await CloudFactory.shared.data.getData(storage: storage, fileId: fileid)?.getItem()
+                guard let remoteItem else { return }
+                let total = remoteItem.size
+                let remoteStream = await remoteItem.open()
+                defer {
+                    remoteStream.isLive = false
+                }
+                do {
+                    let data = try await remoteStream.read(onProgress: { p in
+                        if total > 0 {
+                            progStr = "\(formatter2.string(fromByteCount: Int64(p))) / \(formatter2.string(fromByteCount: total))"
+                        }
+                        else {
+                            progStr = "\(formatter2.string(fromByteCount: Int64(p)))"
+                        }
+                    })
+                    if let data, let im = UIImage(data: data) {
+                        images.append(im)
+                        imageIdx = 0
+                        image = im
+                    }
+                    else {
+                        return
+                    }
+                }
+                catch {
+                    print(error)
+                }
+            }
+            
+            await Task.yield()
+            guard let remoteItem else { return }
+            let files = await CloudFactory.shared.data.listData(storage: remoteItem.storage, parentID: remoteItem.parent).filter({ item in
+                if let uti = UTType(filenameExtension: item.ext ?? "") {
+                    return uti.conforms(to: .image)
+                }
+                return false
+            }).sorted(by: { ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending })
+            totalImages = files.count
+            guard let curIdx = files.firstIndex(where: { $0.id == remoteItem.id }) else { return }
+            guard files.count > 1 else { return }
+            
+            await Task.yield()
+            loadingTask = Task {
+                var ret: [Int: UIImage] = [:]
+                ret[curIdx] = image
+                await withTaskGroup { group0 in
+                    var count = 0
+                    for k in 1..<files.count {
+                        if Task.isCancelled {
+                            break
+                        }
+                        await Task.yield()
+                        if curIdx + k < files.count {
+                            let itemData = files[curIdx + k]
+                            if let id = itemData.id {
+                                group0.addTask {
+                                    let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
+                                    if let size = item?.size, size > 0 {
+                                        return try? await withThrowingTaskGroup { group in
+                                            group.addTask { ()->(Int, UIImage)? in
+                                                try Task.checkCancellation()
+                                                if let remoteStream = await item?.open() {
+                                                    defer {
+                                                        remoteStream.isLive = false
+                                                    }
+                                                    do {
+                                                        let data = try await remoteStream.read()
+                                                        if let data, let im = UIImage(data: data) {
+                                                            return (curIdx + k, im)
+                                                        }
+                                                    }
+                                                    catch {
+                                                        print(error)
+                                                    }
+                                                }
+                                                return nil
+                                            }
+                                            group.addTask {
+                                                try await Task.sleep(for: .seconds(max(20, Double(size)/10000)))
+                                                print("timeout")
+                                                return nil
+                                            }
+                                            let ret = try await group.next()!
+                                            group.cancelAll()
+                                            return ret
+                                        }
+                                    }
+                                    return nil
+                                }
+                                count += 1
+                            }
+                        }
+                        if curIdx - k >= 0 {
+                            let itemData = files[curIdx - k]
+                            if let id = itemData.id {
+                                group0.addTask {
+                                    let item = await CloudFactory.shared.data.getData(storage: remoteItem.storage, fileId: id)?.getItem()
+                                    if let size = item?.size, size > 0 {
+                                        return try? await withThrowingTaskGroup { group in
+                                            group.addTask { ()->(Int, UIImage)? in
+                                                try Task.checkCancellation()
+                                                if let remoteStream = await item?.open() {
+                                                    defer {
+                                                        remoteStream.isLive = false
+                                                    }
+                                                    do {
+                                                        let data = try await remoteStream.read()
+                                                        if let data, let im = UIImage(data: data) {
+                                                            return (curIdx - k, im)
+                                                        }
+                                                    }
+                                                    catch {
+                                                        print(error)
+                                                    }
+                                                }
+                                                return nil
+                                            }
+                                            group.addTask {
+                                                try await Task.sleep(for: .seconds(max(20, Double(size)/10000)))
+                                                print("timeout")
+                                                return nil
+                                            }
+                                            let ret = try await group.next()!
+                                            group.cancelAll()
+                                            return ret
+                                        }
+                                    }
+                                    return nil
+                                }
+                                count += 1
+                            }
+                        }
+                        while count > 3 {
+                            await Task.yield()
+                            if let next = await group0.next(), let (i, im) = next {
+                                ret[i] = im
+                                images = ret.sorted(by: { $0.key < $1.key }).map(\.value)
+                                if let idx = images.firstIndex(of: image!) {
+                                    imageIdx = idx
+                                }
+                            }
+                            count -= 1
+                        }
+                    }
+                    while count > 0 {
+                        if Task.isCancelled {
+                            break
+                        }
+                        if let next = await group0.next(), let (i, im) = next {
+                            ret[i] = im
+                            images = ret.sorted(by: { $0.key < $1.key }).map(\.value)
+                            if let idx = images.firstIndex(of: image!) {
+                                imageIdx = idx
+                            }
+                        }
+                        count -= 1
+                    }
+                }
+                totalImages = images.count
+            }
+        }
+        .onDisappear {
+            Task {
+                await remoteItem?.cancel()
+                loadingTask?.cancel()
+            }
+        }
+    }
+}
+
 #Preview {
-    ImageShowUIView(storage: "Local", fileid: "", remoteItem: nil)
+    ImageShowUIView(storage: "Local", fileid: "")
 }

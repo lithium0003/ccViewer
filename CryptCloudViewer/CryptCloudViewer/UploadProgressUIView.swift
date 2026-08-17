@@ -211,85 +211,90 @@ class UploadProgressManeger {
     
     @concurrent
     public func upload(url: URL, service: RemoteStorage, parentId: String, uploadname: String) async {
-        if ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "uploadInBackground") {
-            await upload_mac(url: url, service: service, parentId: parentId, uploadname: uploadname)
-            return
-        }
-
-        let taskName = UUID().uuidString
-        let taskIdentifier = "\(bundleId).upload.\(taskName)"
-
-        let request = BGContinuedProcessingTaskRequest(
-            identifier: taskIdentifier,
-            title: uploadname,
-            subtitle: "About to start...",
-        )
-        request.strategy = .fail
-        let semaphore = Semaphore(value: 0)
-
-        let success = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { [self] task in
-            guard let task = task as? BGContinuedProcessingTask else {
-                Task { await semaphore.signal() }
+        if #available(iOS 26.0, *) {
+            if ProcessInfo.processInfo.isiOSAppOnMac || !UserDefaults.standard.bool(forKey: "uploadInBackground") {
+                await upload_mac(url: url, service: service, parentId: parentId, uploadname: uploadname)
                 return
             }
             
-            Task {
-                var wasExpired = false
-                task.expirationHandler = {
-                    wasExpired = true
+            let taskName = UUID().uuidString
+            let taskIdentifier = "\(bundleId).upload.\(taskName)"
+            
+            let request = BGContinuedProcessingTaskRequest(
+                identifier: taskIdentifier,
+                title: uploadname,
+                subtitle: "About to start...",
+            )
+            request.strategy = .fail
+            let semaphore = Semaphore(value: 0)
+            
+            let success = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { [self] task in
+                guard let task = task as? BGContinuedProcessingTask else {
+                    Task { await semaphore.signal() }
+                    return
                 }
-
-                await progressManeger.add(url: url, name: uploadname)
-                await subject.send(progressManeger.count)
-                // Update progress.
-                let progress = task.progress
-                do {
-                    _ = try await service.upload(parentId: parentId, uploadname: uploadname, target: url) { [self] current, total in
-                        if await progressManeger.isCenceled(url: url) {
-                            throw CancellationError()
-                        }
-                        if wasExpired {
-                            throw CancellationError()
-                        }
-                        progress.totalUnitCount = total
-                        progress.completedUnitCount = current
-                        let formattedProgress = String(format: "%.2f", progress.fractionCompleted * 100)
-                        task.updateTitle(task.title, subtitle: "Uploaded \(formattedProgress)%")
-                        let p = Double(current) / Double(total)
-                        await progressManeger.setProgress(url: url, p: p)
-                        await subject.send(progressManeger.count)
+                
+                Task {
+                    var wasExpired = false
+                    task.expirationHandler = {
+                        wasExpired = true
                     }
-                    await progressManeger.setProgress(url: url, p: 1)
+                    
+                    await progressManeger.add(url: url, name: uploadname)
                     await subject.send(progressManeger.count)
-                    task.updateTitle(task.title, subtitle: "Done")
-
-                    await progressManeger.delete(url: url)
-                    await subject.send(progressManeger.count)
-                    task.setTaskCompleted(success: !wasExpired)
-                    await semaphore.signal()
-                }
-                catch {
-                    print(error)
-
-                    await progressManeger.error(url: url)
-                    await subject.send(progressManeger.count)
-                    task.setTaskCompleted(success: false)
-                    await semaphore.signal()
+                    // Update progress.
+                    let progress = task.progress
+                    do {
+                        _ = try await service.upload(parentId: parentId, uploadname: uploadname, target: url) { [self] current, total in
+                            if await progressManeger.isCenceled(url: url) {
+                                throw CancellationError()
+                            }
+                            if wasExpired {
+                                throw CancellationError()
+                            }
+                            progress.totalUnitCount = total
+                            progress.completedUnitCount = current
+                            let formattedProgress = String(format: "%.2f", progress.fractionCompleted * 100)
+                            task.updateTitle(task.title, subtitle: "Uploaded \(formattedProgress)%")
+                            let p = Double(current) / Double(total)
+                            await progressManeger.setProgress(url: url, p: p)
+                            await subject.send(progressManeger.count)
+                        }
+                        await progressManeger.setProgress(url: url, p: 1)
+                        await subject.send(progressManeger.count)
+                        task.updateTitle(task.title, subtitle: "Done")
+                        
+                        await progressManeger.delete(url: url)
+                        await subject.send(progressManeger.count)
+                        task.setTaskCompleted(success: !wasExpired)
+                        await semaphore.signal()
+                    }
+                    catch {
+                        print(error)
+                        
+                        await progressManeger.error(url: url)
+                        await subject.send(progressManeger.count)
+                        task.setTaskCompleted(success: false)
+                        await semaphore.signal()
+                    }
                 }
             }
+            
+            guard success else {
+                return
+            }
+            
+            // Submit the task request.
+            do {
+                try BGTaskScheduler.shared.submit(request)
+            } catch {
+                print("Failed to submit request: \(error)")
+            }
+            await semaphore.wait()
         }
-
-        guard success else {
-            return
+        else {
+            await upload_mac(url: url, service: service, parentId: parentId, uploadname: uploadname)
         }
-
-        // Submit the task request.
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            print("Failed to submit request: \(error)")
-        }
-        await semaphore.wait()
     }
 }
 

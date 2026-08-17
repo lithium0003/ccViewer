@@ -216,14 +216,24 @@ struct MainUIView: View {
                 }
             }
             .alert("Restore", isPresented: $showingRestoreAlert) {
-                Button(role: .confirm) {
-                    Task {
-                        await CloudFactory.shared.setShowList([])
+                if #available(iOS 26.0, *) {
+                    Button(role: .confirm) {
+                        Task {
+                            await CloudFactory.shared.setShowList([])
+                        }
+                    } label: {
+                        Text("Show all")
                     }
-                } label: {
-                    Text("Show all")
-                }
-                Button(role: .cancel) {
+                    Button(role: .cancel) {
+                    }
+                } else {
+                    Button("Show all") {
+                        Task {
+                            await CloudFactory.shared.setShowList([])
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
+                    }
                 }
             }
             .alert("Delete", isPresented: $showingDeleteAlert) {
@@ -240,19 +250,38 @@ struct MainUIView: View {
                     Text("Logout")
                 }
                 
-                Button(role: .confirm) {
-                    if let delIdx = toBeDeleted {
-                        storagasList.remove(atOffsets: delIdx)
-                        Task {
-                            await CloudFactory.shared.setShowList(storagasList)
+                if #available(iOS 26.0, *) {
+                    Button(role: .confirm) {
+                        if let delIdx = toBeDeleted {
+                            storagasList.remove(atOffsets: delIdx)
+                            Task {
+                                await CloudFactory.shared.setShowList(storagasList)
+                            }
                         }
+                    } label: {
+                        Text("Hide")
                     }
-                } label: {
-                    Text("Hide")
+                } else {
+                    Button() {
+                        if let delIdx = toBeDeleted {
+                            storagasList.remove(atOffsets: delIdx)
+                            Task {
+                                await CloudFactory.shared.setShowList(storagasList)
+                            }
+                        }
+                    } label: {
+                        Text("Hide")
+                    }
                 }
                 
-                Button(role: .cancel) {
-                    toBeDeleted = nil
+                if #available(iOS 26.0, *) {
+                    Button(role: .cancel) {
+                        toBeDeleted = nil
+                    }
+                } else {
+                    Button("Cancel", role: .cancel) {
+                        toBeDeleted = nil
+                    }
                 }
             } message: {
                 Text("Select the storage just to hide or logout.")

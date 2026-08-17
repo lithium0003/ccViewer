@@ -185,23 +185,42 @@ public struct FFPlayerUIView: View {
                 VStack {
                     HStack {
                         if let im = FrameworkResource.getImage(name: "close") {
-                            Button {
-                                bridge.userBreak = true
-                                shuldDismiss = true
-                                observation1?.invalidate()
-                                observation1 = nil
-                                observation2?.invalidate()
-                                observation2 = nil
-                                cancellables.forEach {
-                                    $0.cancel()
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    bridge.userBreak = true
+                                    shuldDismiss = true
+                                    observation1?.invalidate()
+                                    observation1 = nil
+                                    observation2?.invalidate()
+                                    observation2 = nil
+                                    cancellables.forEach {
+                                        $0.cancel()
+                                    }
+                                    cancellables.removeAll()
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
                                 }
-                                cancellables.removeAll()
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
+                                .buttonStyle(.glass)
+                                .padding()
+                            } else {
+                                Button {
+                                    bridge.userBreak = true
+                                    shuldDismiss = true
+                                    observation1?.invalidate()
+                                    observation1 = nil
+                                    observation2?.invalidate()
+                                    observation2 = nil
+                                    cancellables.forEach {
+                                        $0.cancel()
+                                    }
+                                    cancellables.removeAll()
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                }
+                                .padding()
                             }
-                            .buttonStyle(.glass)
-                            .padding()
                         }
                         Spacer()
                     }
@@ -215,19 +234,34 @@ public struct FFPlayerUIView: View {
                     if UIDevice.current.userInterfaceIdiom == .phone {
                         HStack {
                             Spacer()
-                            Button {
-                                rotateLock.toggle()
-                                bridge.lockrotateSender.send(rotateLock)
-                            } label: {
-                                if rotateLock {
-                                    Image(systemName: "rectangle.landscape.rotate")
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    rotateLock.toggle()
+                                    bridge.lockrotateSender.send(rotateLock)
+                                } label: {
+                                    if rotateLock {
+                                        Image(systemName: "rectangle.landscape.rotate")
+                                    }
+                                    else {
+                                        Image(systemName: "rectangle.landscape.rotate.slash")
+                                    }
                                 }
-                                else {
-                                    Image(systemName: "rectangle.landscape.rotate.slash")
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    rotateLock.toggle()
+                                    bridge.lockrotateSender.send(rotateLock)
+                                } label: {
+                                    if rotateLock {
+                                        Image(systemName: "rectangle.landscape.rotate")
+                                    }
+                                    else {
+                                        Image(systemName: "rectangle.landscape.rotate.slash")
+                                    }
                                 }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                         }
                     }
                     else {
@@ -236,25 +270,46 @@ public struct FFPlayerUIView: View {
                     HStack {
                         Spacer()
                         VStack {
-                            Button {
-                                playbackRate += 0.1
-                                if playbackRate > 100 {
-                                    playbackRate = 100
-                                }
-                                bridge.touchUpdate.send(Date())
-                                OSAtomicIncrement64(&buttonCalls)
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.setPlaybackRate(playbackRate)
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    playbackRate += 0.1
+                                    if playbackRate > 100 {
+                                        playbackRate = 100
                                     }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.setPlaybackRate(playbackRate)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "hare")
+                                        .padding()
                                 }
-                            } label: {
-                                Image(systemName: "hare")
-                                    .padding()
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    playbackRate += 0.1
+                                    if playbackRate > 100 {
+                                        playbackRate = 100
+                                    }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.setPlaybackRate(playbackRate)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "hare")
+                                        .padding()
+                                }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                             Button {
                                 playbackRate = 1.0
                                 bridge.touchUpdate.send(Date())
@@ -276,25 +331,46 @@ public struct FFPlayerUIView: View {
                                     }
                             }
                             .controlSize(.mini)
-                            Button {
-                                playbackRate -= 0.1
-                                if playbackRate < 0.5 {
-                                    playbackRate = 0.5
-                                }
-                                bridge.touchUpdate.send(Date())
-                                OSAtomicIncrement64(&buttonCalls)
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.setPlaybackRate(playbackRate)
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    playbackRate -= 0.1
+                                    if playbackRate < 0.5 {
+                                        playbackRate = 0.5
                                     }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.setPlaybackRate(playbackRate)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "tortoise")
+                                        .padding()
                                 }
-                            } label: {
-                                Image(systemName: "tortoise")
-                                    .padding()
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    playbackRate -= 0.1
+                                    if playbackRate < 0.5 {
+                                        playbackRate = 0.5
+                                    }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.setPlaybackRate(playbackRate)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "tortoise")
+                                        .padding()
+                                }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                         }
                     }
                     Spacer()
@@ -302,17 +378,30 @@ public struct FFPlayerUIView: View {
                 VStack {
                     HStack {
                         if let im = FrameworkResource.getImage(name: "close") {
-                            Button {
-                                bridge.onClose(true)
-                                if !initDone {
-                                    dismiss()
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    bridge.onClose(true)
+                                    if !initDone {
+                                        dismiss()
+                                    }
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
                                 }
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
+                                .buttonStyle(.glass)
+                                .padding()
+                            } else {
+                                Button {
+                                    bridge.onClose(true)
+                                    if !initDone {
+                                        dismiss()
+                                    }
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                }
+                                .padding()
                             }
-                            .buttonStyle(.glass)
-                            .padding()
                         }
                         Spacer()
                         Text(verbatim: mediaName)
@@ -330,59 +419,104 @@ public struct FFPlayerUIView: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: "pip.enter")
-                                    .tint(.white)
-                                    .buttonStyle(.glass)
-                                    .padding()
+                                if #available(iOS 26.0, *) {
+                                    Image(systemName: "pip.enter")
+                                        .tint(.white)
+                                        .buttonStyle(.glass)
+                                        .padding()
+                                } else {
+                                    Image(systemName: "pip.enter")
+                                        .tint(.white)
+                                        .padding()
+                                }
                             }
                         }
                     }
                     Spacer()
                     if let im = FrameworkResource.getImage(name: "video") {
                         HStack {
-                            Button {
-                                bridge.onCycleCh(0)
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 30, height: 30)
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    bridge.onCycleCh(0)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    bridge.onCycleCh(0)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                             Spacer()
                         }
                     }
                     if let im = FrameworkResource.getImage(name: "sound") {
                         HStack {
-                            Button {
-                                bridge.onCycleCh(1)
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 30, height: 30)
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    bridge.onCycleCh(1)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    bridge.onCycleCh(1)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                             Spacer()
                         }
                     }
                     if let im = FrameworkResource.getImage(name: "subtitle") {
                         HStack {
-                            Button {
-                                bridge.onCycleCh(2)
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 30, height: 30)
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    bridge.onCycleCh(2)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                            } else {
+                                Button {
+                                    bridge.onCycleCh(2)
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
                             Spacer()
                         }
                     }
@@ -390,160 +524,314 @@ public struct FFPlayerUIView: View {
                     HStack(spacing: 5) {
                         Spacer()
                         if let im = FrameworkResource.getImage(name: "prevp") {
-                            Button {
-                                if !isChapterSeeking {
-                                    seekChapter = 0
-                                    isChapterSeeking = true
-                                }
-                                bridge.touchUpdate.send(Date())
-                                OSAtomicIncrement64(&buttonCalls)
-                                seekChapter -= 1
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.onSeekChapter(seekChapter)
-                                        isChapterSeeking = false
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    if !isChapterSeeking {
+                                        seekChapter = 0
+                                        isChapterSeeking = true
                                     }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekChapter -= 1
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeekChapter(seekChapter)
+                                            isChapterSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
                                 }
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 30, height: 30)
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                                .tint(.green)
+                            } else {
+                                Button {
+                                    if !isChapterSeeking {
+                                        seekChapter = 0
+                                        isChapterSeeking = true
+                                    }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekChapter -= 1
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeekChapter(seekChapter)
+                                            isChapterSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
+                                }
+                                .controlSize(.mini)
+                                .tint(.green)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
-                            .tint(.green)
                         }
                         if let im = FrameworkResource.getImage(name: "prev00") {
-                            Button {
-                                if !isSeeking {
-                                    seekPos = playPos
-                                    isSeeking = true
-                                }
-                                OSAtomicIncrement64(&buttonCalls)
-                                seekPos = seekPos - Double(skip_prevsec)
-                                if seekPos < 0 {
-                                    seekPos = 0
-                                }
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.onSeek(seekPos)
-                                        isSeeking = false
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    if !isSeeking {
+                                        seekPos = playPos
+                                        isSeeking = true
+                                    }
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekPos = seekPos - Double(skip_prevsec)
+                                    if seekPos < 0 {
+                                        seekPos = 0
+                                    }
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeek(seekPos)
+                                            isSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    VStack(spacing: -15) {
+                                        Image(uiImage: im)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                        Text(String(skip_prevsec))
+                                            .monospaced()
+                                            .foregroundStyle(Color.green)
                                     }
                                 }
-                            } label: {
-                                VStack(spacing: -15) {
-                                    Image(uiImage: im)
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 30, height: 30)
-                                    Text(String(skip_prevsec))
-                                        .monospaced()
-                                        .foregroundStyle(Color.green)
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                                .tint(.green)
+                            } else {
+                                Button {
+                                    if !isSeeking {
+                                        seekPos = playPos
+                                        isSeeking = true
+                                    }
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekPos = seekPos - Double(skip_prevsec)
+                                    if seekPos < 0 {
+                                        seekPos = 0
+                                    }
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeek(seekPos)
+                                            isSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    VStack(spacing: -15) {
+                                        Image(uiImage: im)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                        Text(String(skip_prevsec))
+                                            .monospaced()
+                                            .foregroundStyle(Color.green)
+                                    }
                                 }
+                                .controlSize(.mini)
+                                .tint(.green)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
-                            .tint(.green)
                         }
                         if let im1 = FrameworkResource.getImage(name: "play"), let im2 = FrameworkResource.getImage(name: "pause") {
-                            Button {
-                                Task {
-                                    await bridge.onPause(!pause)
-                                }
-                            } label: {
-                                if pause {
-                                    Image(uiImage: im1)
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 30, height: 30)
-                                        .tint(.green)
-                                }
-                                else {
-                                    Image(uiImage: im2)
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 30, height: 30)
-                                }
-                            }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
-                            .tint(.green)
-                        }
-                        if let im = FrameworkResource.getImage(name: "next00") {
-                            Button {
-                                if !isSeeking {
-                                    seekPos = playPos
-                                    isSeeking = true
-                                }
-                                OSAtomicIncrement64(&buttonCalls)
-                                seekPos = seekPos + Double(skip_nextsec)
-                                if seekPos > mediaDuration {
-                                    seekPos = mediaDuration
-                                }
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.onSeek(seekPos)
-                                        isSeeking = false
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    Task {
+                                        await bridge.onPause(!pause)
+                                    }
+                                } label: {
+                                    if pause {
+                                        Image(uiImage: im1)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                            .tint(.green)
+                                    }
+                                    else {
+                                        Image(uiImage: im2)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
                                     }
                                 }
-                            } label: {
-                                VStack(spacing: -15) {
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                                .tint(.green)
+                            } else {
+                                Button {
+                                    Task {
+                                        await bridge.onPause(!pause)
+                                    }
+                                } label: {
+                                    if pause {
+                                        Image(uiImage: im1)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                            .tint(.green)
+                                    }
+                                    else {
+                                        Image(uiImage: im2)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                    }
+                                }
+                                .controlSize(.mini)
+                                .tint(.green)
+                            }
+                        }
+                        if let im = FrameworkResource.getImage(name: "next00") {
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    if !isSeeking {
+                                        seekPos = playPos
+                                        isSeeking = true
+                                    }
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekPos = seekPos + Double(skip_nextsec)
+                                    if seekPos > mediaDuration {
+                                        seekPos = mediaDuration
+                                    }
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeek(seekPos)
+                                            isSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    VStack(spacing: -15) {
+                                        Image(uiImage: im)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                        Text(String(skip_nextsec))
+                                            .monospaced()
+                                            .foregroundStyle(Color.green)
+                                    }
+                                }
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                                .tint(.green)
+                            } else {
+                                Button {
+                                    if !isSeeking {
+                                        seekPos = playPos
+                                        isSeeking = true
+                                    }
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekPos = seekPos + Double(skip_nextsec)
+                                    if seekPos > mediaDuration {
+                                        seekPos = mediaDuration
+                                    }
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeek(seekPos)
+                                            isSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    VStack(spacing: -15) {
+                                        Image(uiImage: im)
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 30, height: 30)
+                                        Text(String(skip_nextsec))
+                                            .monospaced()
+                                            .foregroundStyle(Color.green)
+                                    }
+                                }
+                                .controlSize(.mini)
+                                .tint(.green)
+                            }
+                        }
+                        if let im = FrameworkResource.getImage(name: "nextp") {
+                            if #available(iOS 26.0, *) {
+                                Button {
+                                    if !isChapterSeeking {
+                                        seekChapter = 0
+                                        isChapterSeeking = true
+                                    }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekChapter += 1
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeekChapter(seekChapter)
+                                            isChapterSeeking = false
+                                        }
+                                    }
+                                } label: {
                                     Image(uiImage: im)
                                         .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
                                         .frame(width: 30, height: 30)
-                                    Text(String(skip_nextsec))
-                                        .monospaced()
-                                        .foregroundStyle(Color.green)
                                 }
-                            }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
-                            .tint(.green)
-                        }
-                        if let im = FrameworkResource.getImage(name: "nextp") {
-                            Button {
-                                if !isChapterSeeking {
-                                    seekChapter = 0
-                                    isChapterSeeking = true
-                                }
-                                bridge.touchUpdate.send(Date())
-                                OSAtomicIncrement64(&buttonCalls)
-                                seekChapter += 1
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(750))
-                                    if OSAtomicDecrement64(&buttonCalls) == 0 {
-                                        bridge.onSeekChapter(seekChapter)
-                                        isChapterSeeking = false
+                                .controlSize(.mini)
+                                .buttonStyle(.glass)
+                                .tint(.green)
+                            } else {
+                                Button {
+                                    if !isChapterSeeking {
+                                        seekChapter = 0
+                                        isChapterSeeking = true
                                     }
+                                    bridge.touchUpdate.send(Date())
+                                    OSAtomicIncrement64(&buttonCalls)
+                                    seekChapter += 1
+                                    Task {
+                                        try? await Task.sleep(for: .milliseconds(750))
+                                        if OSAtomicDecrement64(&buttonCalls) == 0 {
+                                            bridge.onSeekChapter(seekChapter)
+                                            isChapterSeeking = false
+                                        }
+                                    }
+                                } label: {
+                                    Image(uiImage: im)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 30, height: 30)
                                 }
-                            } label: {
-                                Image(uiImage: im)
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 30, height: 30)
+                                .controlSize(.mini)
+                                .tint(.green)
                             }
-                            .controlSize(.mini)
-                            .buttonStyle(.glass)
-                            .tint(.green)
                         }
                         Spacer()
                     }
                     ZStack {
-                        Slider(value: $playPos, in: 0...mediaDuration)
-                            .allowsHitTesting(false)
-                            .sliderThumbVisibility(.hidden)
-                            .opacity(isSeeking ? 0 : 1)
+                        if #available(iOS 26.0, *) {
+                            Slider(value: $playPos, in: 0...mediaDuration)
+                                .allowsHitTesting(false)
+                                .sliderThumbVisibility(.hidden)
+                                .opacity(isSeeking ? 0 : 1)
+                        } else {
+                            Slider(value: $playPos, in: 0...mediaDuration)
+                                .allowsHitTesting(false)
+                                .opacity(isSeeking ? 0 : 1)
+                        }
                         Slider(value: $seekPos, in: 0...mediaDuration) { b in
                             if !b {
                                 bridge.touchUpdate.send(Date())
@@ -610,7 +898,7 @@ public struct FFPlayerUIView: View {
                     .allowsHitTesting(false)
             }
         }
-        .toolbarVisibility(.hidden, for: .automatic)
+        .toolbar(.hidden, for: .automatic)
         .statusBarHidden(!isMediaInfoShow)
         .onDisappear {
             if !pipActive {

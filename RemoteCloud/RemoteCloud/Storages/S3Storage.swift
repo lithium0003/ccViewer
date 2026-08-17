@@ -88,8 +88,14 @@ struct S3LoginView: View {
             }
             .disabled(ok)
             .alert("Error", isPresented: $isPresent) {
-                Button(role: .cancel) {
-                    ok = false
+                if #available(iOS 26.0, *) {
+                    Button(role: .cancel) {
+                        ok = false
+                    }
+                } else {
+                    Button("Cancel", role: .cancel) {
+                        ok = false
+                    }
                 }
             } message: {
                 Text(errorMessage)

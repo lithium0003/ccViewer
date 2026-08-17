@@ -12,6 +12,6 @@ mkdir -p build/ffmpeg && cd build/ffmpeg
 	--prefix="$output" --target-os=darwin --arch=arm64 \
 	--sysroot=$(xcrun --sdk iphoneos --show-sdk-path) \
 	--disable-audiotoolbox --enable-libaribcaption \
-	--extra-cflags="-mios-version-min=26.0" \
-	--extra-ldflags="-mios-version-min=26.0"
+	--extra-cflags="-mios-version-min=17.0" \
+	--extra-ldflags="-mios-version-min=17.0"
 make -j$(getconf _NPROCESSORS_ONLN) install

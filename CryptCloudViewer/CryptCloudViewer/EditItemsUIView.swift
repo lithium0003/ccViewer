@@ -392,26 +392,51 @@ struct EditItemsUIView: View {
                             Button("Cancel", role: .cancel) {
                                 mkdirPopover = false
                             }
-                            Button("OK", role: .confirm) {
-                                mkdirPopover = false
-                                let newname = textNewName
-                                isLoading = true
-                                Task {
-                                    defer {
-                                        isLoading = false
+                            if #available(iOS 26.0, *) {
+                                Button("OK", role: .confirm) {
+                                    mkdirPopover = false
+                                    let newname = textNewName
+                                    isLoading = true
+                                    Task {
+                                        defer {
+                                            isLoading = false
+                                        }
+                                        await Task.yield()
+                                        guard await checkDupName(testNames: [newname]).first ?? false else {
+                                            return
+                                        }
+                                        guard let service = await CloudFactory.shared.storageList.get(storage) else {
+                                            return
+                                        }
+                                        guard await service.mkdir(parentId: fileid, newname: newname) != nil else {
+                                            return
+                                        }
+                                        try? await Task.sleep(for: .seconds(1))
+                                        await reload(true)
                                     }
-                                    await Task.yield()
-                                    guard await checkDupName(testNames: [newname]).first ?? false else {
-                                        return
+                                }
+                            } else {
+                                Button("OK") {
+                                    mkdirPopover = false
+                                    let newname = textNewName
+                                    isLoading = true
+                                    Task {
+                                        defer {
+                                            isLoading = false
+                                        }
+                                        await Task.yield()
+                                        guard await checkDupName(testNames: [newname]).first ?? false else {
+                                            return
+                                        }
+                                        guard let service = await CloudFactory.shared.storageList.get(storage) else {
+                                            return
+                                        }
+                                        guard await service.mkdir(parentId: fileid, newname: newname) != nil else {
+                                            return
+                                        }
+                                        try? await Task.sleep(for: .seconds(1))
+                                        await reload(true)
                                     }
-                                    guard let service = await CloudFactory.shared.storageList.get(storage) else {
-                                        return
-                                    }
-                                    guard await service.mkdir(parentId: fileid, newname: newname) != nil else {
-                                        return
-                                    }
-                                    try? await Task.sleep(for: .seconds(1))
-                                    await reload(true)
                                 }
                             }
                         }
@@ -437,30 +462,59 @@ struct EditItemsUIView: View {
                             Button("Cancel", role: .cancel) {
                                 renamePopover = false
                             }
-                            Button("OK", role: .confirm) {
-                                renamePopover = false
-                                let newname = textNewName
-                                guard let fid = selection.first else {
-                                    return
+                            if #available(iOS 26.0, *) {
+                                Button("OK", role: .confirm) {
+                                    renamePopover = false
+                                    let newname = textNewName
+                                    guard let fid = selection.first else {
+                                        return
+                                    }
+                                    isLoading = true
+                                    Task {
+                                        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                                            return
+                                        }
+                                        defer {
+                                            isLoading = false
+                                        }
+                                        await Task.yield()
+                                        guard await checkDupName(testNames: [newname]).first ?? false else {
+                                            return
+                                        }
+                                        guard await item.rename(newname: newname) != nil else {
+                                            return
+                                        }
+                                        selection.removeAll()
+                                        try? await Task.sleep(for: .seconds(1))
+                                        await reload(true)
+                                    }
                                 }
-                                isLoading = true
-                                Task {
-                                    guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                            } else {
+                                Button("OK") {
+                                    renamePopover = false
+                                    let newname = textNewName
+                                    guard let fid = selection.first else {
                                         return
                                     }
-                                    defer {
-                                        isLoading = false
+                                    isLoading = true
+                                    Task {
+                                        guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                                            return
+                                        }
+                                        defer {
+                                            isLoading = false
+                                        }
+                                        await Task.yield()
+                                        guard await checkDupName(testNames: [newname]).first ?? false else {
+                                            return
+                                        }
+                                        guard await item.rename(newname: newname) != nil else {
+                                            return
+                                        }
+                                        selection.removeAll()
+                                        try? await Task.sleep(for: .seconds(1))
+                                        await reload(true)
                                     }
-                                    await Task.yield()
-                                    guard await checkDupName(testNames: [newname]).first ?? false else {
-                                        return
-                                    }
-                                    guard await item.rename(newname: newname) != nil else {
-                                        return
-                                    }
-                                    selection.removeAll()
-                                    try? await Task.sleep(for: .seconds(1))
-                                    await reload(true)
                                 }
                             }
                         }
@@ -492,29 +546,55 @@ struct EditItemsUIView: View {
                                     }
                                     .buttonStyle(.bordered)
                                     Spacer()
-                                    Button("OK", role: .confirm) {
-                                        chtimePopover = false
-                                        guard let fid = selection.first else {
-                                            return
-                                        }
-                                        isLoading = true
-                                        Task {
-                                            guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                                    if #available(iOS 26.0, *) {
+                                        Button("OK", role: .confirm) {
+                                            chtimePopover = false
+                                            guard let fid = selection.first else {
                                                 return
                                             }
-                                            defer {
-                                                isLoading = false
+                                            isLoading = true
+                                            Task {
+                                                guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                                                    return
+                                                }
+                                                defer {
+                                                    isLoading = false
+                                                }
+                                                await Task.yield()
+                                                guard await item.changetime(newdate: dateModified) != nil else {
+                                                    return
+                                                }
+                                                selection.removeAll()
+                                                try? await Task.sleep(for: .seconds(1))
+                                                await reload(true)
                                             }
-                                            await Task.yield()
-                                            guard await item.changetime(newdate: dateModified) != nil else {
+                                        }
+                                        .buttonStyle(.bordered)
+                                    } else {
+                                        Button("OK") {
+                                            chtimePopover = false
+                                            guard let fid = selection.first else {
                                                 return
                                             }
-                                            selection.removeAll()
-                                            try? await Task.sleep(for: .seconds(1))
-                                            await reload(true)
+                                            isLoading = true
+                                            Task {
+                                                guard let item = await CloudFactory.shared.storageList.get(storage)?.get(fileId: fid) else {
+                                                    return
+                                                }
+                                                defer {
+                                                    isLoading = false
+                                                }
+                                                await Task.yield()
+                                                guard await item.changetime(newdate: dateModified) != nil else {
+                                                    return
+                                                }
+                                                selection.removeAll()
+                                                try? await Task.sleep(for: .seconds(1))
+                                                await reload(true)
+                                            }
                                         }
+                                        .buttonStyle(.bordered)
                                     }
-                                    .buttonStyle(.bordered)
                                     Spacer()
                                 }
                                 .padding()

@@ -68,8 +68,14 @@ struct FilenLoginView: View {
             }
             .disabled(ok)
             .alert("Error", isPresented: $isPresent) {
-                Button(role: .confirm) {
-                    ok = false
+                if #available(iOS 26.0, *) {
+                    Button(role: .confirm) {
+                        ok = false
+                    }
+                } else {
+                    Button("OK") {
+                        ok = false
+                    }
                 }
             } message: {
                 Text(errorMessage)

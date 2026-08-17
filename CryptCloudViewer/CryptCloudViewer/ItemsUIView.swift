@@ -19,7 +19,9 @@ struct CastButton: UIViewRepresentable {
     
     func makeUIView(context: Context) -> UIButton {
         let button = GCKUICastButton()
-        button.configuration = .glass()
+        if #available(iOS 26.0, *) {
+            button.configuration = .glass()
+        }
         return button
     }
 }
@@ -270,94 +272,192 @@ struct ItemsUIView: View {
                 Spacer()
                 HStack {
                     if isLoopPlay {
-                        Button {
-                            isLoopPlay.toggle()
-                            UserDefaults.standard.set(isLoopPlay, forKey: "loop")
-                        } label: {
-                            Image("loop").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                            .buttonStyle(.glassProminent)
                         }
-                        .buttonStyle(.glassProminent)
+                        else {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                        }
                     }
                     else {
-                        Button {
-                            isLoopPlay.toggle()
-                            UserDefaults.standard.set(isLoopPlay, forKey: "loop")
-                        } label: {
-                            Image("loop").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
+                        else {
+                            Button {
+                                isLoopPlay.toggle()
+                                UserDefaults.standard.set(isLoopPlay, forKey: "loop")
+                            } label: {
+                                Image("loop").renderingMode(.template)
+                            }
+                        }
                     }
                     if isShufflePlay {
-                        Button {
-                            isShufflePlay.toggle()
-                            UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
-                        } label: {
-                            Image("shuffle").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                            .buttonStyle(.glassProminent)
                         }
-                        .buttonStyle(.glassProminent)
+                        else {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                        }
                     }
                     else {
-                        Button {
-                            isShufflePlay.toggle()
-                            UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
-                        } label: {
-                            Image("shuffle").renderingMode(.template)
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
+                        else {
+                            Button {
+                                isShufflePlay.toggle()
+                                UserDefaults.standard.set(isShufflePlay, forKey: "shuffle")
+                            } label: {
+                                Image("shuffle").renderingMode(.template)
+                            }
+                        }
                     }
                     Spacer()
                     if isCasting {
-                        CastButton()
-                            .frame(width: 20, height: 20)
-                            .buttonStyle(.glass)
+                        if #available(iOS 26.0, *) {
+                            CastButton()
+                                .frame(width: 20, height: 20)
+                                .buttonStyle(.glass)
+                        }
+                        else {
+                            CastButton()
+                                .frame(width: 20, height: 20)
+                        }
                         Spacer()
                             .frame(width: 20)
-                        Button {
-                            Task {
-                                await Converter.Stop()
-                                isCasting = Converter.IsCasting()
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                Task {
+                                    await Converter.Stop()
+                                    isCasting = Converter.IsCasting()
+                                }
+                            } label: {
+                                Image("cast_on").renderingMode(.template)
                             }
-                        } label: {
-                            Image("cast_on").renderingMode(.template)
+                            .buttonStyle(.glassProminent)
                         }
-                        .buttonStyle(.glassProminent)
+                        else {
+                            Button {
+                                Task {
+                                    await Converter.Stop()
+                                    isCasting = Converter.IsCasting()
+                                }
+                            } label: {
+                                Image("cast_on").renderingMode(.template)
+                            }
+                        }
                     }
                     else {
+                        if #available(iOS 26.0, *) {
+                            Button {
+                                Converter.Start()
+                                isCasting = Converter.IsCasting()
+                            } label: {
+                                Image("cast").renderingMode(.template)
+                            }
+                            .buttonStyle(.glass)
+                        }
+                        else {
+                            Button {
+                                Converter.Start()
+                                isCasting = Converter.IsCasting()
+                            } label: {
+                                Image("cast").renderingMode(.template)
+                            }
+                        }
+                    }
+                    if #available(iOS 26.0, *) {
                         Button {
-                            Converter.Start()
-                            isCasting = Converter.IsCasting()
+                            var storages: [String] = []
+                            var fileids: [String] = []
+                            for item in searchedItems {
+                                if !item.folder {
+                                    storages.append(item.storage ?? "")
+                                    fileids.append(item.id ?? "")
+                                }
+                            }
+                            if storages.isEmpty { return }
+                            if Converter.IsCasting() {
+                                if isLoading { return }
+                                isLoading = true
+                                Task {
+                                    defer {
+                                        isLoading = false
+                                    }
+                                    await playConverter(storages: storages, fileids: fileids)
+                                }
+                            }
+                            else {
+                                env.path.append(.open(storages: storages, fileids: fileids, playlist: false))
+                            }
                         } label: {
-                            Image("cast").renderingMode(.template)
+                            Image("playall").renderingMode(.template)
                         }
                         .buttonStyle(.glass)
                     }
-                    Button {
-                        var storages: [String] = []
-                        var fileids: [String] = []
-                        for item in searchedItems {
-                            if !item.folder {
-                                storages.append(item.storage ?? "")
-                                fileids.append(item.id ?? "")
-                            }
-                        }
-                        if storages.isEmpty { return }
-                        if Converter.IsCasting() {
-                            if isLoading { return }
-                            isLoading = true
-                            Task {
-                                defer {
-                                    isLoading = false
+                    else {
+                        Button {
+                            var storages: [String] = []
+                            var fileids: [String] = []
+                            for item in searchedItems {
+                                if !item.folder {
+                                    storages.append(item.storage ?? "")
+                                    fileids.append(item.id ?? "")
                                 }
-                                await playConverter(storages: storages, fileids: fileids)
                             }
+                            if storages.isEmpty { return }
+                            if Converter.IsCasting() {
+                                if isLoading { return }
+                                isLoading = true
+                                Task {
+                                    defer {
+                                        isLoading = false
+                                    }
+                                    await playConverter(storages: storages, fileids: fileids)
+                                }
+                            }
+                            else {
+                                env.path.append(.open(storages: storages, fileids: fileids, playlist: false))
+                            }
+                        } label: {
+                            Image("playall").renderingMode(.template)
                         }
-                        else {
-                            env.path.append(.open(storages: storages, fileids: fileids, playlist: false))
-                        }
-                    } label: {
-                        Image("playall").renderingMode(.template)
                     }
-                    .buttonStyle(.glass)
                 }
                 .padding()
             }

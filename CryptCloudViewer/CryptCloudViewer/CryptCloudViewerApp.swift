@@ -155,14 +155,26 @@ struct CryptCloudViewerApp: App {
                     }
                 }
                 .alert("Break changed version", isPresented: $showInitAlert) {
-                    Button(role: .destructive) {
-                        Task {
-                            await deletePreviousData()
+                    if #available(iOS 26.0, *) {
+                        Button(role: .destructive) {
+                            Task {
+                                await deletePreviousData()
+                            }
                         }
-                    }
-                    
-                    Button(role: .cancel) {
-                        cancelDelete()
+
+                        Button(role: .cancel) {
+                            cancelDelete()
+                        }
+                    } else {
+                        Button("Delete", role: .destructive) {
+                            Task {
+                                await deletePreviousData()
+                            }
+                        }
+
+                        Button("Cancel", role: .cancel) {
+                            cancelDelete()
+                        }
                     }
                 } message: {
                     Text("This version is not compatible with the previous version. We recommend to delete all previos data and re-login all storages. Do you want to erease all app data?")

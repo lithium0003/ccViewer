@@ -197,18 +197,34 @@ struct SelectItemsUIView: View {
                     }
 
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(role: .confirm) {
-                            env.storage = storage
-                            env.fileid = fileid
-                            while let last = env.path.last, case .select(_, _) = last {
-                                env.path.removeLast()
+                        if #available(iOS 26.0, *) {
+                            Button(role: .confirm) {
+                                env.storage = storage
+                                env.fileid = fileid
+                                while let last = env.path.last, case .select(_, _) = last {
+                                    env.path.removeLast()
+                                }
+                                if let continuation = env.continuation {
+                                    env.continuation = nil
+                                    continuation.resume(returning: true)
+                                }
+                            } label: {
+                                Image(systemName: "checkmark")
                             }
-                            if let continuation = env.continuation {
-                                env.continuation = nil
-                                continuation.resume(returning: true)
+                        } else {
+                            Button() {
+                                env.storage = storage
+                                env.fileid = fileid
+                                while let last = env.path.last, case .select(_, _) = last {
+                                    env.path.removeLast()
+                                }
+                                if let continuation = env.continuation {
+                                    env.continuation = nil
+                                    continuation.resume(returning: true)
+                                }
+                            } label: {
+                                Image(systemName: "checkmark")
                             }
-                        } label: {
-                            Image(systemName: "checkmark")
                         }
                     }
                 }

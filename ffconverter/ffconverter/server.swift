@@ -74,90 +74,92 @@ class HTTPserver {
         }
         listen(sockfd,5)
 
-        if !ProcessInfo.processInfo.isiOSAppOnMac && UserDefaults.standard.bool(forKey: "castInBackground") {
-            let request = BGContinuedProcessingTaskRequest(
-                identifier: taskIdentifier,
-                title: "Local server for cast",
-                subtitle: "wait fot start...",
-            )
-            if BGTaskScheduler.supportedResources.contains(.gpu) {
-                request.requiredResources = .gpu
-            }
-            request.strategy = .fail
-            
-            let success = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
-                guard let task = task as? BGContinuedProcessingTask else { return }
-                var wasExpired = false
-                // Check the expiration handler to confirm job completion.
-                task.expirationHandler = {
-                    wasExpired = true
+        if #available(iOS 26.0, *) {
+            if !ProcessInfo.processInfo.isiOSAppOnMac && UserDefaults.standard.bool(forKey: "castInBackground") {
+                let request = BGContinuedProcessingTaskRequest(
+                    identifier: taskIdentifier,
+                    title: "Local server for cast",
+                    subtitle: "wait fot start...",
+                )
+                if BGTaskScheduler.supportedResources.contains(.gpu) {
+                    request.requiredResources = .gpu
                 }
+                request.strategy = .fail
                 
-                Task { @MainActor in
-                    UIApplication.shared.isIdleTimerDisabled = true
-                }
-                defer {
-                    Task { @MainActor in
-                        UIApplication.shared.isIdleTimerDisabled = false
+                let success = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier, using: nil) { task in
+                    guard let task = task as? BGContinuedProcessingTask else { return }
+                    var wasExpired = false
+                    // Check the expiration handler to confirm job completion.
+                    task.expirationHandler = {
+                        wasExpired = true
                     }
-                }
-                
-                let progress = task.progress
-                progress.totalUnitCount = 600
-                
-                Thread.detachNewThread { [self] in
-                    while isRunning, !progress.isFinished, !wasExpired {
-                        var cli_addr = sockaddr()
-                        var clilen = socklen_t()
-                        let newsockfd = accept(sockfd, &cli_addr, &clilen)
-                        
-                        guard newsockfd >= 0 else {
-                            perror("ERROR on accept")
-                            return
+                    
+                    Task { @MainActor in
+                        UIApplication.shared.isIdleTimerDisabled = true
+                    }
+                    defer {
+                        Task { @MainActor in
+                            UIApplication.shared.isIdleTimerDisabled = false
                         }
-                        
-                        Task {
-                            await connections.add(newsockfd)
-                        }
-                        
-                        Thread.detachNewThread { [self] in
+                    }
+                    
+                    let progress = task.progress
+                    progress.totalUnitCount = 600
+                    
+                    Thread.detachNewThread { [self] in
+                        while isRunning, !progress.isFinished, !wasExpired {
+                            var cli_addr = sockaddr()
+                            var clilen = socklen_t()
+                            let newsockfd = accept(sockfd, &cli_addr, &clilen)
+                            
+                            guard newsockfd >= 0 else {
+                                perror("ERROR on accept")
+                                return
+                            }
+                            
                             Task {
-                                await processConnection(connSockfd: newsockfd)
+                                await connections.add(newsockfd)
+                            }
+                            
+                            Thread.detachNewThread { [self] in
+                                Task {
+                                    await processConnection(connSockfd: newsockfd)
+                                }
                             }
                         }
+                        progress.completedUnitCount = progress.totalUnitCount
                     }
-                    progress.completedUnitCount = progress.totalUnitCount
+                    
+                    // Update progress.
+                    while self.isRunning, !progress.isFinished, !wasExpired {
+                        progress.completedUnitCount += 1
+                        
+                        // Update task for displayed progress.
+                        task.updateTitle(task.title, subtitle: "Casting \(progress.completedUnitCount / 10)sec")
+                        Thread.sleep(forTimeInterval: 0.1)
+                        
+                        if progress.completedUnitCount > progress.totalUnitCount / 2 {
+                            progress.totalUnitCount += 600
+                        }
+                    }
+                    
+                    task.setTaskCompleted(success: true)
+                    Task {
+                        await Converter.Stop()
+                    }
                 }
                 
-                // Update progress.
-                while self.isRunning, !progress.isFinished, !wasExpired {
-                    progress.completedUnitCount += 1
-                    
-                    // Update task for displayed progress.
-                    task.updateTitle(task.title, subtitle: "Casting \(progress.completedUnitCount / 10)sec")
-                    Thread.sleep(forTimeInterval: 0.1)
-                    
-                    if progress.completedUnitCount > progress.totalUnitCount / 2 {
-                        progress.totalUnitCount += 600
-                    }
+                guard success else {
+                    fatalError("Failed to register task with identifier: \(taskIdentifier)")
                 }
                 
-                task.setTaskCompleted(success: true)
-                Task {
-                    await Converter.Stop()
+                // Submit the task request.
+                do {
+                    try BGTaskScheduler.shared.submit(request)
+                    return
+                } catch {
+                    print("Failed to submit request: \(error)")
                 }
-            }
-            
-            guard success else {
-                fatalError("Failed to register task with identifier: \(taskIdentifier)")
-            }
-            
-            // Submit the task request.
-            do {
-                try BGTaskScheduler.shared.submit(request)
-                return
-            } catch {
-                print("Failed to submit request: \(error)")
             }
         }
         
