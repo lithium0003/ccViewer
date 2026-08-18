@@ -482,6 +482,7 @@ public class SlotStream: RemoteStream {
                 guard pos1 <= pos2 else {
                     return
                 }
+                _ = await waitlist.add(pos1)
                 await subFillBuffer(pos: pos1...pos2)
             }
             if size / SlotStream.bufSize > 0 {
@@ -492,6 +493,7 @@ public class SlotStream: RemoteStream {
                     guard pos1 <= pos2 else {
                         return
                     }
+                    _ = await waitlist.add(pos1)
                     await subFillBuffer(pos: pos1...pos2)
                 }
             }

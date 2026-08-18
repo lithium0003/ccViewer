@@ -454,7 +454,7 @@ actor SftpConnection {
         }
         
         let chunkSize = Int(max_read_length)
-        var resultData = Data(capacity: length)
+        var resultData = Data(count: length)
         
         let totalRead = try resultData.withUnsafeMutableBytes { ptr -> Int in
             guard let baseAddress = ptr.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return 0 }
@@ -493,6 +493,9 @@ actor SftpConnection {
                 
                 if readBytes < 0 {
                     try handleSftpErrorAndThrow(sftp_get_error(sftpSession))
+                }
+                else {
+                    aioHandles[i] = nil
                 }
                 if readBytes == 0 {
                     break // EOF
@@ -940,7 +943,7 @@ struct SftpLoginView: View {
 }
 
 public class SftpStorage: NetworkStorage {
-    private let poolSize = 4
+    private let poolSize = 8
     var connections: [SftpConnection] = []
     
     private var nextConnectionIndex = 0
@@ -1499,41 +1502,48 @@ public class RemoteSftpStream: SlotStream {
     private let handleLock = NSLock()
     private var openFileTask: Task<SftpFileHandle, Error>?
     
-    private let dedicatedConnection: SftpConnection
+    actor Handle {
+        let connection: SftpConnection
+        let handle: SftpFileHandle
+        
+        init(connection: SftpConnection, path: String) async throws {
+            self.connection = connection
+            self.handle = try await connection.openFile(path: path)
+        }
+        
+        func read(offset: UInt64, length: Int) async throws -> Data {
+            try await connection.readFileChunk(file: handle, offset: offset, length: length)
+        }
+        
+        func close() async {
+            await connection.closeFile(handle)
+        }
+    }
+    var handles: [Handle] = []
+    var index: Int64 = 0
     
     init(remote: SftpRemoteItem) async {
         self.remote = remote
-        self.dedicatedConnection = await remote.remoteStorage.getConnection()
+        for _ in 0..<4 {
+            if let h = try? await Handle(connection: remote.remoteStorage.getConnection(), path: remote.id) {
+                handles.append(h)
+            }
+        }
         await super.init(size: remote.size)
     }
-
-    private func getHandle() async throws -> SftpFileHandle {
-        let task: Task<SftpFileHandle, Error> = handleLock.withLock {
-            if let existingTask = openFileTask {
-                return existingTask
-            }
-            
-            let newTask = Task {
-                try await dedicatedConnection.openFile(path: remote.id)
-            }
-            openFileTask = newTask
-            return newTask
+    
+    func getHandle() async throws -> Handle {
+        if handles.isEmpty {
+            await setError()
+            throw SSHError.readError
         }
-        
-        return try await task.value
+        OSAtomicIncrement64(&index)
+        return handles[Int(index) % handles.count]
     }
     
     override func cancelInternal() async {
-        let taskToCancel = handleLock.withLock {
-            let task = openFileTask
-            openFileTask = nil
-            return task
-        }
-        
-        if let task = taskToCancel {
-            if let handle = try? await task.value {
-                await dedicatedConnection.closeFile(handle)
-            }
+        for handle in handles {
+            await handle.close()
         }
         await remote.cancel()
     }
@@ -1566,9 +1576,7 @@ public class RemoteSftpStream: SlotStream {
                     }
                 }
                 do {
-                    let handle = try await getHandle()
-                    let data = try await dedicatedConnection.readFileChunk(
-                        file: handle,
+                    let data = try await getHandle().read(
                         offset: UInt64(start),
                         length: Int(chunkLen)
                     )
